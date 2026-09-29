@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Прогулка по Макси</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<div id="top">
+  <div class="brand panel"><b>Макси</b><span>1 этаж · Тула</span><em>концепт</em></div>
+  <div class="seg panel" role="tablist">
+    <button id="bWalk" class="on" role="tab">Прогулка</button>
+    <button id="bTop" role="tab">Сверху</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="icon panel" id="bSearch" aria-label="Найти магазин"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+  <button class="icon panel" id="bInfo" aria-label="О проекте и управление"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
+</div>
+<div id="chips"></div>
+<div id="note" class="panel">Неофициальный концепт · не связан с ТРЦ «Макси» · планировка и названия по Яндекс Картам</div>
+<canvas id="mini" class="panel" title="Нажми на карту, чтобы перейти в это место"></canvas>
+<div id="joy" hidden><div id="knob"></div></div>
+<div id="hint" class="panel"></div>
+<div id="cross" hidden></div>
+<div id="aim" hidden></div>
+<div id="lockTip" class="panel" hidden>Кликни по сцене, чтобы управлять обзором мышью</div>
+
+<aside id="card" class="panel" hidden>
+  <button class="x" id="cardX" aria-label="Закрыть карточку">×</button>
+  <div class="cat"><i id="cCol"></i><span id="cCat"></span></div>
+  <h2 id="cName"></h2>
+  <p class="what" id="cWhat"></p>
+  <p class="meta" id="cMeta"></p>
+  <p class="txt" id="cInfo"></p>
+  <div class="row" id="cBtns"></div>
+</aside>
+
+<div class="overlay" id="search" hidden>
+  <div class="sheet panel">
+    <input id="q" placeholder="Магазин или что ищешь: кроссовки, кофе, диван…" autocomplete="off">
+    <ul id="results"></ul>
+  </div>
+</div>
+
+<div class="overlay" id="info" hidden>
+  <div class="sheet panel">
+    <h3>Как устроен этот концепт</h3>
+    <p><b>Планировка</b> собрана из снимков Яндекс Карт первого этажа: помещения разбиты так же, как на картах, коридоры и островки повторяют настоящие. Северные части самых больших помещений, которых нет на снимках, достроены по официальной схеме ТРЦ. Масштаб по линейке карт, так что расстояния близки к настоящим.</p>
+    <p><b>Вид сверху</b> показывает каждое помещение своим цветом, оттенок зависит от категории. Серые помещения — без подписи на картах.</p>
+    <p><b>Интерьер</b> сделан по фотографиям: галерея второго этажа со стеклянным ограждением, кольцевые светильники, стеклянная крыша. Колонны стоят только в атриумах, на перекрёстках и у эскалаторов. Островки в коридорах показаны тонкими инфо-колоннами: сквозь них можно пройти, а нажатие открывает карточку. Второй этаж пока только для вида.</p>
+    <p>Это неофициальный проект, он не связан с ТРЦ «Макси».</p>
+    <p><b>Управление</b></p>
+    <ul class="keys">
+      <li>У каждого магазина с названием есть вход: подойди к стеклянным дверям — они раздвинутся, и можно пройти внутрь, как в настоящий магазин. Нажми на понравившийся товар — откроется его страница: 3D со всех сторон, на манекене, размеры. Выход — через те же двери</li>
+      <li>Курсор появляется сам, когда нужно нажать кнопки, и снова прячется, когда закрываешь окно или кликаешь по сцене</li>
+      <li>Кликни по сцене: курсор скроется, и обзор будет следовать за мышью. В центре экрана появится прицел</li>
+      <li>Клик, когда прицел наведён на магазин или инфо-колонну, откроет карточку, курсор при этом не появляется. <kbd>Enter</kbd> — подойти к нему, <kbd>Esc</kbd> — вернуть курсор, чтобы нажать кнопки в карточке</li>
+      <li>Если браузер не разрешает скрыть курсор, обзор поворачивается, когда уводишь мышь от центра экрана</li>
+      <li>На телефоне — проведи пальцем по экрану</li>
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> или стрелки — идти, <kbd>Shift</kbd> — быстрее</li>
+      <li>На телефоне — джойстик слева внизу</li>
+            <li>Нажми на мини-карту — перейдёшь в это место</li>
+      <li><kbd>V</kbd> — прогулка / вид сверху, <kbd>/</kbd> — поиск, <kbd>Esc</kbd> — закрыть</li>
+    </ul>
+    <div style="display:flex;justify-content:flex-end"><button class="btn pri" id="infoOk">Понятно</button></div>
+  </div>
+</div>
+
+<div id="shopHud" class="panel" hidden><i class="sh-dot2"></i><b id="shopHudName"></b><button class="btn" id="shopCat">Каталог</button><button class="btn" id="shopOut">Выйти</button></div>
+<aside id="shop" class="panel" hidden>
+  <div class="sh-head">
+    <i class="sh-dot"></i>
+    <div class="sh-title"><b class="sh-name"></b><span class="sh-what"></span></div>
+    <button class="icon-s" id="shMin" aria-label="Свернуть каталог">▾</button>
+  </div>
+  <div class="sh-tabs"></div>
+  <div class="sh-body"></div>
+  <div class="sh-foot"><a class="sh-site" target="_blank" rel="noopener"></a><button class="btn" id="shExit">Закрыть</button></div>
+  <p class="sh-demo">Каталог — пример для концепта: товары и цены условные.</p>
+</aside>
+<div id="fade" hidden></div>
+<div id="loading">Открываем двери…</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
