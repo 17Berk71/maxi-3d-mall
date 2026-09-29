@@ -2,7 +2,8 @@
 // Товары и цены — примеры для концепта. Настоящие данные должны приходить из фидов магазинов.
 import {mulberry} from '../utils.js';
 
-const SITES={'Спортмастер Pro':'https://www.sportmaster.ru/','Лэтуаль':'https://www.letu.ru/','Рив Гош':'https://rivegauche.ru/','Gloria Jeans':'https://www.gloria-jeans.ru/','befree':'https://befree.ru/','Zarina':'https://zarina.ru/','Love Republic':'https://loverepublic.ru/','Henderson':'https://henderson.ru/','Zolla':'https://zolla.com/','Askona':'https://www.askona.ru/','Ormatek':'https://www.ormatek.com/','Sokolov':'https://sokolov.ru/','585 Золотой':'https://www.585zolotoy.ru/','Adamas':'https://www.adamas.ru/','Yves Rocher':'https://www.yves-rocher.ru/','Natura Siberica':'https://naturasiberica.ru/','билайн':'https://beeline.ru/','МегаФон | Yota':'https://moscow.megafon.ru/','T2':'https://t2.ru/','Снежная Королева':'https://snowqueen.ru/','Дом Лента':'https://lenta.com/','Перекрёсток Select':'https://www.perekrestok.ru/','Четыре Лапы':'https://4lapy.ru/','Копицентр Офисмаг':'https://www.officemag.ru/','Kuchenland Home':'https://www.kuchenland.ru/','Ригла':'https://www.rigla.ru/','Calzedonia':'https://www.calzedonia.com/ru/','Terranova':'https://terranovastyle.com/','Kanzler':'https://kanzler-style.ru/','Мир часов':'https://chasy71.ru/','2scoop':'https://tula.2scoop.ru/','Алеф':'https://alefmex.ru/'};
+const SITES={'Спортмастер Pro':'https://www.sportmaster.ru/','Лэтуаль':'https://www.letu.ru/','Рив Гош':'https://rivegauche.ru/','Gloria Jeans':'https://www.gloria-jeans.ru/','befree':'https://befree.ru/','Zarina':'https://zarina.ru/','Love Republic':'https://loverepublic.ru/','Henderson':'https://henderson.ru/','Zolla':'https://zolla.com/','Askona':'https://www.askona.ru/','Ormatek':'https://www.ormatek.com/','Sokolov':'https://sokolov.ru/','585 Золотой':'https://www.585zolotoy.ru/','Adamas':'https://www.adamas.ru/','Yves Rocher':'https://www.yves-rocher.ru/','Natura Siberica':'https://naturasiberica.ru/','билайн':'https://beeline.ru/','МегаФон | Yota':'https://moscow.megafon.ru/','T2':'https://t2.ru/','Снежная Королева':'https://snowqueen.ru/','Дом Лента':'https://lenta.com/','Перекрёсток Select':'https://www.perekrestok.ru/','Четыре Лапы':'https://4lapy.ru/','Копицентр Офисмаг':'https://www.officemag.ru/','Kuchenland Home':'https://www.kuchenland.ru/','Ригла':'https://www.rigla.ru/','Calzedonia':'https://www.calzedonia.com/ru/','Terranova':'https://terranovastyle.com/','Kanzler':'https://kanzler-style.ru/','Мир часов':'https://chasy71.ru/','2scoop':'https://tula.2scoop.ru/','Алеф':'https://alefmex.ru/',
+ 'DNS':'https://www.dns-shop.ru/','Технопарк':'https://www.technopark.ru/','Детский мир':'https://www.detmir.ru/','Familia':'https://famil.ru/',"O'STIN":'https://ostin.com/','Zenden':'https://zenden.ru/','kari ГИПЕР':'https://kari.com/','kari KIDS':'https://kari.com/','Леонардо':'https://leonardo.ru/','Синема Парк':'https://kinoteatr.ru/raspisanie-kinoteatrov/tula/maxi/','Фуд-корт':'https://tula.maxi-shopping.ru/cafes/','Ralf Ringer':'https://ralf.ru/'};
 function siteOf(s){return SITES[s.name]||null;}
 function mapsOf(s){return 'https://yandex.ru/maps/15/tula/search/'+encodeURIComponent(s.name+' ТРЦ Макси');}
 
@@ -46,11 +47,30 @@ const DEPT={
  menu:{t:'Меню',icon:'plate',model:'cup',lay:'cafe',items:[['Паста',490],['Салат',390],['Суп дня',290],['Пицца',590],['Десерт',290],['Лимонад',250]]},
  bakery:{t:'Выпечка',icon:'plate',model:'cup',lay:'cafe',items:[['Багет',90],['Круассан',120],['Пирог',350],['Эклер',150],['Торт',1490],['Кофе с собой',150]]},
  sushi:{t:'Суши',icon:'plate',model:'cup',lay:'cafe',items:[['Филадельфия',590],['Калифорния',490],['Сет',1490],['Суп мисо',290],['Роллы запечённые',520],['Лимонад',220]]},
+ laptops:{t:'Ноутбуки и ПК',icon:'laptop',model:'laptop',lay:'tables',items:[['Ноутбук 15,6″',54990],['Игровой ноутбук',99990],['Монитор 27″',21990],['Клавиатура',2490],['Мышь',1290],['Системный блок',64990]]},
+ tv:{t:'Телевизоры',icon:'tv',model:'tv',lay:'wall',items:[['Телевизор 43″',27990],['Телевизор 55″ 4K',44990],['Телевизор 65″',69990],['Саундбар',12990],['Кронштейн',1990],['Медиаприставка',5990]]},
+ movies:{t:'Билеты',icon:'ticket',model:'ticket',lay:'tables',items:[['Билет в зал IMAX',650],['Билет в 3D',450],['Билет в зал RELAX',850],['Билет в зал KIDS',350],['Утренний сеанс',250],['Подарочный сертификат',1000]]},
+ popcorn:{t:'Кинобар',icon:'popcorn',model:'cup',lay:'cafe',items:[['Попкорн большой',490],['Попкорн сырный',390],['Начос',350],['Кола 0,5',190],['Хот-дог',250],['Комбо на двоих',890]]},
+ bk:{t:'Бургер Кинг',icon:'burger',model:'cup',lay:'cafe',items:[['Воппер',329],['Чизбургер',99],['Картофель фри',129],['Наггетсы',149],['Кинг Комбо',449],['Молочный коктейль',169]]},
+ vkusno:{t:'Вкусно — и точка',icon:'burger',model:'cup',lay:'cafe',items:[['Биг Спешиал',289],['Чикен Премьер',199],['Картофель по-деревенски',129],['Роллы',219],['Мороженое',99],['Кофе',129]]},
+ rostics:{t:"Rostic's",icon:'burger',model:'cup',lay:'cafe',items:[['Баскет крылья',399],['Твистер',249],['Стрипсы',219],['Байтс',169],['Шефбургер',239],['Лимонад',149]]},
+ hobby:{t:'Творчество',icon:'box',model:'box',lay:'wall',items:[['Акварель, набор',690],['Холст на подрамнике',490],['Пряжа',199],['Набор для вышивки',890],['Кисти, набор',390],['Раскраска по номерам',990]]},
+ books:{t:'Книги',icon:'book',model:'book',lay:'wall',items:[['Роман-бестселлер',690],['Детская книга',490],['Комикс',790],['Энциклопедия',1290],['Учебник',590],['Раскраска',190]]},
+ textile:{t:'Текстиль',icon:'box',model:'box',lay:'tables',items:[['Постельное бельё',2990],['Плед',1490],['Полотенце',490],['Подушка декоративная',790],['Шторы',2490],['Скатерть',990]]},
+ decor:{t:'Декор',icon:'gift',model:'jar',lay:'tables',items:[['Ваза',890],['Свеча ароматическая',490],['Рамка для фото',390],['Часы настенные',1490],['Искусственные цветы',590],['Корзина для хранения',690]]},
+ bags:{t:'Сумки',icon:'bag',model:'box',lay:'tables',items:[['Сумка кожаная',6990],['Рюкзак',3990],['Клатч',2490],['Кошелёк',1990],['Поясная сумка',1490],['Чемодан',8990]]},
  service:{t:'Услуги',icon:'box',model:'box',lay:'tables',items:[['Консультация',0],['Срочный заказ',500],['Стандартная услуга',300],['Комплекс услуг',1200],['Доставка',300],['Подарочный сертификат',1000]]},
  generic:{t:'Товары',icon:'box',model:'box',lay:'wall',items:[['Хит продаж',990],['Новинка',1490],['Товар дня',690],['Набор',1990],['Акция',490],['Премиум',2990]]}
 };
+// отделы для конкретных магазинов
+const BY_NAME={'Спортмастер Pro':['shoes','jackets','pants','tshirts','football','basketball','bikes','fitness'],
+ 'DNS':['phones','laptops','tv','appliance','phoneacc'],'Технопарк':['appliance','tv','phones'],'Синема Парк':['movies','popcorn'],
+ 'Фуд-корт':['bk','vkusno','rostics','coffee'],'Леонардо':['hobby','office'],'Букварь':['books','office'],'Домовой':['kitchen','textile','decor'],
+ 'Детский мир':['kidswear','toys','shoes','fun'],'kari KIDS':['kidswear','shoes'],'Familia':['jackets','dresses','tshirts','shoes','textile'],
+ 'kari ГИПЕР':['shoes','accbox'],'Империя сумок':['bags','accbox'],'Incanto':['jewel','watch']};
 function deptsFor(s){const w=s.what||'',n=s.name;
- if(n==='Спортмастер Pro')return['shoes','jackets','pants','tshirts','football','basketball','bikes','fitness'];
+ if(BY_NAME[n])return BY_NAME[n];
+ if(s.cat==='fashion'&&/^Обувь/.test(w))return['shoes','accbox'];
  if(s.cat==='sport')return w.includes('питание')?['sportfood','fitness']:['shoes','tshirts','fitness','football'];
  if(s.cat==='fashion'){if(w.includes('Кроссовки'))return['shoes','accbox'];return['jackets','pants','tshirts','dresses','shoes','accbox'];}
  if(s.cat==='kids')return w.includes('одежда')?['kidswear','toys','shoes']:w.includes('Кигуруми')?['kidswear','toys']:['fun','toys'];

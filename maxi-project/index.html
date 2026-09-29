@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Прогулка по Макси</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%230e7490%22/%3E%3Cpath d=%22M16 46V20l16 14 16-14v26%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%227%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -11,23 +12,38 @@
 <body>
 <canvas id="c" tabindex="0"></canvas>
 <div id="top">
-  <div class="brand panel"><b>Макси</b><span>1 этаж · Тула</span><em>концепт</em></div>
+  <div class="brand panel"><b>Макси</b><span id="brandFloor">1 этаж · Тула</span><em>концепт</em></div>
   <div class="seg panel" role="tablist">
     <button id="bWalk" class="on" role="tab">Прогулка</button>
     <button id="bTop" role="tab">Сверху</button>
   </div>
+  <div class="seg panel floors" role="group" aria-label="Этаж">
+    <button id="bF1" class="on" aria-label="Первый этаж">1<small>этаж</small></button>
+    <button id="bF2" aria-label="Второй этаж">2<small>этаж</small></button>
+  </div>
   <div class="spacer"></div>
   <button class="icon panel" id="bSearch" aria-label="Найти магазин"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+  <button class="icon panel" id="bCart" aria-label="Корзина"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg><span id="cartN" hidden>0</span></button>
   <button class="icon panel" id="bInfo" aria-label="О проекте и управление"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></button>
 </div>
 <div id="chips"></div>
-<div id="note" class="panel">Неофициальный концепт · не связан с ТРЦ «Макси» · планировка и названия по Яндекс Картам</div>
+<div id="note" class="panel">Неофициальный концепт · не связан с ТРЦ «Макси» · 1 этаж по Яндекс Картам, 2 этаж — примерно</div>
 <canvas id="mini" class="panel" title="Нажми на карту, чтобы перейти в это место"></canvas>
 <div id="joy" hidden><div id="knob"></div></div>
 <div id="hint" class="panel"></div>
 <div id="cross" hidden></div>
 <div id="aim" hidden></div>
 <div id="lockTip" class="panel" hidden>Кликни по сцене, чтобы управлять обзором мышью</div>
+<button id="goHere" class="btn pri" hidden>Перейти сюда</button>
+
+<aside id="lift" class="panel" hidden aria-label="Лифт">
+  <button class="x" id="liftX" aria-label="Закрыть">×</button>
+  <div class="lift-h"><span class="lift-i">⇅</span><div><b>Лифт</b><small id="liftNow"></small></div></div>
+  <div class="lift-b">
+    <button class="btn" id="liftB2"><b>2</b><span>Кино, фуд-корт, DNS, Детский мир, Familia</span></button>
+    <button class="btn" id="liftB1"><b>1</b><span>Входы, Лента, Спортмастер, большинство магазинов</span></button>
+  </div>
+</aside>
 
 <aside id="card" class="panel" hidden>
   <button class="x" id="cardX" aria-label="Закрыть карточку">×</button>
@@ -48,10 +64,13 @@
 
 <div class="overlay" id="info" hidden>
   <div class="sheet panel">
+    <label class="switch"><input type="checkbox" id="calmT"><span class="sw"></span><span><b>Без анимации</b><small>Без плавных перелётов, движения людей и вращения. Переходы — сразу</small></span></label>
     <h3>Как устроен этот концепт</h3>
     <p><b>Планировка</b> собрана из снимков Яндекс Карт первого этажа: помещения разбиты так же, как на картах, коридоры и островки повторяют настоящие. Северные части самых больших помещений, которых нет на снимках, достроены по официальной схеме ТРЦ. Масштаб по линейке карт, так что расстояния близки к настоящим.</p>
     <p><b>Вид сверху</b> показывает каждое помещение своим цветом, оттенок зависит от категории. Серые помещения — без подписи на картах.</p>
-    <p><b>Интерьер</b> сделан по фотографиям: галерея второго этажа со стеклянным ограждением, кольцевые светильники, стеклянная крыша. Колонны стоят только в атриумах, на перекрёстках и у эскалаторов. Островки в коридорах показаны тонкими инфо-колоннами: сквозь них можно пройти, а нажатие открывает карточку. Второй этаж пока только для вида.</p>
+    <p><b>Интерьер</b> сделан по фотографиям: галерея второго этажа со стеклянным ограждением, кольцевые светильники, стеклянная крыша. Колонны стоят только в атриумах, на перекрёстках и у эскалаторов. Островки в коридорах показаны тонкими инфо-колоннами: сквозь них можно пройти, а нажатие открывает карточку. </p>
+    <p><b>Второй этаж.</b> Точной схемы второго этажа в открытых источниках нет. Магазины второго этажа — настоящие арендаторы по 2ГИС и сайту ТРЦ (кинотеатр Синема Парк, фуд-корт с Бургер Кингом, «Вкусно — и точка» и Rostic's, DNS, Детский мир, Familia, O'STIN и другие), а их места на схеме примерные. Лифты стоят там, где они на официальной схеме ТРЦ.</p>
+    <p><b>Покупки.</b> Товары можно положить в корзину и оформить заказ, но это демо: заказ никуда не отправляется. Настоящие цены и наличие — на сайтах магазинов.</p>
     <p>Это неофициальный проект, он не связан с ТРЦ «Макси».</p>
     <p><b>Управление</b></p>
     <ul class="keys">
@@ -63,7 +82,8 @@
       <li>На телефоне — проведи пальцем по экрану</li>
       <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> или стрелки — идти, <kbd>Shift</kbd> — быстрее</li>
       <li>На телефоне — джойстик слева внизу</li>
-            <li>Нажми на мини-карту — перейдёшь в это место</li>
+      <li>Нажми на мини-карту — перейдёшь в это место. В виде сверху нажми на коридор — появится кнопка «Перейти сюда»</li>
+      <li>Этажи — кнопки <b>1</b> и <b>2</b> вверху или клавиши <kbd>1</kbd> <kbd>2</kbd>. Ещё можно подойти к лифту: панель с этажами откроется сама</li>
       <li><kbd>V</kbd> — прогулка / вид сверху, <kbd>/</kbd> — поиск, <kbd>Esc</kbd> — закрыть</li>
     </ul>
     <div style="display:flex;justify-content:flex-end"><button class="btn pri" id="infoOk">Понятно</button></div>
@@ -82,6 +102,38 @@
   <div class="sh-foot"><a class="sh-site" target="_blank" rel="noopener"></a><button class="btn" id="shExit">Закрыть</button></div>
   <p class="sh-demo">Каталог — пример для концепта: товары и цены условные.</p>
 </aside>
+<div class="overlay" id="cartBox" hidden>
+  <div class="sheet panel cart">
+    <button class="x" id="cartX" aria-label="Закрыть корзину">×</button>
+    <div id="cartMain">
+      <h3>Корзина</h3>
+      <p id="cartEmpty" class="muted">Пока пусто. Зайди в магазин, нажми на товар и выбери «В корзину».</p>
+      <ul id="cartList"></ul>
+      <div id="cartFoot"><div class="sum"><span>Итого</span><b id="cartSum">0 ₽</b></div>
+        <div class="row"><button class="btn" id="cartClear">Очистить</button><button class="btn pri" id="cartGo">Оформить заказ</button></div></div>
+    </div>
+    <form id="orderForm" hidden novalidate>
+      <h3>Оформление заказа</h3>
+      <p class="muted" id="oSum"></p>
+      <label class="fld">Имя<input id="oName" autocomplete="name" placeholder="Как к тебе обращаться"></label>
+      <label class="fld">Телефон<input id="oPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+7 900 000-00-00"></label>
+      <fieldset class="fld"><legend>Как получить</legend>
+        <label class="rad"><input type="radio" name="oWay" value="pickup" checked> Забрать в магазине в ТРЦ «Макси»</label>
+        <label class="rad"><input type="radio" name="oWay" value="courier"> Доставка курьером по Туле</label>
+      </fieldset>
+      <label class="fld" id="oAddrRow" hidden>Адрес<input id="oAddr" autocomplete="street-address" placeholder="Улица, дом, квартира"></label>
+      <p class="err" id="oErr" role="alert"></p>
+      <p class="muted small">Это демо: заказ никуда не отправляется и данные не сохраняются.</p>
+      <div class="row"><button type="button" class="btn" id="oBack">← Назад</button><button type="submit" class="btn pri">Подтвердить заказ</button></div>
+    </form>
+    <div id="orderDone" hidden>
+      <h3 id="orderNum">Заказ оформлен</h3>
+      <p id="orderTxt"></p>
+      <p class="muted small">Это демо-заказ: в настоящий магазин он не уходит. Купить по-настоящему можно на сайте магазина.</p>
+      <div class="row"><button class="btn pri" id="orderOk">Продолжить прогулку</button></div>
+    </div>
+  </div>
+</div>
 <div id="fade" hidden></div>
 <div id="loading">Открываем двери…</div>
 <script type="module" src="/src/main.js"></script>
