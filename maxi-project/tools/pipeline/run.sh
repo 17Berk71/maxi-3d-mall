@@ -6,7 +6,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="$HERE/work"
 rm -rf "$WORK"; mkdir -p "$WORK"
 cp "$HERE"/*.py "$WORK"/
-cp "$HERE"/source/plan.png "$HERE"/source/y{E,M,W,F}.png "$WORK"/
+cp "$HERE"/source/plan.png "$HERE"/source/y{E,M,W,F,N}.png "$WORK"/
 cd "$WORK"
 echo "1/8 контур здания по схеме ТРЦ";        python3 ex.py
 echo "2/8 уточнение контура";                 python3 ex2.py

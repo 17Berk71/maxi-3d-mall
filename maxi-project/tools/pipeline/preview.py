@@ -8,7 +8,7 @@ im=Image.new('RGB',(W,H),(30,32,40));g=ImageDraw.Draw(im)
 P=lambda p:((p[0]-x0)*S,(p[1]-z0)*S)
 for b in d['bld']:g.polygon([P(p) for p in b],fill=(226,226,232))
 for v in d['voids']:g.polygon([P(p) for p in v],outline=(120,170,220))
-CAT={'fashion':210,'food':12,'beauty':335,'acc':170,'tech':205,'kids':275,'gifts':45,'furn':28,'home':85,'sport':25,'serv':215,'misc':235}
+CAT={'fashion':210,'food':12,'beauty':335,'acc':170,'tech':205,'kids':275,'gifts':45,'furn':28,'home':85,'sport':25,'serv':215,'misc':235,'wc':190}
 fnt='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
 for i,s in enumerate(d['stores']):
   if s['cat']=='tbd':col=(200,204,210)

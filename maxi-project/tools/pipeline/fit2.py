@@ -13,11 +13,20 @@ TEM,a1=st(*pair(E,M,('Мир часов','Бриллиантовая ручка'
 TWM,a2=st(*pair(W,M))
 TFW,a3=st(*pair(F,W))
 print('scales',a1,a2,a3)
+exec(open('labelsN.py').read())
+# снимок yN.png: привязка к кадру M по подписям, общим с другими снимками (масштаб и сдвиг)
+_pos={}
+for _D,_T in [(M,lambda X:np.array(X,float)),(E,TEM),(W,TWM),(F,lambda X:TWM(TFW(X)))]:
+  for _k,_v in _D.items():_pos.setdefault(_k,[]).append(_T([_v])[0])
+_names=[k for k in N_FIT if k in _pos]
+TNM,a4=st([N[k] for k in _names],[np.mean(_pos[k],0) for k in _names])
 mos={}
 def add(D,T,tag):
   for k,v in D.items():
     p=T([v])[0];mos.setdefault(k,[]).append((tag,p))
 add(M,lambda X:np.array(X,float),'M');add(E,TEM,'E');add(W,TWM,'W');add(F,lambda X:TWM(TFW(X)),'F')
+for _k,_v in N.items():
+  if _k not in mos:mos[_k]=[('N',TNM([_v])[0])]
 import json
 json.dump({k:[(t,list(map(float,p))) for t,p in v] for k,v in mos.items()},open('mosaic.json','w'),ensure_ascii=False)
 for k,v in mos.items():

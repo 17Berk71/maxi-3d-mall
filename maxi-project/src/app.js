@@ -29,6 +29,7 @@ const CATS={
  sport:{n:'Спорт',c:'#e57a1c',h:24,k:'спорт кроссовки тренировки протеин спортпит фитнес'},
  serv:{n:'Услуги',c:'#5d7fa3',h:212,k:'услуги банк ремонт ключи ателье'},
  misc:{n:'Другие магазины',c:'#7a7f99',h:236,k:'магазин'},
+ wc:{n:'Туалеты',c:'#3a9bb0',h:192,k:'туалет wc уборная мужской женский'},
  tbd:{n:'Без подписи на картах',c:'#c3c9d0',h:0,k:''}
 };
 
@@ -190,6 +191,7 @@ const pictoAtlas=canvasTex(128*PICTO_KEYS.length,128,(g)=>{PICTO_KEYS.forEach((k
   case'furn':g.moveTo(cx-32,84);g.lineTo(cx-32,56);g.lineTo(cx+32,56);g.lineTo(cx+32,84);g.moveTo(cx-24,70);g.lineTo(cx+24,70);g.moveTo(cx-24,56);g.lineTo(cx-24,42);g.lineTo(cx+24,42);g.lineTo(cx+24,56);g.stroke();break;
   case'home':g.moveTo(cx-30,62);g.lineTo(cx,36);g.lineTo(cx+30,62);g.moveTo(cx-22,56);g.lineTo(cx-22,90);g.lineTo(cx+22,90);g.lineTo(cx+22,56);g.stroke();break;
   case'sport':g.arc(cx,64,28,0,7);g.moveTo(cx-28,64);g.lineTo(cx+28,64);g.moveTo(cx,36);g.quadraticCurveTo(cx+18,64,cx,92);g.stroke();break;
+  case'wc':g.arc(cx-17,38,7,0,7);g.moveTo(cx-17,50);g.lineTo(cx-17,76);g.moveTo(cx-17,76);g.lineTo(cx-17,94);g.moveTo(cx-28,54);g.lineTo(cx-6,54);g.arc(cx+17,38,7,0,7);g.moveTo(cx+17,50);g.lineTo(cx+8,78);g.lineTo(cx+26,78);g.closePath();g.moveTo(cx,34);g.lineTo(cx,94);g.stroke();break;
   case'serv':g.arc(cx,64,24,0,7);g.moveTo(cx,64);g.lineTo(cx,48);g.moveTo(cx,64);g.lineTo(cx+12,70);g.stroke();break;
   default:g.moveTo(cx-24,48);g.lineTo(cx+24,48);g.lineTo(cx+20,90);g.lineTo(cx-20,90);g.closePath();g.moveTo(cx-10,48);g.arc(cx,48,10,Math.PI,0);g.stroke();}
  });});
@@ -300,7 +302,8 @@ function build(){
    const depth0=Math.max(1.6,Math.min(5,Math.sqrt(s.area)*0.45));
    // главная витрина (самая длинная сторона в коридор) — в ней будет вход
    let doorEdge=-1,doorL=0,doorU=0;
-   if(s.cat!=='tbd'){for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.6)continue;const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;
+   const isWC=s.cat==='wc';
+   if(s.cat!=='tbd'&&!isWC){for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.6)continue;const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;
     if(nearWC(F.f,mx,mz))continue;
     const w1=isFloorF(F.f,mx-tz*0.7,mz+tx*0.7),w2=isFloorF(F.f,mx+tz*0.7,mz-tx*0.7);if(w1===w2||L<=doorL)continue;
     // перед дверью должно быть просторно, иначе в неё не войти: ищем такое место вдоль витрины, ближе к середине
@@ -310,15 +313,34 @@ function build(){
    // запасной вариант: магазин касается коридора только углом или через узкую полосу стены —
    // дверь в ближайшей к коридору стене, короткий проход до коридора (не длиннее 2,4 м)
    let doorGap=0,doorSg=0;
-   if(doorEdge<0&&s.cat!=='tbd'){let bestG=9;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.2)continue;
+   if(doorEdge<0&&s.cat!=='tbd'&&!isWC){let bestG=9;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.2)continue;
      const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;if(nearWC(F.f,mx,mz))continue;const sg=inPoly(P,mx-tz*0.3,mz+tx*0.3)?-1:1;
      const dw=Math.min(2.8,Math.max(1.8,L*0.45),L-0.4),us=[];for(let u=dw/2+0.2;u<=L-dw/2-0.2+1e-6;u+=0.4)us.push(u);if(!us.length)us.push(L/2);
      for(const u of us){const px=a[0]+tx*u,pz=a[1]+tz*u;for(let r=0.3;r<=2.4&&r<bestG;r+=0.15){const qx=px-tz*r*sg,qz=pz+tx*r*sg;
       if(isFloorF(F.f,qx,qz)&&clearance(F.f,px-tz*(r+1.0)*sg,pz+tx*(r+1.0)*sg,2)>=1.0){bestG=r;doorEdge=i;doorL=L;doorU=u;doorGap=r;doorSg=sg;break;}}}}}
    const DW=Math.min(2.8,Math.max(1.8,doorL*0.45),doorL-0.4);
+   // туалет: закрытая комната, проём — в стороне, обращённой к проходу (снаружи), внутрь не заходим
+   let wcEdge=-1;if(isWC){let bl=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1.2||L<=bl)continue;
+     const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;
+     if(isFloorF(F.f,mx-tz*0.7,mz+tx*0.7)!==isFloorF(F.f,mx+tz*0.7,mz-tx*0.7)){bl=L;wcEdge=i;}}}
    for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const A=new V3(a[0],y0,a[1]),B=new V3(b[0],y0,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
     const t=new V3().subVectors(B,A).divideScalar(L);let n=new V3(-t.z,0,t.x);const mid=A.clone().lerp(B,.5);
     const isDoor=i===doorEdge,du0=doorU-DW/2,du1=doorU+DW/2;
+    if(isWC){const nn=new V3(-t.z,0,t.x),wcCol=LIN('#d3d9dc');
+     if(i!==wcEdge){walls.panel(mid,nn,L,y0,TOP,[0,0,1,1],wcCol,s.id);walls.panel(mid,nn.clone().negate(),L,y0,TOP,[0,0,1,1],wcCol,s.id);continue;}
+     const w1=isFloorF(F.f,mid.x+nn.x*0.7,mid.z+nn.z*0.7),out=w1?nn.clone():nn.clone().negate(),Rt=new V3(out.z,0,-out.x);
+     const ow=Math.min(1.7,L-0.7),o0=L/2-ow/2,o1=L/2+ow/2,HD=2.5,deep=0.6,dark=LIN('#20262b');
+     [[0,o0],[o1,L]].forEach(([q0,q1])=>{const cc=A.clone().addScaledVector(t,(q0+q1)/2);walls.panel(cc,nn,q1-q0,y0,TOP,[0,0,1,1],wcCol,s.id);walls.panel(cc,nn.clone().negate(),q1-q0,y0,TOP,[0,0,1,1],wcCol,s.id);});
+     const oc=A.clone().addScaledVector(t,L/2);
+     walls.panel(oc,out,ow,y0+HD,TOP,[0,0,1,1],wcCol,s.id);walls.panel(oc,out.clone().negate(),ow,y0+HD,TOP,[0,0,1,1],wcCol,s.id);
+     inWalls.panel(oc.clone().addScaledVector(out,-deep),out,ow,y0,y0+HD,[0,0,1,1],dark,s.id);
+     [-1,1].forEach(sg=>inWalls.panel(oc.clone().addScaledVector(t,sg*ow/2).addScaledVector(out,-deep/2),t.clone().multiplyScalar(-sg),deep,y0,y0+HD,[0,0,1,1],dark,s.id));
+     const fl=(u,v)=>new V3(oc.x+t.x*u+out.x*v,y0+0.024,oc.z+t.z*u+out.z*v);
+     mats.quad(fl(ow/2,-deep),fl(-ow/2,-deep),fl(-ow/2,0.4),fl(ow/2,0.4),[0,0,1,1]);
+     const ps=0.8,pc=oc.clone().addScaledVector(out,0.03);posters.panel(pc,out,ps,y0+HD+0.3,y0+HD+0.3+ps,pictoUV('wc'),null,s.id);
+     mull.add(new THREE.BoxGeometry(ow+0.16,0.1,0.14),null,null,mtx.makeRotationY(Math.atan2(out.x,out.z)).setPosition(oc.x+out.x*0.04,y0+HD,oc.z+out.z*0.04));
+     [-1,1].forEach(sg=>{const pp=oc.clone().addScaledVector(t,sg*ow/2);mull.add(new THREE.BoxGeometry(0.1,HD,0.1),null,null,mtx.makeTranslation(pp.x+out.x*0.04,y0+HD/2,pp.z+out.z*0.04));});
+     if(!best||L>best.L)best={L,mid,n:out,t};continue;}
     const w1=L>=0.9&&isFloorF(F.f,mid.x+n.x*0.7,mid.z+n.z*0.7),w2=L>=0.9&&isFloorF(F.f,mid.x-n.x*0.7,mid.z-n.z*0.7);
     const forced=isDoor&&doorGap>0;if(forced&&doorSg<0)n.negate();
     if(w1===w2&&!forced){ // глухая стена между помещениями / наружу / над проёмом
@@ -512,7 +534,9 @@ function build(){
   [[0.72,1],[-0.72,-1]].forEach(([off,dir])=>{const t=stepCanvas.clone();t.needsUpdate=true;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(len/0.42,1);world.stepTex.push({t,dir});
    const b=new THREE.Mesh(new THREE.BoxGeometry(len,0.8,1.2),[escBand,escBand,new THREE.MeshStandardMaterial({map:t,roughness:.45,metalness:.6}),escBand,escBand,escBand]);b.position.set(0,rise/2,off);b.rotation.z=ang;b.userData.esc=ei;g.add(b);pickables.push(b);
    [-0.62,0.62].forEach(s=>{const side=new THREE.Mesh(new THREE.PlaneGeometry(len,1.0),escSide);side.position.set(0,rise/2+0.85,off+s);side.rotation.z=ang;g.add(side);
-    const hr=new THREE.Mesh(new THREE.BoxGeometry(len+0.6,0.09,0.11),railM);hr.position.set(0,rise/2+1.38,off+s);hr.rotation.z=ang;g.add(hr);});
+    const hr=new THREE.Mesh(new THREE.BoxGeometry(len,0.09,0.11),railM);hr.position.set(0,rise/2+1.38,off+s);hr.rotation.z=ang;g.add(hr);
+    // поручень не торчит в проход: на площадках он уходит в горизонталь и кончается у гребёнки
+    [[-run/2-0.35,1.38],[run/2+0.35,rise+1.38]].forEach(([x,y])=>{const h2=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.09,0.11),railM);h2.position.set(x,y,off+s);g.add(h2);});});
    // гребёнки на площадках
    [[-run/2-0.45,0.02],[run/2+0.45,rise+0.02]].forEach(([x,y])=>{const c=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.04,1.2),combM);c.position.set(x,y,off);g.add(c);});});
   g.position.set(e.p[0],0,e.p[1]);g.rotation.y=-e.a;scene.add(g);blockRect(e.p[0],e.p[1],e.a,run/2+0.4,1.55,1);
@@ -763,6 +787,7 @@ const joyEnd=e=>{if(e.pointerId!==joyId)return;joyId=null;joyV={x:0,y:0};knob.st
 joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);
 
 addEventListener('keydown',e=>{
+ if(ride&&e.target.tagName!=='INPUT'&&(e.code==='KeyW'||e.code==='ArrowUp'||e.code==='ShiftLeft'||e.code==='ShiftRight'))keys[e.code]=true;// на эскалаторе: зажал W — бежишь по ленте
  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT'){if(e.key==='Escape'){closeSearch();closeCart();}if(e.key==='Enter'&&e.target.id==='q'){const f=$('results').querySelector('li[data-id]');if(f)f.click();}return;}
  if(e.key==='/'){e.preventDefault();openSearch();return;}
  if(e.key==='Escape'){if(!$('cartBox').hidden){closeCart();return;}if(!$('lift').hidden){hideLiftPanel(false);return;}if(!locked)closeCard();$('info').hidden=true;hideGoHere();if(!$('shop').hidden&&!locked)closeShopPanel(false);return;}
@@ -886,12 +911,12 @@ function startRide(L,f){if(ride||mode==='store')return;if(f===curFloor){showHint
 function updateRide(dt){const r=ride;if(!r)return;const L=r.L;r.t+=dt;
  const ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
  const cx=L.c.x+L.n.x*0.1,cz=L.c.z+L.n.z*0.1;
- if(r.phase===0){const k=Math.min(1,r.t/0.9),e=ease(k);player.x=r.x0+(cx-r.x0)*e;player.z=r.z0+(cz-r.z0)*e;
+ if(r.phase===0){const k=Math.min(1,r.t/0.3),e=ease(k);player.x=r.x0+(cx-r.x0)*e;player.z=r.z0+(cz-r.z0)*e;
   let da=((r.yawOut-r.yaw0+Math.PI*3)%(Math.PI*2))-Math.PI;player.yaw=r.yaw0+da*e;player.pitch=r.p0*(1-e);if(k>=1){r.phase=1;r.t=0;}}
- else if(r.phase===1){if(r.t>0.6){r.phase=2;r.t=0;}}
- else if(r.phase===2){const k=Math.min(1,r.t/2.4),e=ease(k);r.y=FY[r.from]+(FY[r.to]-FY[r.from])*e;L.cab.position.y=r.y;if(k>=1){r.phase=3;r.t=0;L.at=r.to;curFloor=r.to;updateFloorUI();setVis();drawMiniBase();}}
- else if(r.phase===3){if(r.t>0.6){r.phase=4;r.t=0;}}
- else if(r.phase===4){const p=liftFront(L,r.to),k=Math.min(1,r.t/0.8),e=ease(k);player.x=cx+(p.x-cx)*e;player.z=cz+(p.z-cz)*e;
+ else if(r.phase===1){if(r.t>0.08){r.phase=2;r.t=0;}}
+ else if(r.phase===2){const k=Math.min(1,r.t/0.35),e=ease(k);r.y=FY[r.from]+(FY[r.to]-FY[r.from])*e;L.cab.position.y=r.y;if(k>=1){r.phase=3;r.t=0;L.at=r.to;curFloor=r.to;updateFloorUI();setVis();drawMiniBase();}}
+ else if(r.phase===3){if(r.t>0.08){r.phase=4;r.t=0;}}
+ else if(r.phase===4){const p=liftFront(L,r.to),k=Math.min(1,r.t/0.3),e=ease(k);player.x=cx+(p.x-cx)*e;player.z=cz+(p.z-cz)*e;
   if(k>=1){ride=null;player.x=p.x;player.z=p.z;updateJoy();updateCross();showHint('Приехали: '+floorName(curFloor)+(curFloor===2?' · кино, фуд-корт, ДНС, Детский мир':''));}}}
 function updateLifts(dt){if(!world.lifts)return;
  world.lifts.forEach(L=>{[1,2].forEach(f=>{let want=0;
@@ -917,12 +942,12 @@ function startEsc(E,up){if(ride||mode!=='walk')return;closeCard();hideLiftPanel(
  updateJoy();updateCross();showHint(up?'Эскалатор едет на второй этаж…':'Эскалатор едет на первый этаж…');}
 function updateEscRide(dt){const r=ride,e=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;r.t+=dt;const yA=r.up?0:FY[2],yB=r.up?FY[2]:0;
  if(lookDX||lookDY){player.yaw-=lookDX*SENS;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-lookDY*SENS));lookDX=lookDY=0;}
- if(r.phase===0){const k=Math.min(1,r.t/0.7),q=e(k);player.x=r.x0+(r.a.x-r.x0)*q;player.z=r.z0+(r.a.z-r.z0)*q;
+ if(r.phase===0){const k=Math.min(1,r.t/0.3),q=e(k);player.x=r.x0+(r.a.x-r.x0)*q;player.z=r.z0+(r.a.z-r.z0)*q;
   let da=((r.yaw-r.yaw0+Math.PI*3)%(Math.PI*2))-Math.PI;player.yaw=r.yaw0+da*q;r.y=yA+0.05;if(k>=1){r.phase=1;r.t=0;}}
- else if(r.phase===1){const T=7.5,k=Math.min(1,r.t/T);// ровная скорость, плавный въезд и сход
+ else if(r.phase===1){const fwd=keys.KeyW||keys.ArrowUp||joyV.y<-0.3,rate=fwd?((keys.ShiftLeft||keys.ShiftRight)?6:3.6):1;r.k=(r.k||0)+dt*rate/7.5;const k=Math.min(1,r.k);// лента едет сама; идёшь вперёд — бежишь по ней быстрее
   const q=k<0.08?k*k/0.16:k>0.92?1-(1-k)*(1-k)/0.16:k-0.04;player.x=r.a.x+(r.b.x-r.a.x)*q;player.z=r.a.z+(r.b.z-r.a.z)*q;r.y=yA+(yB-yA)*q+0.25;
   if(k>=1){r.phase=2;r.t=0;curFloor=r.to;updateFloorUI();setVis();drawMiniBase();}}
- else{const k=Math.min(1,r.t/0.7),q=e(k);player.x=r.b.x+(r.off.x-r.b.x)*q;player.z=r.b.z+(r.off.z-r.b.z)*q;r.y=yB+0.25*(1-q);
+ else{const k=Math.min(1,r.t/0.3),q=e(k);player.x=r.b.x+(r.off.x-r.b.x)*q;player.z=r.b.z+(r.off.z-r.b.z)*q;r.y=yB+0.25*(1-q);
   if(k>=1){ride=null;player.x=r.off.x;player.z=r.off.z;if(blocked(player.x,player.z)){const w=nearestFree(player.x,player.z,20);if(w){player.x=w[0];player.z=w[1];}}updateJoy();updateCross();showHint('Приехали: '+floorName(curFloor));}}}
 // подошёл к ленте лицом по ходу — поехал
 function updateEscalators(dt){if(!world.escs)return;

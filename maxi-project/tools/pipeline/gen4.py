@@ -23,8 +23,14 @@ for i in list(islands):
 walk0=(L==1)
 dist_room,ind_room=ndi.distance_transform_edt(L<10,return_indices=True)
 roomNames={};kioskExtra=[];snap=[]
+# туалеты (снимок yN): три кабины рисуем комнатами поверх коридора; вход у каждой — с короткой стороны к проходу
+_nid=int(L.max())+1
+for _i,_cell in enumerate(WC_CELLS):
+  _pts=np.array([TNM([c])[0]-[X0,Y0] for c in _cell]);_cen=_pts.mean(0);_pts=_cen+(_pts-_cen)*1.07
+  _m=np.zeros(L.shape,np.uint8);cv2.fillPoly(_m,[np.round(_pts).astype(np.int32)],1)
+  L[(_m>0)&(L!=2)]=_nid;roomNames[_nid]=['Туалет для МГН'] if _i==1 else ['Туалет'];_nid+=1
 ents={};escM=[];wcs=[]
-KIOSKISH={'Energo','Паровозик','Gold Gum','Rocky Boxer','Happy Cars','Броноскинс','Save Phone','Print Cases','Чехломат','Korf X','Большой стакан','Бери заряд','Vendpresso','Микрозелень','Justmint'}
+KIOSKISH={'Пункт приёма вторсырья','Energo','Паровозик','Gold Gum','Rocky Boxer','Happy Cars','Броноскинс','Save Phone','Print Cases','Чехломат','Korf X','Большой стакан','Бери заряд','Vendpresso','Микрозелень','Justmint'}
 isl_pts={i:np.array(S2['info'][str(i)]['c']) for i in islands}
 isl_taken={}
 pts_in={}
