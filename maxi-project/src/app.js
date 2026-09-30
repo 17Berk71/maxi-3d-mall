@@ -953,7 +953,7 @@ function frame(now){
  requestAnimationFrame(frame);
 }
 function frameBody(now){
- const rawDt=Math.min(0.25,Math.max(0,(now-last)/1000)),dt=Math.min(0.05,rawDt);last=now;
+ const rawDt=Math.min(1,Math.max(0,(now-last)/1000)),dt=Math.min(0.05,rawDt);last=now;
  if((mode==='walk'||mode==='store')&&!anim&&!ride){
   let f=0,r=0,turn=0;
   // обзор мышью: захваченный курсор — плавно, по смещению мыши
