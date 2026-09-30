@@ -76,6 +76,20 @@ await page.waitForFunction(() => !window.__maxi.ride, null, {timeout: 30000});
 check(await page.evaluate(() => window.__maxi.floor === 1), 'лифт привёз на первый этаж');
 await shot(page, '08-lift-arrived');
 
+// эскалатор: встать на ленту на первом этаже — приехать на второй
+await page.evaluate(() => { const T = window.__maxi; T.setFloor(1); T.goEscalator(T.escs[0]); });
+await page.waitForFunction(() => window.__maxi.ride && window.__maxi.ride.kind === 'esc' && window.__maxi.ride.phase === 1, null, {timeout: 30000});
+await page.waitForTimeout(2500);
+await page.screenshot({path: OUT + '08b-escalator-ride.png'});
+await page.waitForFunction(() => !window.__maxi.ride, null, {timeout: 40000});
+check(await page.evaluate(() => window.__maxi.floor === 2), 'эскалатор поднял на второй этаж');
+await shot(page, '08c-escalator-top');
+await page.evaluate(() => window.__maxi.setFloor(1));
+// карта: до всех дверей можно дойти, колонны не мешают
+const audit = await page.evaluate(() => window.__maxi.auditMap());
+check(audit[1].unreachableDoors.length === 0 && audit[2].unreachableDoors.length === 0, 'до всех дверей можно дойти (1 этаж: ' + audit[1].doors + ', 2 этаж: ' + audit[2].doors + ')');
+console.log('  узкие места: 1 этаж — ' + audit[1].narrow + ', 2 этаж — ' + audit[2].narrow + '; колонн оставлено ' + audit.columns.kept);
+
 // Спортмастер: товар, манекен, корзина
 await enter(page, 'Спортмастер Pro');
 await shot(page, '09-shop-sportmaster');
@@ -100,8 +114,8 @@ await page.evaluate(() => window.__maxi.openProduct(window.__maxi.SHOP.cat[0].it
 await page.waitForTimeout(900);
 await page.click('#shop .sh-buy .btn.pri');
 await page.evaluate(() => window.__maxi.exitShop());
-await enter(page, 'Фуд-корт');
-await shot(page, '13-foodcourt');
+await enter(page, 'Бургер Кинг');
+await shot(page, '13-foodcourt-cafe');
 await page.evaluate(() => window.__maxi.exitShop());
 
 // корзина и заказ
@@ -133,7 +147,7 @@ await shot(phone, '17-phone-portrait');
 await phone.tap('#bF2'); await phone.waitForTimeout(1500);
 check(await phone.evaluate(() => window.__maxi.floor === 2), 'этаж переключается на телефоне');
 await shot(phone, '18-phone-floor2');
-await enter(phone, 'DNS');
+await enter(phone, 'ДНС');
 await phone.evaluate(() => window.__maxi.openProduct(window.__maxi.SHOP.cat[1].items[0]));
 await phone.waitForTimeout(1000);
 await shot(phone, '19-phone-product');

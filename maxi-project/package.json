@@ -2,14 +2,15 @@
   "name": "maxi-3d-mall",
   "private": true,
   "version": "0.1.0",
-  "description": "Неофициальный концепт: 3D-прогулка по первому этажу ТРЦ «Макси» в Туле с магазинами, в которые можно зайти",
+  "description": "Неофициальный концепт: 3D-прогулка по двум этажам ТРЦ «Макси» в Туле с магазинами, в которые можно зайти",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "check": "node tools/test/check.mjs",
-    "map": "bash tools/pipeline/run.sh"
+    "map": "bash tools/pipeline/run.sh",
+    "map2": "bash tools/pipeline/run_f2.sh"
   },
   "dependencies": {
     "three": "0.128.0"

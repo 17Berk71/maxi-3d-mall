@@ -154,8 +154,8 @@ html.calm *,html.calm *::before,html.calm *::after{transition:none!important;ani
 /* Страница товара */
 .sh-pricebox{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:4px}
 .sh-pricebox .sh-price{margin:0;font-size:22px}
-.sh-rate{font-size:12.5px;font-weight:700;color:#b45309}
-.sh-stock{margin:4px 0 8px;font-size:13px;font-weight:600;color:#15803d}
+.sh-rate{font-size:12px;font-weight:600;color:var(--muted)}
+.sh-stock{margin:4px 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
 .sh-lab.err{color:#dc2626}
 .sh-buy{margin:4px 0 12px}.sh-buy .btn{flex:1;justify-content:center}
 .btn.ok{background:#15803d;color:#fff}
@@ -221,3 +221,4 @@ html.calm *,html.calm *::before,html.calm *::after{transition:none!important;ani
  body:has(#shop:not([hidden])) #hint,body:has(#card:not([hidden])) #hint{opacity:0!important}
 }
 @media (max-width:720px){#shop .pv{max-height:26vh;width:auto;max-width:100%;margin:0 auto}}
+.sh-more{width:100%;justify-content:center;margin:10px 0 4px}

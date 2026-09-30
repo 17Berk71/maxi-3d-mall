@@ -4,11 +4,12 @@ import * as THREE from 'three';
 import {mulberry,shade} from './utils.js';
 import {SITES,siteOf,mapsOf,DEPT,deptsFor,PALETTE,catalogOf,fmtPrice} from './shop/catalog.js';
 import {iconURL} from './shop/icons.js';
-import {floor2Of,LIFTS_PLAN} from './floor2.js';
+import {LIFTS_PLAN} from './floor2.js';
 import {describe} from './shop/describe.js';
 import {cart} from './shop/cart.js';
+import {createModels} from './shop/models.js';
 
-export function startApp(D){
+export function startApp(D,D2){
 
 const $=id=>document.getElementById(id);
 const V3=THREE.Vector3;
@@ -37,12 +38,20 @@ const raw=atob(GR.b64);const walk=new Uint8Array(GW*GH);
 for(let i=0;i<raw.length;i++){const b=raw.charCodeAt(i);for(let k=0;k<8;k++){const j=i*8+k;if(j<walk.length)walk[j]=(b>>(7-k))&1;}}
 const toPx=(x,z)=>[Math.floor((x-GR.x0)/CELL),Math.floor((z-GR.z0)/CELL)];
 const fromPx=(i,j)=>[GR.x0+(i+.5)*CELL,GR.z0+(j+.5)*CELL];
-const voidPolys=D.voids;
+// проёмы галереи — по карте второго этажа (над коридорами первого)
+const voidPolys=D2.voids;
 function inPoly(v,x,z){let ins=false;for(let i=0,j=v.length-1;i<v.length;j=i++){const a=v[i],b=v[j];if(((a[1]>z)!==(b[1]>z))&&(x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1]+1e-9)+a[0]))ins=!ins;}return ins;}
 function inVoid(x,z){for(const v of voidPolys)if(inPoly(v,x,z))return true;return false;}
+// чистка карты первого этажа: срезаем «усы» и щели уже ~1,3 м (артефакты разметки у витрин)
+function openMask(m,r){const t=new Uint8Array(m.length),o=new Uint8Array(m.length);
+ for(let j=0;j<GH;j++)for(let i=0;i<GW;i++){let v=1;for(let dj=-r;dj<=r&&v;dj++)for(let di=-r;di<=r;di++){if(di*di+dj*dj>r*r+1)continue;const a=i+di,b=j+dj;if(a<0||b<0||a>=GW||b>=GH||!m[b*GW+a]){v=0;break;}}t[j*GW+i]=v;}
+ for(let j=0;j<GH;j++)for(let i=0;i<GW;i++){if(!m[j*GW+i])continue;let v=0;for(let dj=-r;dj<=r&&!v;dj++)for(let di=-r;di<=r;di++){if(di*di+dj*dj>r*r+1)continue;const a=i+di,b=j+dj;if(a>=0&&b>=0&&a<GW&&b<GH&&t[b*GW+a]){v=1;break;}}o[j*GW+i]=v;}
+ return o;}
+walk.set(openMask(walk,2));
 const baseWalk=walk.slice();
-// галерея второго этажа: коридоры первого этажа без проёмов
-const walk2=new Uint8Array(GW*GH);for(let k=0;k<walk.length;k++){if(!walk[k])continue;const [x,z]=fromPx(k%GW,(k/GW)|0);if(!inVoid(x,z))walk2[k]=1;}
+// галерея второго этажа — из карты второго этажа (tools/pipeline/f2seg.py), та же сетка
+function unpack(b64){const r=atob(b64),o=new Uint8Array(GW*GH);for(let i=0;i<r.length;i++){const b=r.charCodeAt(i);for(let k=0;k<8;k++){const j=i*8+k;if(j<o.length)o[j]=(b>>(7-k))&1;}}return o;}
+const walk2=unpack(D2.walk.b64),hall2=unpack(D2.hall.b64);
 const base2=walk2.slice();
 const GRIDS={1:walk,2:walk2},BASES={1:baseWalk,2:base2};
 let curFloor=1;
@@ -54,6 +63,16 @@ function isFloor(x,z){return isFloorF(1,x,z);}
 function setRect(cx,cz,a,hl,hw,val,f){const g=GRIDS[f||1];const ca=Math.cos(a),sa=Math.sin(a),r=Math.hypot(hl,hw)/CELL+1;const [pi,pj]=toPx(cx,cz);
  for(let j=Math.floor(pj-r);j<=pj+r;j++)for(let i=Math.floor(pi-r);i<=pi+r;i++){if(i<0||j<0||i>=GW||j>=GH)continue;const [x,z]=fromPx(i,j);const dx=x-cx,dz=z-cz;const lx=dx*ca+dz*sa,lz=-dx*sa+dz*ca;if(Math.abs(lx)<=hl&&Math.abs(lz)<=hw)g[j*GW+i]=val;}}
 function blockRect(cx,cz,a,hl,hw,f){setRect(cx,cz,a,hl,hw,0,f);}
+// ближайшая свободная точка этажа где угодно (если рядом этажа нет)
+// свободное место вокруг точки: расстояние до ближайшей стены/витрины (по исходной карте этажа), м
+function clearance(f,x,z,maxM){const [pi,pj]=toPx(x,z),R=Math.ceil((maxM||5)/CELL);let best=(maxM||5);
+ for(let j=-R;j<=R;j++)for(let i=-R;i<=R;i++){const a=pi+i,b=pj+j;const d=Math.hypot(i,j)*CELL;if(d>=best)continue;if(a<0||b<0||a>=GW||b>=GH||!BASES[f][b*GW+a])best=d;}return best;}
+// колонна остаётся, только если вокруг неё просторно на обоих этажах и она не пробивает магазин второго этажа
+function keepColumn(p){const [x,z]=p;if(!isFloorF(1,x,z)||clearance(1,x,z)<3.2)return false;
+ const v=inVoid(x,z),f2=isFloorF(2,x,z);if(!v&&!f2)return false;if(f2&&clearance(2,x,z)<3.2)return false;
+ for(const e of D2.esc){const dx=x-e.p[0],dz=z-e.p[1],ca=Math.cos(e.a),sa=Math.sin(e.a);if(Math.abs(dx*ca+dz*sa)<7.5&&Math.abs(-dx*sa+dz*ca)<3.5)return false;}
+ return true;}
+function nearestAny(f,x,z){let best=null,bd=1e18;for(let j=0;j<GH;j+=2)for(let i=0;i<GW;i+=2){if(!GRIDS[f][j*GW+i])continue;const [cx,cz]=fromPx(i,j);const d=(cx-x)**2+(cz-z)**2;if(d<bd&&!blockedF(f,cx,cz)){bd=d;best=[cx,cz];}}return best;}
 function nearestFree(x,z,maxR,f){const [pi,pj]=toPx(x,z);f=f||curFloor;
  for(let r=0;r<(maxR||80);r++){let best=null,bd=1e9;for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;const [cx,cz]=fromPx(pi+dx,pj+dy);if(!blockedF(f,cx,cz)){const d=dx*dx+dy*dy;if(d<bd){bd=d;best=[cx,cz];}}}if(best)return best;}return null;}
 
@@ -61,8 +80,8 @@ function nearestFree(x,z,maxR,f){const [pi,pj]=toPx(x,z);f=f||curFloor;
 const S=[];
 D.stores.forEach(s=>S.push(Object.assign({kind:'store',floor:1},s)));
 D.kiosks.forEach(k=>S.push(Object.assign({kind:'kiosk',floor:1,c:k.p,area:Math.round(k.w*k.h)},k)));
-const F2=floor2Of(D,(x,z)=>isFloorF(2,x,z));
-F2.stores.forEach(s=>S.push(s));
+D2.stores.forEach(s=>S.push(Object.assign({kind:'store',floor:2},s)));
+D2.kiosks.forEach(k=>S.push(Object.assign({kind:'kiosk',floor:2,c:k.p,area:Math.round(k.w*k.h)},k)));
 S.forEach((s,i)=>{s.id=i;if(!s.name)s.name=s.kind==='kiosk'?'Островок':'Помещение без подписи';});
 S.forEach(s=>{const v=(s.id*37)%21-10,w=(s.id*53)%7-3;
  const c=new THREE.Color();if(s.cat==='tbd')c.setHSL(210/360,0.08,0.80+w*0.012);else c.setHSL((((CATS[s.cat].h+v)%360)+360)%360/360,0.55,0.55+w*0.03);
@@ -75,7 +94,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:!coarse,powerPreference
 renderer.setPixelRatio(Math.min(devicePixelRatio,coarse?1.5:2));
 renderer.setSize(innerWidth,innerHeight);
 renderer.outputEncoding=THREE.sRGBEncoding;
-renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.98;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.9;
 renderer.physicallyCorrectLights=false;
 const scene=new THREE.Scene();
 const FOG=LIN('#e9ecef');scene.fog=new THREE.Fog(FOG,140,620);
@@ -125,19 +144,20 @@ function flatShape(poly,y){const g=new THREE.ShapeGeometry(shapeOf(poly));g.rota
 /* ---------- Текстуры ---------- */
 const catKeys=Object.keys(CATS);const shelfRows=Math.ceil(catKeys.length/4);
 // задняя стена магазина: стеллажи с товаром, тёплый свет
+const WEAR_COLS=['#1e1f22','#3b3e44','#243447','#3d5a80','#5b6146','#cbb89d','#b08855','#6e2433','#ecebe7','#9ea2a6','#5c4033','#9fb8cf','#d8b4b8','#7a8a6c'];
 const shelfAtlas=canvasTex(1024,256*shelfRows,(g)=>{
- catKeys.forEach((k,idx)=>{const ox=(idx%4)*256,oy=Math.floor(idx/4)*256,col=CATS[k].c,r=mulberry(idx*131+7);
+ catKeys.forEach((k,idx)=>{const ox=(idx%4)*256,oy=Math.floor(idx/4)*256,col=shade(CATS[k].c,0),r=mulberry(idx*131+7);const soft=c=>'#'+new THREE.Color(c).lerp(new THREE.Color('#b9b3a8'),0.55).getHexString();
   g.save();g.translate(ox,oy);g.beginPath();g.rect(0,0,256,256);g.clip();
   const gr=g.createLinearGradient(0,0,0,256);gr.addColorStop(0,'#fbf8f2');gr.addColorStop(1,'#e2dccf');g.fillStyle=gr;g.fillRect(0,0,256,256);
-  g.fillStyle=shade(col,.82);g.fillRect(0,0,256,26);
+  g.fillStyle='#e9e5de';g.fillRect(0,0,256,26);
   if(k==='tbd'){g.fillStyle='#dcd8d0';g.fillRect(0,0,256,256);g.strokeStyle='rgba(0,0,0,.08)';for(let x=0;x<256;x+=32){g.beginPath();g.moveTo(x,0);g.lineTo(x,256);g.stroke();}}
-  else if(k==='fashion'||k==='kids'||k==='sport'){for(let rack=0;rack<2;rack++){const y=62+rack*78;g.fillStyle='#8b8f94';g.fillRect(6,y,244,3);let x=12;while(x<240){const w=7+r()*9,h=40+r()*26;const c=shade(col,(r()-.5)*1.3);const gg=g.createLinearGradient(x,0,x+w,0);gg.addColorStop(0,shade(c,-.25));gg.addColorStop(.5,c);gg.addColorStop(1,shade(c,-.3));g.fillStyle=gg;rr(g,x,y+3,w,h,3);g.fill();x+=w+1.5;}}}
+  else if(k==='fashion'||k==='kids'||k==='sport'){for(let rack=0;rack<2;rack++){const y=62+rack*78;g.fillStyle='#8b8f94';g.fillRect(6,y,244,3);let x=12;while(x<240){const w=7+r()*9,h=40+r()*26;const c=WEAR_COLS[Math.floor(r()*WEAR_COLS.length)];const gg=g.createLinearGradient(x,0,x+w,0);gg.addColorStop(0,shade(c,-.25));gg.addColorStop(.5,c);gg.addColorStop(1,shade(c,-.3));g.fillStyle=gg;rr(g,x,y+3,w,h,3);g.fill();x+=w+1.5;}}}
   else if(k==='food'){g.fillStyle='#3a332c';g.fillRect(14,40,228,56);g.fillStyle='rgba(255,240,210,.85)';for(let i=0;i<3;i++){g.fillRect(28+i*72,52,56,4);g.fillRect(28+i*72,62,40,3);g.fillRect(28+i*72,72,48,3);}
-   g.fillStyle='#b98b5e';g.fillRect(0,160,256,96);g.fillStyle='#d8b690';g.fillRect(0,160,256,8);for(let i=0;i<6;i++){g.fillStyle=shade(col,(r()-.5));g.beginPath();g.arc(24+i*42,150,10,0,7);g.fill();}}
-  else if(k==='tech'){g.fillStyle='#f4f4f2';g.fillRect(0,40,256,216);for(let row=0;row<3;row++){g.fillStyle='#d4d4d0';g.fillRect(8,96+row*56,240,4);for(let i=0;i<8;i++){const x=14+i*30,y=56+row*56;g.fillStyle='#16181b';rr(g,x,y,20,36,4);g.fill();g.fillStyle=shade(col,.2+r()*.5);rr(g,x+2,y+3,16,28,2);g.fill();}}}
-  else if(k==='furn'){g.fillStyle='#d9cdbd';g.fillRect(0,196,256,60);for(let i=0;i<2;i++){const x=12+i*124,y=118;const c=shade(col,(r()-.5)*.6);g.fillStyle=shade(c,-.15);rr(g,x,y,110,70,12);g.fill();g.fillStyle=c;rr(g,x+6,y+34,98,32,10);g.fill();}}
-  else if(k==='beauty'||k==='acc'||k==='gifts'){for(let row=0;row<4;row++){const y=50+row*48;g.fillStyle='rgba(255,255,255,.9)';g.fillRect(6,y+34,244,4);g.fillStyle='rgba(0,0,0,.08)';g.fillRect(6,y+38,244,3);for(let x=12;x<244;x+=10){const h=8+r()*22;g.fillStyle=shade(col,(r()-.5)*1.1);g.fillRect(x,y+34-h,7,h);g.fillStyle='rgba(255,255,255,.35)';g.fillRect(x+1,y+34-h,2,h);}}}
-  else{for(let row=0;row<3;row++){const y=56+row*60;g.fillStyle='#cfc8bb';g.fillRect(0,y+44,256,6);let x=6;while(x<248){const w=12+r()*26,h=18+r()*28;g.fillStyle=shade(col,(r()-.5)*.9);g.fillRect(x,y+44-h,w,h);x+=w+3;}}}
+   g.fillStyle='#b98b5e';g.fillRect(0,160,256,96);g.fillStyle='#d8b690';g.fillRect(0,160,256,8);for(let i=0;i<6;i++){g.fillStyle=soft(shade(col,(r()-.5)));g.beginPath();g.arc(24+i*42,150,10,0,7);g.fill();}}
+  else if(k==='tech'){g.fillStyle='#f4f4f2';g.fillRect(0,40,256,216);for(let row=0;row<3;row++){g.fillStyle='#d4d4d0';g.fillRect(8,96+row*56,240,4);for(let i=0;i<8;i++){const x=14+i*30,y=56+row*56;g.fillStyle='#16181b';rr(g,x,y,20,36,4);g.fill();g.fillStyle='#1c2733';rr(g,x+2,y+3,16,28,2);g.fill();}}}
+  else if(k==='furn'){g.fillStyle='#d9cdbd';g.fillRect(0,196,256,60);for(let i=0;i<2;i++){const x=12+i*124,y=118;const c=soft(shade(col,(r()-.5)*.6));g.fillStyle=shade(c,-.15);rr(g,x,y,110,70,12);g.fill();g.fillStyle=c;rr(g,x+6,y+34,98,32,10);g.fill();}}
+  else if(k==='beauty'||k==='acc'||k==='gifts'){for(let row=0;row<4;row++){const y=50+row*48;g.fillStyle='rgba(255,255,255,.9)';g.fillRect(6,y+34,244,4);g.fillStyle='rgba(0,0,0,.08)';g.fillRect(6,y+38,244,3);for(let x=12;x<244;x+=10){const h=8+r()*22;g.fillStyle=soft(shade(col,(r()-.5)*1.1));g.fillRect(x,y+34-h,7,h);g.fillStyle='rgba(255,255,255,.35)';g.fillRect(x+1,y+34-h,2,h);}}}
+  else{for(let row=0;row<3;row++){const y=56+row*60;g.fillStyle='#cfc8bb';g.fillRect(0,y+44,256,6);let x=6;while(x<248){const w=12+r()*26,h=18+r()*28;g.fillStyle=soft(shade(col,(r()-.5)*.9));g.fillRect(x,y+44-h,w,h);x+=w+3;}}}
   // мягкая виньетка
   const vg=g.createRadialGradient(128,110,40,128,128,200);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(40,30,20,.28)');g.fillStyle=vg;g.fillRect(0,0,256,256);
   g.restore();});
@@ -146,20 +166,34 @@ function shelfUV(cat){const idx=catKeys.indexOf(cat);const cx=idx%4,cy=Math.floo
 // мраморная плитка пола
 const marble=canvasTex(1024,1024,(g,w,h)=>{const r=mulberry(11);
  const tiles=4,ts=w/tiles;
- for(let i=0;i<tiles;i++)for(let j=0;j<tiles;j++){const b=236+Math.floor(r()*8);g.fillStyle=`rgb(${b},${b-4},${b-11})`;g.fillRect(i*ts,j*ts,ts,ts);
+ for(let i=0;i<tiles;i++)for(let j=0;j<tiles;j++){const b=Math.floor(r()*9);g.fillStyle=`rgb(${222+b},${209+b},${186+b})`;g.fillRect(i*ts,j*ts,ts,ts);
   for(let v=0;v<5;v++){g.beginPath();let x=i*ts+r()*ts,y=j*ts;g.moveTo(x,y);for(let s=0;s<14;s++){x+=(r()-.5)*40;y+=ts/14;g.lineTo(x,y);}g.strokeStyle=`rgba(150,140,125,${0.05+r()*0.08})`;g.lineWidth=0.6+r()*1.6;g.stroke();}
   for(let s=0;s<260;s++){g.fillStyle=`rgba(120,110,95,${r()*0.05})`;g.fillRect(i*ts+r()*ts,j*ts+r()*ts,2+r()*5,2+r()*5);}}
- g.strokeStyle='rgba(120,112,100,.45)';g.lineWidth=2;for(let i=0;i<=tiles;i++){g.beginPath();g.moveTo(i*ts,0);g.lineTo(i*ts,h);g.moveTo(0,i*ts);g.lineTo(w,i*ts);g.stroke();}
+ g.strokeStyle='rgba(110,96,76,.35)';g.lineWidth=2;for(let i=0;i<=tiles;i++){g.beginPath();g.moveTo(i*ts,0);g.lineTo(i*ts,h);g.moveTo(0,i*ts);g.lineTo(w,i*ts);g.stroke();}
 });
 marble.wrapS=marble.wrapT=THREE.RepeatWrapping;
 // тень у основания витрин
 const aoTex=canvasTex(8,64,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'rgba(0,0,0,.30)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,w,h);});
-// промо-плакаты в витринах: яркие, чтобы витрина цепляла взгляд, как в настоящем ТРЦ
-const POSTERS=[['SALE','−30%','#e11d48','#fff'],['Новая','коллекция','#111418','#f5d76e'],['Скидки','до −50%','#f59e0b','#1b1b1b'],['Только','сегодня','#0e7490','#fff'],['−20%','на второй товар','#7c3aed','#fff'],['Хит','сезона','#16a34a','#fff'],['NEW','осень','#e8e2d6','#111'],['Подарок','к покупке','#db2777','#fff']];
-const posterAtlas=canvasTex(256*POSTERS.length,384,(g)=>{POSTERS.forEach(([a,b,bg,fg],i)=>{const x=i*256;g.fillStyle=bg;g.fillRect(x,0,256,384);
- g.fillStyle='rgba(255,255,255,.12)';g.beginPath();g.arc(x+200,70,120,0,7);g.fill();g.strokeStyle=fg;g.globalAlpha=.5;g.lineWidth=4;g.strokeRect(x+14,14,228,356);g.globalAlpha=1;
- g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';fitFont(g,a,210,84,800);g.fillText(a,x+128,150);fitFont(g,b,210,a.length<5?64:44,800);g.fillText(b,x+128,240);
- g.font='700 20px Manrope, system-ui, sans-serif';g.globalAlpha=.8;g.fillText('в магазине',x+128,330);g.globalAlpha=1;});});
+// световые знаки в витринах: пиктограмма категории, без рекламных обещаний
+const PICTO_KEYS=Object.keys(CATS);
+const pictoAtlas=canvasTex(128*PICTO_KEYS.length,128,(g)=>{PICTO_KEYS.forEach((k,i)=>{const x=i*128,cx=x+64,cy=64;
+ g.fillStyle='#23272c';rr(g,x+4,4,120,120,22);g.fill();g.strokeStyle=CATS[k].c;g.lineWidth=4;rr(g,x+8,8,112,112,18);g.stroke();
+ g.strokeStyle='#f6f3ec';g.fillStyle='#f6f3ec';g.lineWidth=6;g.lineCap='round';g.lineJoin='round';g.beginPath();
+ switch(k){
+  case'fashion':g.arc(cx,40,8,Math.PI,0.2);g.moveTo(cx+7,45);g.lineTo(cx,56);g.lineTo(cx-34,82);g.lineTo(cx+34,82);g.lineTo(cx,56);g.stroke();break;
+  case'food':g.moveTo(cx-24,40);g.lineTo(cx-24,88);g.moveTo(cx-32,40);g.lineTo(cx-32,56);g.quadraticCurveTo(cx-24,66,cx-16,56);g.lineTo(cx-16,40);g.moveTo(cx+18,88);g.lineTo(cx+18,40);g.quadraticCurveTo(cx+34,48,cx+30,66);g.lineTo(cx+18,66);g.stroke();break;
+  case'beauty':g.moveTo(cx,34);g.bezierCurveTo(cx+30,64,cx+22,92,cx,92);g.bezierCurveTo(cx-22,92,cx-30,64,cx,34);g.stroke();break;
+  case'acc':g.arc(cx-20,70,14,0,7);g.moveTo(cx+34,70);g.arc(cx+20,70,14,0,7);g.moveTo(cx-6,68);g.lineTo(cx+6,68);g.stroke();break;
+  case'tech':rr(g,cx-18,32,36,64,8);g.stroke();g.beginPath();g.arc(cx,86,3,0,7);g.fill();break;
+  case'kids':g.arc(cx,52,18,0,7);g.moveTo(cx,70);g.quadraticCurveTo(cx-8,82,cx,94);g.stroke();break;
+  case'gifts':g.rect(cx-26,54,52,36);g.moveTo(cx,54);g.lineTo(cx,90);g.moveTo(cx-30,54);g.lineTo(cx+30,54);g.moveTo(cx,54);g.quadraticCurveTo(cx-20,30,cx-14,50);g.moveTo(cx,54);g.quadraticCurveTo(cx+20,30,cx+14,50);g.stroke();break;
+  case'furn':g.moveTo(cx-32,84);g.lineTo(cx-32,56);g.lineTo(cx+32,56);g.lineTo(cx+32,84);g.moveTo(cx-24,70);g.lineTo(cx+24,70);g.moveTo(cx-24,56);g.lineTo(cx-24,42);g.lineTo(cx+24,42);g.lineTo(cx+24,56);g.stroke();break;
+  case'home':g.moveTo(cx-30,62);g.lineTo(cx,36);g.lineTo(cx+30,62);g.moveTo(cx-22,56);g.lineTo(cx-22,90);g.lineTo(cx+22,90);g.lineTo(cx+22,56);g.stroke();break;
+  case'sport':g.arc(cx,64,28,0,7);g.moveTo(cx-28,64);g.lineTo(cx+28,64);g.moveTo(cx,36);g.quadraticCurveTo(cx+18,64,cx,92);g.stroke();break;
+  case'serv':g.arc(cx,64,24,0,7);g.moveTo(cx,64);g.lineTo(cx,48);g.moveTo(cx,64);g.lineTo(cx+12,70);g.stroke();break;
+  default:g.moveTo(cx-24,48);g.lineTo(cx+24,48);g.lineTo(cx+20,90);g.lineTo(cx-20,90);g.closePath();g.moveTo(cx-10,48);g.arc(cx,48,10,Math.PI,0);g.stroke();}
+ });});
+const pictoUV=cat=>{const k=Math.max(0,PICTO_KEYS.indexOf(cat));return[k/PICTO_KEYS.length+.002,0.01,(k+1)/PICTO_KEYS.length-.002,0.99];};
 const blobTex=canvasTex(64,64,(g,w,h)=>{const gr=g.createRadialGradient(32,32,2,32,32,32);gr.addColorStop(0,'rgba(0,0,0,.35)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,w,h);});
 
 const CW_=512,CH_=64,PER=4*32;const signAtlases=[],labelAtlases=[];
@@ -210,16 +244,21 @@ function updateDoors(){if(!world.doorSets)return;
    _dq.setFromAxisAngle(_dY,Math.atan2(d.n.x,d.n.z));_ds.set(half,1,1);mtx.compose(_dp,_dq,_ds);L.setMatrixAt(i*2+k,mtx);
    _dp.copy(d.c).addScaledVector(d.R,sg*(0.12+o*half*0.92)).addScaledVector(d.n,0.06);_ds.set(1,1,1);mtx.compose(_dp,_dq,_ds);H.setMatrixAt(i*2+k,mtx);});});
   L.count=H.count=list.length*2;L.instanceMatrix.needsUpdate=true;H.instanceMatrix.needsUpdate=true;});}
-function humanParts(){
- const torso=new THREE.CylinderGeometry(0.19,0.15,0.62,12);torso.translate(0,1.36,0);
- const hips=new THREE.CylinderGeometry(0.16,0.17,0.2,12);hips.translate(0,0.98,0);
- const l1=new THREE.CylinderGeometry(0.075,0.06,0.9,8);l1.translate(-0.09,0.47,0);const l2=l1.clone();l2.translate(0.18,0,0);
- const a1=new THREE.CylinderGeometry(0.05,0.045,0.62,8);a1.translate(-0.24,1.32,0);const a2=a1.clone();a2.translate(0.48,0,0);
- const head=new THREE.SphereGeometry(0.11,14,10);head.scale(1,1.15,1.05);head.translate(0,1.83,0);
- const neck=new THREE.CylinderGeometry(0.045,0.05,0.1,8);neck.translate(0,1.7,0);
+function kioskBody(s){return LIN('#eceae6');}
+function kioskGlow(s){const c=s.cat==='tbd'?LIN('#9aa3ab'):s.col;return c.clone().lerp(new THREE.Color(1,1,1),0.3).multiplyScalar(1.3);}
+let HP=null;
+function humanParts(){if(HP)return HP;
+ const lat=(pts,seg)=>new THREE.LatheGeometry(pts.map(p=>new THREE.Vector2(p[0],p[1])),seg||14);
+ const torso=lat([[0,0.86],[0.14,0.88],[0.165,0.98],[0.15,1.1],[0.155,1.26],[0.19,1.4],[0.2,1.46],[0.16,1.52],[0.07,1.56],[0,1.57]]);torso.scale(1,1,0.66);
+ const leg=x=>[new THREE.CylinderGeometry(0.07,0.058,0.44,10).translate(x,0.66,0),new THREE.SphereGeometry(0.06,10,8).translate(x,0.44,0),new THREE.CylinderGeometry(0.057,0.045,0.38,10).translate(x,0.25,0)];
+ const arm=x=>[new THREE.SphereGeometry(0.055,10,8).translate(x,1.45,0),new THREE.CylinderGeometry(0.05,0.043,0.32,10).translate(x,1.28,0),new THREE.CylinderGeometry(0.042,0.035,0.3,10).translate(x,0.99,0.01)];
+ const hands=[-1,1].map(s=>new THREE.SphereGeometry(0.045,10,8).scale(0.8,1.1,0.6).translate(s*0.215,0.8,0.015));
+ const head=new THREE.SphereGeometry(0.1,18,14);head.scale(0.92,1.12,1);head.translate(0,1.72,0.005);
+ const neck=new THREE.CylinderGeometry(0.045,0.05,0.1,10);neck.translate(0,1.6,0);
+ const hair=new THREE.SphereGeometry(0.104,18,12,0,Math.PI*2,0,Math.PI*0.55);hair.scale(0.95,1.1,1.05);hair.translate(0,1.735,-0.01);
+ const shoes=[-1,1].map(s=>new THREE.SphereGeometry(0.06,12,8).scale(0.85,0.55,1.7).translate(s*0.09,0.035,0.035));
  const merge=(gs)=>{const m=new Merger();gs.forEach(g=>m.add(g));const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(m.p,3));bg.setAttribute('normal',new THREE.Float32BufferAttribute(m.n,3));return bg;};
- return{torso:merge([torso,hips]),legs:merge([l1,l2]),arms:merge([a1,a2]),head:merge([head,neck])};
-}
+ HP={torso:merge([torso]),legs:merge([...leg(-0.09),...leg(0.09)]),arms:merge([...arm(-0.215),...arm(0.215)]),head:merge([head,neck,...hands]),hair:merge([hair]),shoes:merge(shoes)};return HP;}
 function build(){
  const bpoly=D.bld.reduce((a,b)=>b.length>a.length?b:a,D.bld[0]);
  const ground=new THREE.Mesh(new THREE.PlaneGeometry(3000,3000),new THREE.MeshStandardMaterial({color:LIN('#7d8388'),roughness:.95}));ground.rotation.x=-Math.PI/2;ground.position.y=-0.06;scene.add(ground);
@@ -246,23 +285,24 @@ function build(){
  const doors=[];world.doors=doors;world.tint={};world.tintColors={};
  const wood=canvasTex(256,256,(g,w,h)=>{const r=mulberry(9);g.fillStyle='#cdb190';g.fillRect(0,0,w,h);for(let y=0;y<h;y+=32){g.fillStyle=`rgba(90,60,30,${.05+r()*.06})`;g.fillRect(0,y,w,32);g.fillStyle='rgba(80,50,20,.25)';g.fillRect(0,y,w,1);for(let i=0;i<14;i++){g.fillStyle=`rgba(120,80,40,${r()*.08})`;g.fillRect(0,y+r()*32,w,1);}}});
  wood.wrapS=wood.wrapT=THREE.RepeatWrapping;
- const posterUV=k=>[k/POSTERS.length+.002,0.004,(k+1)/POSTERS.length-.002,0.996];
  function fronts(F,list){
   const y0=F.y0,GH_=F.GH,FH=F.FH,TOP=y0+FH;const grp=G(F.group);
-  const tint=new Merger(),walls=new Merger(),interior=new Merger(),inWalls=new Merger(),inFloor=new Merger(),inCeil=new Merger(),lights=new Merger(),glass=new Merger(),mull=new Merger(),ao=new Merger(),mats=new Merger(),posters=new Merger();
+  const tint=new Merger(),fascia=new Merger(),walls=new Merger(),interior=new Merger(),inWalls=new Merger(),inFloor=new Merger(),inCeil=new Merger(),lights=new Merger(),glass=new Merger(),mull=new Merger(),ao=new Merger(),mats=new Merger(),posters=new Merger();
   const signs=signAtlases.map(()=>new Merger()),labels=labelAtlases.map(()=>new Merger());
   const CEIL=LIN('#f4f3f0');const fixtures=[],mannequins=[];
   list.forEach(s=>{
    // крыша помещения (цвет для вида сверху)
    try{tint.add(flatShape(s.poly,TOP+0.02+Math.max(0,(3000-s.area))/3000*0.03),()=>s.col,s.id);}catch(e){}
-   const wallCol=s.col.clone().multiplyScalar(0.8),inCol=s.col.clone().lerp(new THREE.Color(1,1,1),0.45);
+   const wallCol=LIN('#d9d4cc'),inCol=s.col.clone().lerp(LIN('#f1eee8'),0.82),fasCol=s.cat==='tbd'?LIN('#d6d3cd'):LIN(['#ebe8e2','#e4e0d8','#eeece7','#dedad2'][s.id%4]);
    const P=s.poly;let best=null;const rnd=mulberry(s.id*7+F.f);
    const depth0=Math.max(1.6,Math.min(5,Math.sqrt(s.area)*0.45));
    // главная витрина (самая длинная сторона в коридор) — в ней будет вход
    let doorEdge=-1,doorL=0;
    if(s.cat!=='tbd'){for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.6)continue;const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;
-    const w1=isFloorF(F.f,mx-tz*0.7,mz+tx*0.7),w2=isFloorF(F.f,mx+tz*0.7,mz-tx*0.7);if(w1!==w2&&L>doorL){doorL=L;doorEdge=i;}}}
-   const DW=Math.min(2.8,doorL*0.45);
+    const w1=isFloorF(F.f,mx-tz*0.7,mz+tx*0.7),w2=isFloorF(F.f,mx+tz*0.7,mz-tx*0.7);if(w1===w2||L<=doorL)continue;
+    // перед дверью должно быть просторно, иначе в неё не войти
+    const sg=w1?1:-1,ox=mx-tz*1.6*sg,oz=mz+tx*1.6*sg;if(clearance(F.f,ox,oz,2)<1.0)continue;doorL=L;doorEdge=i;}}
+   const DW=Math.min(2.8,Math.max(1.8,doorL*0.45),doorL-0.4);
    for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const A=new V3(a[0],y0,a[1]),B=new V3(b[0],y0,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
     const t=new V3().subVectors(B,A).divideScalar(L);let n=new V3(-t.z,0,t.x);const mid=A.clone().lerp(B,.5);
     const isDoor=i===doorEdge,du0=L/2-DW/2,du1=L/2+DW/2;
@@ -277,7 +317,9 @@ function build(){
      let depth=depth0;{const Rt=new V3(n.z,0,-n.x);for(const f of [-0.45,0,0.45]){const o=c.clone().addScaledVector(Rt,f*pw).addScaledVector(n,-0.02);depth=Math.min(depth,rayDist(P,o.x,o.z,-n.x,-n.z)-0.15);}}
      depth=Math.max(0.5,depth);
      // фриз над витриной
-     tint.panel(c.clone().addScaledVector(n,0.02),n,pw,y0+GH_,TOP,[0,0,1,1],s.col,s.id);
+     fascia.panel(c.clone().addScaledVector(n,0.02),n,pw,y0+GH_,TOP,[0,0,1,1],fasCol,s.id);
+     // тонкая линия подсветки под фризом — единственный цветовой акцент
+     if(s.cat!=='tbd')fascia.panel(c.clone().addScaledVector(n,0.035),n,pw,y0+GH_+0.1,y0+GH_+0.16,[0,0,1,1],s.col.clone().lerp(new THREE.Color(1,1,1),0.25),s.id);
      const u0=k*pw,u1=(k+1)*pw;
      const segs=isDoor?[[u0,Math.min(u1,du0)],[Math.max(u0,du1),u1]].filter(q=>q[1]-q[0]>0.05):[[u0,u1]];
      segs.forEach(([q0,q1])=>{const cc=A.clone().addScaledVector(t,(q0+q1)/2).addScaledVector(n,0.02);glass.panel(cc,n,q1-q0,y0+0.02,y0+GH_,[0,0,1,1],null,s.id);});
@@ -301,11 +343,11 @@ function build(){
       lights.quad(new V3(l0.x-n.x*h,ly,l0.z-n.z*h),new V3(l1.x-n.x*h,ly,l1.z-n.z*h),new V3(l1.x+n.x*h,ly,l1.z+n.z*h),new V3(l0.x+n.x*h,ly,l0.z+n.z*h),[0,0,1,1]);}
      // стойки с товаром внутри
      const nearDoor=isDoor&&u0<du1+1.2&&u1>du0-1.2;
-     if(!nearDoor&&(s.cat==='fashion'||s.cat==='sport'||s.cat==='kids')&&depth>1.6&&pw>2.2){const Rm=new V3(n.z,0,-n.x);[-0.25,0.25].forEach((f,mi)=>{if(pw<3.5&&mi)return;mannequins.push({x:c.x-n.x*0.9+Rm.x*f*pw,z:c.z-n.z*0.9+Rm.z*f*pw,y:y0,a:Math.atan2(n.x,n.z),col:s.col});});}
-     if(!nearDoor&&s.cat!=='tbd'&&depth>2.2&&pw>2.4)fixtures.push({x:c.x-n.x*depth*0.45,z:c.z-n.z*depth*0.45,y:y0,a:Math.atan2(n.x,n.z),w:Math.min(1.6,pw*0.35),col:s.col,cat:s.cat});
-     // промо-плакат за стеклом: «Скидки», «Новая коллекция» — чтобы витрина цепляла взгляд
-     if(!nearDoor&&s.cat!=='tbd'&&pw>1.8&&depth>0.9&&rnd()<0.55){const pwid=Math.min(1.25,pw*0.42),ph=Math.min(pwid*1.5,GH_-1.0),off=(rnd()-.5)*(pw-pwid-0.3);
-      const pc=c.clone().addScaledVector(R,off).addScaledVector(n,-0.28);posters.panel(pc,n,pwid,y0+0.75,y0+0.75+ph,posterUV(Math.floor(rnd()*POSTERS.length)),null,s.id);}
+     if(!nearDoor&&(s.cat==='fashion'||s.cat==='sport'||s.cat==='kids')&&depth>1.6&&pw>2.2){const Rm=new V3(n.z,0,-n.x);[-0.25,0.25].forEach((f,mi)=>{if(pw<3.5&&mi)return;mannequins.push({x:c.x-n.x*0.9+Rm.x*f*pw,z:c.z-n.z*0.9+Rm.z*f*pw,y:y0,a:Math.atan2(n.x,n.z),col:LIN(WEAR_COLS[(s.id*3+mi*5+k)%WEAR_COLS.length])});});}
+     if(!nearDoor&&s.cat!=='tbd'&&depth>2.2&&pw>2.4)fixtures.push({x:c.x-n.x*depth*0.45,z:c.z-n.z*depth*0.45,y:y0,a:Math.atan2(n.x,n.z),w:Math.min(1.6,pw*0.35),col:LIN(['#b9a489','#8f7a62','#d9d4cc','#6f6a64'][(s.id+k)%4]),cat:s.cat});
+     // световой знак с пиктограммой категории — один на витрину, в стороне от двери
+     if(!s._pic&&s.cat!=='tbd'&&pw>1.4&&depth>0.6&&!(isDoor&&u0<du1+0.6&&u1>du0-0.6)){s._pic=1;const ps=0.72,pc=c.clone().addScaledVector(n,-0.22);
+      posters.panel(pc,n,ps,y0+GH_-1.05,y0+GH_-1.05+ps,pictoUV(s.cat),null,s.id);}
      // мягкая тень на полу у витрины (снаружи)
      const o0=c.clone().addScaledVector(R,-pw/2),o1=c.clone().addScaledVector(R,pw/2);
      ao.quad(new V3(o1.x,y0+0.02,o1.z),new V3(o0.x,y0+0.02,o0.z),new V3(o0.x+n.x*0.9,y0+0.02,o0.z+n.z*0.9),new V3(o1.x+n.x*0.9,y0+0.02,o1.z+n.z*0.9),[0,1,1,0]);
@@ -318,7 +360,7 @@ function build(){
      mats.quad(new V3(m1.x+n.x*0.05,y0+0.022,m1.z+n.z*0.05),new V3(m0.x+n.x*0.05,y0+0.022,m0.z+n.z*0.05),new V3(m0.x+n.x*1.3,y0+0.022,m0.z+n.z*1.3),new V3(m1.x+n.x*1.3,y0+0.022,m1.z+n.z*1.3),[0,0,1,1]);}
     if(!best||L>best.L)best={L,mid,n,t};}
    if(best){s.fp=best.mid.clone().addScaledVector(best.n,0.02);s.fn=best.n.clone();
-    if(!(F.f===2&&s.cat==='tbd')){const sw=Math.min(best.L-0.5,Math.max(2.6,Math.min(13,s.name.length*0.8+2))),sh=Math.min(1.5,sw/7,(FH-GH_)*0.7),sy=y0+(GH_+FH)/2;
+    if(s.cat!=='tbd'){const sw=Math.min(best.L-0.5,Math.max(2.6,Math.min(13,s.name.length*0.8+2))),sh=Math.min(1.5,sw/7,(FH-GH_)*0.7),sy=y0+(GH_+FH)/2;
     signs[s.atlas].panel(s.fp.clone().addScaledVector(best.n,0.05),best.n,sw,sy-sh/2,sy+sh/2,s.uv,null,s.id);}}
    // подпись для вида сверху
    if(s.cat!=='tbd'&&s.lfs){const fs=s.lfs,ta=s.ltw/(fs*1.1);const ks=Object.keys(s.fit).map(Number).sort((a,b)=>a-b);
@@ -331,12 +373,13 @@ function build(){
   });
   const tintMesh=tint.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.6,side:THREE.DoubleSide}));grp.add(tintMesh);pickables.push(tintMesh);world.tint[F.f]=tintMesh;world.tintColors[F.f]=tintMesh.geometry.attributes.color.array.slice();
   grp.add(walls.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.7})));
+  const fm=fascia.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.5,metalness:.05}));grp.add(fm);pickables.push(fm);
   const inTex=interior.mesh(new THREE.MeshStandardMaterial({map:shelfAtlas,roughness:.8}));grp.add(inTex);pickables.push(inTex);
   grp.add(inWalls.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85})));
   grp.add(inFloor.mesh(new THREE.MeshStandardMaterial({map:wood,roughness:.35})));
   grp.add(inCeil.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9})));
   grp.add(lights.mesh(MAT.light));
-  if(posters.p.length){const pm=posters.mesh(new THREE.MeshBasicMaterial({map:posterAtlas,toneMapped:false}));grp.add(pm);pickables.push(pm);}
+  if(posters.p.length){const pm=posters.mesh(new THREE.MeshBasicMaterial({map:pictoAtlas,toneMapped:false}));grp.add(pm);pickables.push(pm);}
   const glassMesh=glass.mesh(MAT.glass);glassMesh.renderOrder=2;grp.add(glassMesh);pickables.push(glassMesh);
   grp.add(mull.mesh(MAT.darkMetal));
   grp.add(ao.mesh(new THREE.MeshBasicMaterial({map:aoTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2})));
@@ -355,31 +398,34 @@ function build(){
    const parts=humanParts();const N=Math.max(1,mannequins.length);const q=new THREE.Quaternion();
    const white=new THREE.MeshStandardMaterial({color:LIN('#f1efeb'),roughness:.25,metalness:.05});
    const torso=new THREE.InstancedMesh(parts.torso,new THREE.MeshStandardMaterial({roughness:.7}),N),legs=new THREE.InstancedMesh(parts.legs,white,N),head=new THREE.InstancedMesh(parts.head,white,N),arms=new THREE.InstancedMesh(parts.arms,white,N),stand=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22,0.22,0.03,16).translate(0,0.015,0),MAT.darkMetal,N);
-   mannequins.forEach((m,i)=>{q.setFromAxisAngle(new V3(0,1,0),m.a);mtx.compose(new V3(m.x,m.y,m.z),q,new V3(1,1,1));[torso,legs,head,arms,stand].forEach(o=>o.setMatrixAt(i,mtx));torso.setColorAt(i,m.col.clone().multiplyScalar(0.85));});
+   mannequins.forEach((m,i)=>{q.setFromAxisAngle(new V3(0,1,0),m.a);mtx.compose(new V3(m.x,m.y,m.z),q,new V3(1,1,1));[torso,legs,head,arms,stand].forEach(o=>o.setMatrixAt(i,mtx));torso.setColorAt(i,m.col);});
    [torso,legs,head,arms,stand].forEach(o=>{o.count=mannequins.length;grp.add(o);});if(torso.instanceColor)torso.instanceColor.needsUpdate=true;}
  }
  fronts(FLOORS[1],S.filter(s=>s.kind==='store'&&s.floor===1));
  fronts(FLOORS[2],S.filter(s=>s.kind==='store'&&s.floor===2));
- // помещения в два этажа (гипермаркеты): на втором этаже глухой объём
- {const tallM=new THREE.MeshStandardMaterial({color:LIN('#dcd8d1'),roughness:.8});F2.tall.forEach(p=>{try{G('f2').add(new THREE.Mesh(extrude(shapeOf(p),FY[2],ROOF_Y-FY[2]+0.02),tallM));}catch(e){}});}
  // двери: раздвижные створки, проём в сетке проходимости своего этажа
  {const lg=new THREE.BoxGeometry(1,2.62,0.04);lg.translate(0,1.33,0);const hG=new THREE.BoxGeometry(0.03,0.5,0.06);hG.translate(0,1.1,0.05);
   world.doorSets=[1,2].map(f=>{const list=doors.filter(s=>s.door.floor===f);const N=Math.max(1,list.length*2);
    const leaves=new THREE.InstancedMesh(lg,MAT.glass,N);leaves.renderOrder=2;const handles=new THREE.InstancedMesh(hG,MAT.metal,N);
    const ids=[];list.forEach(s=>{ids.push(s.id,s.id);});leaves.userData.kiosks=ids;pickables.push(leaves);G(FLOORS[f].group).add(leaves,handles);
    return{list,leaves,handles};});
-  doors.forEach(s=>{const d=s.door;const c=d.c.clone().addScaledVector(d.n,-0.2);setRect(c.x,c.z,Math.atan2(d.R.z,d.R.x),d.w/2-0.25,0.75,1,d.floor);});
+  doors.forEach(s=>{const d=s.door;const c=d.c.clone().addScaledVector(d.n,-0.2);setRect(c.x,c.z,Math.atan2(d.R.z,d.R.x),d.w/2-0.12,0.75,1,d.floor);});
   updateDoors();}
  G('toplabels1').visible=false;G('toplabels2').visible=false;
 
  // ---- перекрытие и галерея второго этажа
  const slabMat=new THREE.MeshStandardMaterial({color:LIN('#fbfbfa'),roughness:.6});
  G('slab').add(new THREE.Mesh(extrude(shapeOf(bpoly,voidPolys),FLOOR_H,SLAB),slabMat));
- // пол второго этажа: тот же мрамор, с проёмами
- {const g=new THREE.ShapeGeometry(shapeOf(bpoly,voidPolys));g.rotateX(-Math.PI/2);g.translate(0,FY[2]+0.006,0);const P=g.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}g.setAttribute('uv',new THREE.BufferAttribute(U,2));
-  G('slab').add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55})));}
+ // кровля над частями без второго этажа
+ {const rt=canvasTex(256,256,(g,w,h)=>{const r=mulberry(21);g.fillStyle='#9a9c9e';g.fillRect(0,0,w,h);for(let i=0;i<2500;i++){const v=120+Math.floor(r()*60);g.fillStyle=`rgba(${v},${v},${v},.35)`;g.fillRect(r()*w,r()*h,2,2);}});rt.wrapS=rt.wrapT=THREE.RepeatWrapping;
+  const g=new THREE.ShapeGeometry(shapeOf(bpoly,voidPolys));g.rotateX(-Math.PI/2);g.translate(0,FY[2]+0.002,0);const P=g.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/6;U[i*2+1]=P[i*3+2]/6;}g.setAttribute('uv',new THREE.BufferAttribute(U,2));
+  G('slab').add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:rt,roughness:.95})));}
+ const holesIn=poly=>voidPolys.filter(v=>{let x=0,z=0;v.forEach(p=>{x+=p[0];z+=p[1];});return inPoly(poly,x/v.length,z/v.length);});
+ // пол второго этажа: тот же мрамор, с проёмами — только там, где второй этаж есть
+ D2.bld.forEach(bp=>{const g=new THREE.ShapeGeometry(shapeOf(bp,holesIn(bp)));g.rotateX(-Math.PI/2);g.translate(0,FY[2]+0.006,0);const P=g.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}g.setAttribute('uv',new THREE.BufferAttribute(U,2));
+  G('slab').add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55})));});
  const roofMat=new THREE.MeshStandardMaterial({color:LIN('#f3f3f1'),roughness:1});
- G('roof').add(new THREE.Mesh(extrude(shapeOf(bpoly,voidPolys),ROOF_Y,0.6),roofMat));
+ D2.bld.forEach(bp=>{G('roof').add(new THREE.Mesh(extrude(shapeOf(bp,holesIn(bp)),ROOF_Y,0.6),roofMat));});
  // стеклянная крыша с фермами
  const skyG=new THREE.MeshStandardMaterial({color:LIN('#dbe8f2'),transparent:true,opacity:.35,roughness:.05,metalness:.5,side:THREE.DoubleSide,depthWrite:false});
  const truss=new Merger();
@@ -405,19 +451,23 @@ function build(){
  {const colG=new THREE.CylinderGeometry(0.42,0.42,ROOF_Y,24);colG.translate(0,ROOF_Y/2,0);const baseG=new THREE.CylinderGeometry(0.55,0.55,0.12,24);baseG.translate(0,0.06,0);
   const cols=new THREE.InstancedMesh(colG,new THREE.MeshStandardMaterial({color:LIN('#fafaf8'),roughness:.25,envMapIntensity:.7}),Math.max(1,D.cols.length));
   const bases=new THREE.InstancedMesh(baseG,MAT.metal,Math.max(1,D.cols.length));
-  D.cols.forEach((p,i)=>{mtx.makeTranslation(p[0],0,p[1]);cols.setMatrixAt(i,mtx);bases.setMatrixAt(i,mtx);blockRect(p[0],p[1],0,0.55,0.55,1);blockRect(p[0],p[1],0,0.55,0.55,2);});G('roof').add(cols);G('roof').add(bases);}
+  const keep=D.cols.filter(keepColumn);world.colsKept=keep.length;world.colsDropped=D.cols.length-keep.length;
+  keep.forEach((p,i)=>{mtx.makeTranslation(p[0],0,p[1]);cols.setMatrixAt(i,mtx);bases.setMatrixAt(i,mtx);blockRect(p[0],p[1],0,0.55,0.55,1);blockRect(p[0],p[1],0,0.55,0.55,2);});
+  cols.count=bases.count=keep.length;G('roof').add(cols);G('roof').add(bases);}
  // светильники-кольца: под перекрытием первого этажа, под крышей второго и большие — в атриумах
  {const ringsLow=[],ringsHigh=[];const st=Math.round(6.5/CELL);
   for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(!isWalkPx(i,j))continue;const [x,z]=fromPx(i,j);if(inVoid(x,z)){if(((i+j)/st)%2===0)ringsHigh.push([x,z]);}else ringsLow.push([x,z]);}
   const rg1=new THREE.TorusGeometry(0.9,0.05,6,40);rg1.rotateX(Math.PI/2);
   const r1=new THREE.InstancedMesh(rg1,MAT.light,Math.max(1,ringsLow.length));ringsLow.forEach((p,i)=>{mtx.makeTranslation(p[0],FLOOR_H-0.04,p[1]);r1.setMatrixAt(i,mtx);});G('slab').add(r1);
-  const r3=new THREE.InstancedMesh(rg1,MAT.light,Math.max(1,ringsLow.length));ringsLow.forEach((p,i)=>{mtx.makeTranslation(p[0],ROOF_Y-0.04,p[1]);r3.setMatrixAt(i,mtx);});G('roof').add(r3);
+  // светильники второго этажа — над его собственной галереей
+  const rings2=[];for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(walk2[j*GW+i])rings2.push(fromPx(i,j));}
+  const r3=new THREE.InstancedMesh(rg1,MAT.light,Math.max(1,rings2.length));rings2.forEach((p,i)=>{mtx.makeTranslation(p[0],ROOF_Y-0.04,p[1]);r3.setMatrixAt(i,mtx);});G('roof').add(r3);
   const rg2=new THREE.TorusGeometry(2.2,0.1,6,56);rg2.rotateX(Math.PI/2);const r2=new THREE.InstancedMesh(rg2,MAT.light,Math.max(1,ringsHigh.length));ringsHigh.forEach((p,i)=>{mtx.makeTranslation(p[0],ROOF_Y-0.8,p[1]);r2.setMatrixAt(i,mtx);});G('roof').add(r2);
   // пятна света на полу под кольцами
   const spot=canvasTex(64,64,(g,w,h)=>{const gr=g.createRadialGradient(32,32,0,32,32,32);gr.addColorStop(0,'rgba(255,250,235,.22)');gr.addColorStop(1,'rgba(255,250,235,0)');g.fillStyle=gr;g.fillRect(0,0,w,h);});
   const sg=new THREE.PlaneGeometry(4.5,4.5);sg.rotateX(-Math.PI/2);const spm=new THREE.MeshBasicMaterial({map:spot,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});
   const sm=new THREE.InstancedMesh(sg,spm,Math.max(1,ringsLow.length));ringsLow.forEach((p,i)=>{mtx.makeTranslation(p[0],0.03,p[1]);sm.setMatrixAt(i,mtx);});G('spots').add(sm);
-  const sm2=new THREE.InstancedMesh(sg,spm,Math.max(1,ringsLow.length));ringsLow.forEach((p,i)=>{mtx.makeTranslation(p[0],FY[2]+0.03,p[1]);sm2.setMatrixAt(i,mtx);});G('spots').add(sm2);}
+  const sm2=new THREE.InstancedMesh(sg,spm,Math.max(1,rings2.length));rings2.forEach((p,i)=>{mtx.makeTranslation(p[0],FY[2]+0.03,p[1]);sm2.setMatrixAt(i,mtx);});G('spots').add(sm2);}
 
  // ---- фасад и входы
  const wallM=new Merger();const entP=D.ents.map(e=>new V3(e.p[0],0,e.p[1]));
@@ -425,7 +475,10 @@ function build(){
  facadeOut.wrapS=facadeOut.wrapT=THREE.RepeatWrapping;
  D.bld.forEach(bp=>{for(let i=0;i<bp.length;i++){const a=bp[i],b=bp[(i+1)%bp.length];const A=new V3(a[0],0,a[1]),B=new V3(b[0],0,b[1]);const L=A.distanceTo(B);
   const steps=Math.max(1,Math.ceil(L/2));for(let k=0;k<steps;k++){const P0=A.clone().lerp(B,k/steps),P1=A.clone().lerp(B,(k+1)/steps),mid=P0.clone().lerp(P1,.5);
-   const y0=entP.some(e=>e.distanceTo(mid)<5.5)?4.2:0;const u0=(P0.x+P0.z)/4,u1=(P1.x+P1.z)/4;wallM.quad(new V3(P0.x,y0,P0.z),new V3(P1.x,y0,P1.z),new V3(P1.x,ROOF_Y+0.6,P1.z),new V3(P0.x,ROOF_Y+0.6,P0.z),[u0,y0/4,u1,(ROOF_Y+0.6)/4]);}}});
+   const y0=entP.some(e=>e.distanceTo(mid)<5.5)?4.2:0,yt=FY[2]+1.1;const u0=(P0.x+P0.z)/4,u1=(P1.x+P1.z)/4;wallM.quad(new V3(P0.x,y0,P0.z),new V3(P1.x,y0,P1.z),new V3(P1.x,yt,P1.z),new V3(P0.x,yt,P0.z),[u0,y0/4,u1,yt/4]);}}});
+ // наружные стены второго этажа
+ D2.bld.forEach(bp=>{for(let i=0;i<bp.length;i++){const a=bp[i],b=bp[(i+1)%bp.length];const A=new V3(a[0],0,a[1]),B=new V3(b[0],0,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
+  const y0=FY[2],y1=ROOF_Y+0.6,u0=(A.x+A.z)/4,u1=(B.x+B.z)/4;wallM.quad(new V3(A.x,y0,A.z),new V3(B.x,y0,B.z),new V3(B.x,y1,B.z),new V3(A.x,y1,A.z),[u0,y0/4,u1,y1/4]);}});
  G('shell').add(wallM.mesh(new THREE.MeshStandardMaterial({map:facadeOut,roughness:.8,side:THREE.DoubleSide})));
  D.ents.forEach(e=>{const d=new V3(e.d[0],0,e.d[1]).normalize(),p=new V3(e.p[0],0,e.p[1]).addScaledVector(d,0.4);
   const m=new THREE.Mesh(new THREE.PlaneGeometry(9,4.2),MAT.glass);m.position.set(p.x,2.1,p.z);m.rotation.y=Math.atan2(d.x,d.z);scene.add(m);
@@ -434,57 +487,71 @@ function build(){
   const sp=sprite('Вход '+e.n,'#0e7490');sp.position.set(p.x-d.x*1.5,4.9,p.z-d.z*1.5);sp.scale.set(4.4,1.1,1);scene.add(sp);
   const sp2=sprite('Вход '+e.n,'#0e7490');sp2.position.set(p.x+d.x*4,FLOOR_H+3,p.z+d.z*4);sp2.scale.set(14,3.2,1);G('toponly1').add(sp2);});
 
- // ---- эскалаторы
- const stepTex=canvasTex(64,256,(g,w,h)=>{g.fillStyle='#50565c';g.fillRect(0,0,w,h);for(let y=0;y<h;y+=16){g.fillStyle='#8d949a';g.fillRect(0,y,w,11);g.fillStyle='#d9b53c';g.fillRect(0,y,4,11);g.fillRect(w-4,y,4,11);}});stepTex.wrapS=stepTex.wrapT=THREE.RepeatWrapping;stepTex.repeat.set(1,4);
- const escM=new THREE.MeshStandardMaterial({color:LIN('#c3c9ce'),map:stepTex,roughness:.35,metalness:.7}),escSide=new THREE.MeshStandardMaterial({color:LIN('#dcebf1'),transparent:true,opacity:.28,roughness:.04,metalness:.5,depthWrite:false,side:THREE.DoubleSide}),railM=new THREE.MeshStandardMaterial({color:LIN('#15181b'),roughness:.5});
- const escBand=new THREE.MeshStandardMaterial({color:LIN('#7a2c5a'),roughness:.4});
- D.esc.forEach(e=>{const g=new THREE.Group();const run=9.8,rise=FLOOR_H+SLAB,ang=Math.atan2(rise,run),len=Math.hypot(run,rise);
-  [-0.72,0.72].forEach(off=>{const b=new THREE.Mesh(new THREE.BoxGeometry(len,0.8,1.2),escM);b.position.set(0,rise/2,off);b.rotation.z=ang;g.add(b);
-   const skirt=new THREE.Mesh(new THREE.BoxGeometry(len,0.35,1.3),escBand);skirt.position.set(0,rise/2-0.5,off);skirt.rotation.z=ang;g.add(skirt);
+ // ---- эскалаторы: по карте второго этажа; правая лента едет вверх, левая — вниз, ступени движутся
+ const stepCanvas=canvasTex(256,64,(g,w,h)=>{g.fillStyle='#4a5056';g.fillRect(0,0,w,h);for(let x=0;x<w;x+=16){g.fillStyle='#8f969c';g.fillRect(x,0,11,h);g.fillStyle='rgba(0,0,0,.25)';for(let y=2;y<h;y+=4)g.fillRect(x,y,11,1);}g.fillStyle='#d9b53c';g.fillRect(0,0,w,4);g.fillRect(0,h-4,w,4);});
+ const escSide=new THREE.MeshStandardMaterial({color:LIN('#dcebf1'),transparent:true,opacity:.26,roughness:.04,metalness:.5,depthWrite:false,side:THREE.DoubleSide}),railM=new THREE.MeshStandardMaterial({color:LIN('#15181b'),roughness:.5});
+ const escBand=new THREE.MeshStandardMaterial({color:LIN('#b9bec3'),roughness:.3,metalness:.8}),combM=new THREE.MeshStandardMaterial({color:LIN('#9aa0a6'),roughness:.4,metalness:.8});
+ world.escs=[];world.stepTex=[];
+ D2.esc.forEach((e,ei)=>{const g=new THREE.Group();const run=9.8,rise=FLOOR_H+SLAB,ang=Math.atan2(rise,run),len=Math.hypot(run,rise);
+  const d=new V3(Math.cos(e.a),0,Math.sin(e.a)),r=new V3(-Math.sin(e.a),0,Math.cos(e.a));
+  [[0.72,1],[-0.72,-1]].forEach(([off,dir])=>{const t=stepCanvas.clone();t.needsUpdate=true;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(len/0.42,1);world.stepTex.push({t,dir});
+   const b=new THREE.Mesh(new THREE.BoxGeometry(len,0.8,1.2),[escBand,escBand,new THREE.MeshStandardMaterial({map:t,roughness:.45,metalness:.6}),escBand,escBand,escBand]);b.position.set(0,rise/2,off);b.rotation.z=ang;b.userData.esc=ei;g.add(b);pickables.push(b);
    [-0.62,0.62].forEach(s=>{const side=new THREE.Mesh(new THREE.PlaneGeometry(len,1.0),escSide);side.position.set(0,rise/2+0.85,off+s);side.rotation.z=ang;g.add(side);
-    const hr=new THREE.Mesh(new THREE.BoxGeometry(len+0.6,0.09,0.11),railM);hr.position.set(0,rise/2+1.38,off+s);hr.rotation.z=ang;g.add(hr);});});
-  g.position.set(e.p[0],0,e.p[1]);g.rotation.y=-e.a;scene.add(g);blockRect(e.p[0],e.p[1],e.a,run/2+0.4,1.55);
+    const hr=new THREE.Mesh(new THREE.BoxGeometry(len+0.6,0.09,0.11),railM);hr.position.set(0,rise/2+1.38,off+s);hr.rotation.z=ang;g.add(hr);});
+   // гребёнки на площадках
+   [[-run/2-0.45,0.02],[run/2+0.45,rise+0.02]].forEach(([x,y])=>{const c=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.04,1.2),combM);c.position.set(x,y,off);g.add(c);});});
+  g.position.set(e.p[0],0,e.p[1]);g.rotation.y=-e.a;scene.add(g);blockRect(e.p[0],e.p[1],e.a,run/2+0.4,1.55,1);
+  // узкую щель между эскалатором и стеной закрываем ограждением — чтобы не протискиваться
+  {const dd=[Math.cos(e.a),Math.sin(e.a)],rr_=[-Math.sin(e.a),Math.cos(e.a)];[-1,1].forEach(sg=>{let gap=9;
+    for(let t=-run/2;t<=run/2;t+=0.7){let g_=0;for(let w=0.1;w<3;w+=0.15){const x=e.p[0]+dd[0]*t+rr_[0]*sg*(1.55+w),z=e.p[1]+dd[1]*t+rr_[1]*sg*(1.55+w);if(!isFloorF(1,x,z))break;g_=w;}gap=Math.min(gap,g_);}
+    if(gap<2.0){const off=1.55+gap/2+0.1;blockRect(e.p[0]+rr_[0]*sg*off,e.p[1]+rr_[1]*sg*off,e.a,run/2+0.4,gap/2+0.25,1);
+     const gl=new THREE.Mesh(new THREE.BoxGeometry(run+0.8,1.05,0.04),escSide);gl.position.set(e.p[0]+rr_[0]*sg*(1.55+0.05),0.53,e.p[1]+rr_[1]*sg*(1.55+0.05));gl.rotation.y=-e.a;scene.add(gl);}});}
+  const top=new V3(e.top[0],FY[2],e.top[1]),bot=new V3(e.bot[0],0,e.bot[1]);
+  world.escs.push({i:ei,p:e.p,a:e.a,d,r,top,bot,run,rise,ang});
+  // указатели у площадок
+  const up=sprite('Эскалатор ↑ 2 этаж','#475569');up.position.copy(bot).addScaledVector(d,-1.2).addScaledVector(r,0.72);up.position.y=2.9;up.scale.set(3.2,0.7,1);scene.add(up);
+  const dn=sprite('Эскалатор ↓ 1 этаж','#475569');dn.position.copy(top).addScaledVector(d,1.2).addScaledVector(r,-0.72);dn.position.y=FY[2]+2.9;dn.scale.set(3.2,0.7,1);G('f2').add(dn);
   const sp=sprite('Эскалатор','#6b7785');sp.position.set(e.p[0],FLOOR_H+3,e.p[1]);sp.scale.set(9,2,1);G('toponly1').add(sp);
   const sp3=sprite('Эскалатор','#6b7785');sp3.position.set(e.p[0],ROOF_Y+3,e.p[1]);sp3.scale.set(9,2,1);G('toponly2').add(sp3);});
 
- // ---- островки: тонкие инфо-колонны, сквозь которые можно пройти
- const kList=S.filter(s=>s.kind==='kiosk');
- {// колонна целиком в цвет магазина, светящиеся кольца, табличка с четырёх сторон наверху
+ // ---- островки: тонкие инфо-колонны, сквозь которые можно пройти (на каждом этаже свои)
+ const kList=S.filter(s=>s.kind==='kiosk');world.kSets=[];
+ [1,2].forEach(f=>{const kl=kList.filter(s=>s.floor===f);if(!kl.length)return;const y0=FY[f],grp=f===1?scene:G('f2');
+  // корпус светлый, цвет магазина — только светящиеся кольца; табличка с четырёх сторон наверху
   const KH=3.3;
   const bodyG=new THREE.CylinderGeometry(0.3,0.34,KH,28);bodyG.translate(0,KH/2,0);
   const ringG=new THREE.CylinderGeometry(0.315,0.315,0.1,28);
   const r1=ringG.clone().translate(0,0.9,0),r2=ringG.clone().translate(0,KH-0.25,0);
   const baseG=new THREE.CylinderGeometry(0.42,0.45,0.1,28);baseG.translate(0,0.05,0);
   const headG=new THREE.BoxGeometry(1,0.62,1);headG.translate(0,KH+0.36,0);
-  const N=Math.max(1,kList.length);
-  const body=new THREE.InstancedMesh(bodyG,new THREE.MeshStandardMaterial({roughness:.22,metalness:.15,envMapIntensity:1.1}),N);
+  const N=kl.length;
+  const body=new THREE.InstancedMesh(bodyG,new THREE.MeshStandardMaterial({roughness:.35,metalness:.2,envMapIntensity:.9}),N);
   const glow=new THREE.MeshBasicMaterial({toneMapped:false});
   const ringA=new THREE.InstancedMesh(r1,glow,N),ringB=new THREE.InstancedMesh(r2,glow,N);
   const base=new THREE.InstancedMesh(baseG,MAT.darkMetal,N);
-  const head=new THREE.InstancedMesh(headG,new THREE.MeshStandardMaterial({color:LIN('#1f2226'),roughness:.4,metalness:.4}),N);
+  const head=new THREE.InstancedMesh(headG,new THREE.MeshStandardMaterial({color:LIN('#2a2d31'),roughness:.45,metalness:.35}),N);
   const shG=new THREE.PlaneGeometry(1.8,1.8);shG.rotateX(-Math.PI/2);const sh=new THREE.InstancedMesh(shG,new THREE.MeshBasicMaterial({map:blobTex,transparent:true,depthWrite:false}),N);
   const q=new THREE.Quaternion(),sc=new V3();
-  kList.forEach((s,i)=>{const c=s.cat==='tbd'?LIN('#9aa3ab'):s.col;
-   mtx.makeTranslation(s.p[0],0,s.p[1]);body.setMatrixAt(i,mtx);ringA.setMatrixAt(i,mtx);ringB.setMatrixAt(i,mtx);base.setMatrixAt(i,mtx);
-   body.setColorAt(i,c);const lc=c.clone().lerp(new THREE.Color(1,1,1),0.35).multiplyScalar(1.5);ringA.setColorAt(i,lc);ringB.setColorAt(i,lc);
-   s.headW=Math.min(3.4,Math.max(1.5,s.name.length*0.2+0.6));sc.set(s.headW,1,s.headW);q.identity();mtx.compose(new V3(s.p[0],0,s.p[1]),q,sc);head.setMatrixAt(i,mtx);
-   mtx.makeTranslation(s.p[0],0.025,s.p[1]);sh.setMatrixAt(i,mtx);});
+  kl.forEach((s,i)=>{const c=kioskBody(s);
+   mtx.makeTranslation(s.p[0],y0,s.p[1]);body.setMatrixAt(i,mtx);ringA.setMatrixAt(i,mtx);ringB.setMatrixAt(i,mtx);base.setMatrixAt(i,mtx);
+   body.setColorAt(i,c);const lc=kioskGlow(s);ringA.setColorAt(i,lc);ringB.setColorAt(i,lc);
+   s.headW=Math.min(3.4,Math.max(1.5,s.name.length*0.2+0.6));sc.set(s.headW,1,s.headW);q.identity();mtx.compose(new V3(s.p[0],y0,s.p[1]),q,sc);head.setMatrixAt(i,mtx);
+   mtx.makeTranslation(s.p[0],y0+0.025,s.p[1]);sh.setMatrixAt(i,mtx);});
   [body,ringA,ringB].forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true;});
-  const ids=kList.map(s=>s.id);[body,ringA,ringB,head].forEach(m=>{m.userData.kiosks=ids;scene.add(m);pickables.push(m);});scene.add(base);scene.add(sh);
-  world.kBody=body;world.kRings=[ringA,ringB];
-  // табличка с названием на четырёх гранях
-  signAtlases.forEach((t,ai)=>{const m=new Merger();kList.forEach(s=>{if(s.atlas!==ai||s.cat==='tbd')return;const w=s.headW,h=Math.min(0.5,w/7),y=KH+0.36,c=new V3(s.p[0],0,s.p[1]);
+  const ids=kl.map(s=>s.id);[body,ringA,ringB,head].forEach(m=>{m.userData.kiosks=ids;grp.add(m);pickables.push(m);});grp.add(base);grp.add(sh);
+  world.kSets.push({body,rings:[ringA,ringB],ids});
+  signAtlases.forEach((t,ai)=>{const m=new Merger();kl.forEach(s=>{if(s.atlas!==ai||s.cat==='tbd')return;const w=s.headW,h=Math.min(0.5,w/7),y=y0+KH+0.36,c=new V3(s.p[0],0,s.p[1]);
     [[0,1],[0,-1],[1,0],[-1,0]].forEach(([nx,nz])=>{const n=new V3(nx,0,nz);m.panel(c.clone().addScaledVector(n,w/2+0.01),n,w*0.96,y-h/2,y+h/2,s.uv,null,s.id);});});
-   if(m.p.length){const mesh=m.mesh(new THREE.MeshBasicMaterial({map:t,toneMapped:false}));scene.add(mesh);pickables.push(mesh);}});}
- kList.forEach(s=>{s.fp=new V3(s.p[0],0,s.p[1]);s.fn=new V3(0,0,1);});
- labelAtlases.forEach((t,ai)=>{const m=new Merger();kList.forEach(s=>{if(s.atlas!==ai||s.cat==='tbd'||!s.lfs)return;const h=1.0,cw=h*CW_/(s.lfs*1.1),chh=h*CH_/(s.lfs*1.1),x=s.p[0],z=s.p[1]-1.2,y=FLOOR_H+0.1;
-  m.quad(new V3(x-cw/2,y,z+chh/2),new V3(x+cw/2,y,z+chh/2),new V3(x+cw/2,y,z-chh/2),new V3(x-cw/2,y,z-chh/2),s.uv,null,s.id);});
-  if(m.p.length){const mesh=m.mesh(new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false,toneMapped:false}));mesh.renderOrder=3;G('toplabels1').add(mesh);pickables.push(mesh);}});
- {// точки островков в виде сверху
-  const dg=new THREE.CircleGeometry(1.2,20);dg.rotateX(-Math.PI/2);const dm=new THREE.InstancedMesh(dg,new THREE.MeshBasicMaterial({toneMapped:false}),Math.max(1,kList.length));
-  kList.forEach((s,i)=>{mtx.makeTranslation(s.p[0],FLOOR_H+0.06,s.p[1]);dm.setMatrixAt(i,mtx);dm.setColorAt(i,s.cat==='tbd'?LIN('#9aa3ab'):s.col);});if(dm.instanceColor)dm.instanceColor.needsUpdate=true;
-  dm.userData.kiosks=kList.map(s=>s.id);G('toponly1').add(dm);pickables.push(dm);}
-
+   if(m.p.length){const mesh=m.mesh(new THREE.MeshBasicMaterial({map:t,toneMapped:false}));grp.add(mesh);pickables.push(mesh);}});
+  kl.forEach(s=>{s.fp=new V3(s.p[0],y0,s.p[1]);s.fn=new V3(0,0,1);});
+  const ty=(f===1?FLOOR_H:ROOF_Y)+0.1;
+  labelAtlases.forEach((t,ai)=>{const m=new Merger();kl.forEach(s=>{if(s.atlas!==ai||s.cat==='tbd'||!s.lfs)return;const h=1.0,cw=h*CW_/(s.lfs*1.1),chh=h*CH_/(s.lfs*1.1),x=s.p[0],z=s.p[1]-1.2,y=ty;
+   m.quad(new V3(x-cw/2,y,z+chh/2),new V3(x+cw/2,y,z+chh/2),new V3(x+cw/2,y,z-chh/2),new V3(x-cw/2,y,z-chh/2),s.uv,null,s.id);});
+   if(m.p.length){const mesh=m.mesh(new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false,toneMapped:false}));mesh.renderOrder=3;G('toplabels'+f).add(mesh);pickables.push(mesh);}});
+  {// точки островков в виде сверху
+   const dg=new THREE.CircleGeometry(1.2,20);dg.rotateX(-Math.PI/2);const dm=new THREE.InstancedMesh(dg,new THREE.MeshBasicMaterial({toneMapped:false}),N);
+   kl.forEach((s,i)=>{mtx.makeTranslation(s.p[0],ty-0.04,s.p[1]);dm.setMatrixAt(i,mtx);dm.setColorAt(i,s.cat==='tbd'?LIN('#9aa3ab'):s.col);});if(dm.instanceColor)dm.instanceColor.needsUpdate=true;
+   dm.userData.kiosks=ids;G('toponly'+f).add(dm);pickables.push(dm);}});
 
 
  // ---- лифты: по официальной схеме ТРЦ, у стены, дверью в галерею на обоих этажах
@@ -495,6 +562,9 @@ function build(){
   const okCell=(x,z)=>isFloorF(1,x,z)&&isFloorF(2,x,z)&&isWalkF(1,x,z)&&isWalkF(2,x,z);
   function fits(cx,cz,a){const ca=Math.cos(a),sa=Math.sin(a);const n=[sa,ca],R=[ca,-sa];
    for(let u=-HL;u<=HL;u+=0.3)for(let v=-HL;v<=HL+2.6;v+=0.3){const x=cx+R[0]*u+n[0]*v,z=cz+R[1]*u+n[1]*v;if(!okCell(x,z))return -1;}
+   // по бокам — стена вплотную или свободно не меньше 2,1 м: без узких щелей
+   for(const sg of [-1,1])for(let v=-HL;v<=HL;v+=0.4)for(const f of [1,2]){let open=null;for(let w=0.3;w<=2.4;w+=0.3){const x=cx+R[0]*sg*(HL+w)+n[0]*v,z=cz+R[1]*sg*(HL+w)+n[1]*v;
+    const fl=isFloorF(f,x,z);if(open===null){open=fl;if(!fl)break;}else if(!fl||!isWalkF(f,x,z))return -1;if(fl&&!isWalkF(f,x,z))return -1;}}
    let wall=0;for(let u=-HL;u<=HL;u+=0.3){const x=cx-n[0]*(HL+0.5)+R[0]*u,z=cz-n[1]*(HL+0.5)+R[1]*u;if(!isFloorF(2,x,z))wall++;}return wall;}
   LIFTS_PLAN.forEach((lp,li)=>{let best=null;
    for(let a=0;a<Math.PI*2-0.01;a+=Math.PI/12)for(let dx=-16;dx<=16;dx+=0.8)for(let dz=-16;dz<=16;dz+=0.8){const d=Math.hypot(dx,dz);if(d>16)continue;const cx=lp[0]+dx,cz=lp[1]+dz;const w=fits(cx,cz,a);if(w<0)continue;
@@ -502,7 +572,7 @@ function build(){
    if(!best)return;const {cx,cz,a}=best;const n=new V3(Math.sin(a),0,Math.cos(a)),R=new V3(Math.cos(a),0,-Math.sin(a));
    const g=new THREE.Group();g.position.set(cx,0,cz);g.rotation.y=a;scene.add(g);
    // шахта: угловые стойки, стекло с трёх сторон, над дверями — стекло
-   [[-HL,-HL],[HL,-HL],[-HL,HL],[HL,HL]].forEach(([x,z])=>{const p=new THREE.Mesh(new THREE.BoxGeometry(0.12,ROOF_Y,0.12),MAT.darkMetal);p.position.set(x,ROOF_Y/2,z);g.add(p);});
+   [[-HL,-HL],[HL,-HL],[-HL,HL],[HL,HL]].forEach(([x,z])=>{const p=new THREE.Mesh(new THREE.BoxGeometry(0.14,ROOF_Y,0.14),MAT.white);p.position.set(x,ROOF_Y/2,z);g.add(p);});
    const wallG=new THREE.PlaneGeometry(HL*2,ROOF_Y);
    [[0,-HL,0],[-HL,0,Math.PI/2],[HL,0,Math.PI/2]].forEach(([x,z,r])=>{const m=new THREE.Mesh(wallG,shaftM);m.position.set(x,ROOF_Y/2,z);m.rotation.y=r;m.renderOrder=2;m.userData.lift=li;g.add(m);pickables.push(m);});
    [1,2].forEach(f=>{const y0=FY[f],top=f===1?FLOOR_H:ROOF_Y;const m=new THREE.Mesh(new THREE.PlaneGeometry(HL*2,top-y0-2.4),shaftM);m.position.set(0,y0+2.4+(top-y0-2.4)/2,HL);m.renderOrder=2;g.add(m);
@@ -522,17 +592,48 @@ function build(){
    blockRect(cx,cz,a,HL+0.15,HL+0.15,1);blockRect(cx,cz,a,HL+0.15,HL+0.15,2);
    world.lifts.push({id:li,c:new V3(cx,0,cz),n,R,a,g,cab,leaves,open:{1:0,2:0},cabY:FY[1],at:1,HL});});}
 
+ // ---- кадки с деревьями и скамейки (как на фото ТРЦ) и столики фуд-корта — там, где просторно
+ {const lat=(pts,seg)=>new THREE.LatheGeometry(pts.map(p=>new THREE.Vector2(p[0],p[1])),seg||24);
+  const potG=lat([[0,0],[0.42,0],[0.5,0.55],[0.47,0.56],[0,0.5]],28),trunkG=Cy(0.05,0.07,1.3,0,1.1,0,8);
+  const leafG=mergeG([[0,2.05,0,0.62],[0.34,1.8,0.1,0.42],[-0.3,1.85,-0.1,0.45],[0.1,2.4,-0.18,0.4],[-0.12,1.7,0.3,0.38]].map(([x,y,z,r])=>new THREE.IcosahedronGeometry(r,1).translate(x,y,z)));
+  const seatG=mergeG([B(1.6,0.06,0.42,0,0.45,0),B(1.6,0.34,0.05,0,0.7,-0.2)]),legsG=mergeG([-0.65,0.65].map(x=>B(0.06,0.42,0.4,x,0.21,0)));
+  const topG=Cy(0.45,0.45,0.035,0,0.74,0,28),stemG=mergeG([Cy(0.035,0.035,0.72,0,0.36,0,8),Cy(0.25,0.25,0.02,0,0.01,0,20)]);
+  const chairG=mergeG([B(0.42,0.05,0.42,0,0.45,0),B(0.42,0.42,0.04,0,0.68,-0.19),...[[-0.18,-0.18],[0.18,-0.18],[-0.18,0.18],[0.18,0.18]].map(([x,z])=>Cy(0.015,0.015,0.45,x,0.22,z,6))]);
+  const near=(f,x,z,R)=>world.doors.some(s=>s.door.floor===f&&Math.hypot(s.door.c.x-x,s.door.c.z-z)<R)||world.escs.some(E=>{const dx=x-E.p[0],dz=z-E.p[1];return Math.abs(dx*E.d.x+dz*E.d.z)<E.run/2+R&&Math.abs(dx*E.r.x+dz*E.r.z)<1.6+R;})||world.lifts.some(L=>Math.hypot(L.c.x-x,L.c.z-z)<R+1.5)||S.some(k=>k.kind==='kiosk'&&k.floor===f&&Math.hypot(k.p[0]-x,k.p[1]-z)<3);
+  const freeDisk=(f,x,z,r)=>{for(let a=0;a<8;a++)for(const d of [0,r*0.5,r]){if(!isWalkF(f,x+Math.cos(a*0.785)*d,z+Math.sin(a*0.785)*d))return false;}return true;};
+  [1,2].forEach(f=>{const y0=FY[f],grp=f===1?scene:G('f2'),rnd=mulberry(31+f),plants=[],tables=[],st=Math.round(2.5/CELL);
+   // столики фуд-корта
+   if(f===2)for(let j=0;j<GH;j+=Math.round(3.1/CELL))for(let i=0;i<GW;i+=Math.round(3.1/CELL)){if(!hall2[j*GW+i])continue;const [x,z]=fromPx(i,j);
+    if(clearance(2,x,z,3)<2.6||!freeDisk(2,x,z,1.3)||near(2,x,z,3.5))continue;tables.push({x,z,a:rnd()*0.4});blockRect(x,z,0,0.95,0.95,2);}
+   for(let j=0;j<GH;j+=st)for(let i=0;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);
+    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<4.8||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<16))continue;if(near(f,x,z,6))continue;
+    const a=rnd()*Math.PI*2;plants.push({x,z,a,bx:x+Math.cos(a)*1.25,bz:z+Math.sin(a)*1.25});}
+   plants.forEach(p=>{blockRect(p.x,p.z,0,0.6,0.6,f);blockRect(p.bx,p.bz,p.a+Math.PI/2,0.85,0.35,f);});
+   const N=Math.max(1,plants.length),q=new THREE.Quaternion(),Y=new V3(0,1,0),one=new V3(1,1,1);
+   const pot=new THREE.InstancedMesh(potG,new THREE.MeshStandardMaterial({color:LIN('#e9e6e0'),roughness:.4}),N),trunk=new THREE.InstancedMesh(trunkG,new THREE.MeshStandardMaterial({color:LIN('#6b5139'),roughness:.9}),N);
+   const leaf=new THREE.InstancedMesh(leafG,new THREE.MeshStandardMaterial({color:LIN('#4f7a44'),roughness:.85,flatShading:true}),N);
+   const seat=new THREE.InstancedMesh(seatG,new THREE.MeshStandardMaterial({color:LIN('#a47b52'),roughness:.6}),N),bl=new THREE.InstancedMesh(legsG,MAT.darkMetal,N);
+   plants.forEach((p,i)=>{mtx.makeTranslation(p.x,y0,p.z);pot.setMatrixAt(i,mtx);trunk.setMatrixAt(i,mtx);q.setFromAxisAngle(Y,p.a);mtx.compose(new V3(p.x,y0,p.z),q,one);leaf.setMatrixAt(i,mtx);leaf.setColorAt(i,LIN(['#4f7a44','#5b8a4c','#44703f'][i%3]));
+    q.setFromAxisAngle(Y,-p.a+Math.PI/2);mtx.compose(new V3(p.bx,y0,p.bz),q,one);seat.setMatrixAt(i,mtx);bl.setMatrixAt(i,mtx);});
+   [pot,trunk,leaf,seat,bl].forEach(m=>{m.count=plants.length;if(m.instanceColor)m.instanceColor.needsUpdate=true;grp.add(m);});
+   if(tables.length){const T=tables.length,top=new THREE.InstancedMesh(topG,MAT.white,T),stem=new THREE.InstancedMesh(stemG,MAT.darkMetal,T),ch=new THREE.InstancedMesh(chairG,new THREE.MeshStandardMaterial({color:LIN('#8a6a4a'),roughness:.6}),T*4);
+    tables.forEach((t,i)=>{mtx.makeTranslation(t.x,y0,t.z);top.setMatrixAt(i,mtx);stem.setMatrixAt(i,mtx);for(let k=0;k<4;k++){const a=t.a+k*Math.PI/2;q.setFromAxisAngle(Y,a+Math.PI);mtx.compose(new V3(t.x+Math.sin(a)*0.72,y0,t.z+Math.cos(a)*0.72),q,one);ch.setMatrixAt(i*4+k,mtx);}});
+    [top,stem,ch].forEach(m=>grp.add(m));}
+   world['decor'+f]={plants:plants.length,tables:tables.length};});}
+
  // ---- посетители: гуляют по галереям обоих этажей
  {const parts=humanParts();const NP=coarse?48:110;const r=mulberry(77);
-  const cloth=['#2f3a4a','#6b7a8f','#8a3b3b','#3f5e4a','#c9b79c','#1f1f24','#a45a2a','#4d4f7c','#d9d4cc','#6e2f4f'].map(LIN),pants=['#23262c','#3b4252','#5a5148','#2c3440','#6b6e73'].map(LIN),skin=['#e6c3a5','#d9b08c','#c6946b','#f0d2bb'].map(LIN);
+  const cloth=['#2f3a4a','#6b7a8f','#7a3a3a','#3f5e4a','#c9b79c','#1f1f24','#8b6a4a','#4d4f7c','#d9d4cc','#5e3b4f','#9ea2a6','#e7e2d8'].map(LIN),pants=['#23262c','#3b4252','#5a5148','#2c3440','#6b6e73'].map(LIN),skin=['#e6c3a5','#d9b08c','#c6946b','#f0d2bb'].map(LIN);
   const torso=new THREE.InstancedMesh(parts.torso,new THREE.MeshStandardMaterial({roughness:.85}),NP),legs=new THREE.InstancedMesh(parts.legs,new THREE.MeshStandardMaterial({roughness:.8}),NP),arms=new THREE.InstancedMesh(parts.arms,new THREE.MeshStandardMaterial({roughness:.85}),NP),head=new THREE.InstancedMesh(parts.head,new THREE.MeshStandardMaterial({roughness:.6}),NP);
+  const hair=new THREE.InstancedMesh(parts.hair,new THREE.MeshStandardMaterial({roughness:.7}),NP),shoes=new THREE.InstancedMesh(parts.shoes,new THREE.MeshStandardMaterial({roughness:.6}),NP);
+  const hairC=['#2a1f18','#4a3426','#1b1b1b','#7a5a3a','#b89a6e','#5e5e5e'].map(LIN),shoeC=['#1e1f22','#f0eee8','#5a4636','#3b3e44'].map(LIN);
   const shG=new THREE.PlaneGeometry(0.9,0.9);shG.rotateX(-Math.PI/2);const sh=new THREE.InstancedMesh(shG,new THREE.MeshBasicMaterial({map:blobTex,transparent:true,depthWrite:false}),NP);
   const people=[];
   for(let i=0;i<NP;i++){const f=i%3===2?2:1;let x=0,z=0,tries=0;do{const j=Math.floor(r()*GH),k=Math.floor(r()*GW);[x,z]=fromPx(k,j);tries++;}while((!isWalkF(f,x,z)||blockedF(f,x,z))&&tries<600);
-   const c=cloth[Math.floor(r()*cloth.length)];torso.setColorAt(i,c);arms.setColorAt(i,c);legs.setColorAt(i,pants[Math.floor(r()*pants.length)]);head.setColorAt(i,skin[Math.floor(r()*skin.length)]);
+   const c=cloth[Math.floor(r()*cloth.length)];torso.setColorAt(i,c);arms.setColorAt(i,c);legs.setColorAt(i,pants[Math.floor(r()*pants.length)]);head.setColorAt(i,skin[Math.floor(r()*skin.length)]);hair.setColorAt(i,hairC[Math.floor(r()*hairC.length)]);shoes.setColorAt(i,shoeC[Math.floor(r()*shoeC.length)]);
    const sc=0.92+r()*0.16;people.push({f,x,z,tx:x,tz:z,sp:(1.0+r()*0.5),sc,a:r()*6.28,wait:r()*4,ph:r()*6.28});}
-  [torso,legs,arms,head].forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true;G('people').add(m);});G('people').add(sh);
-  world.people={list:people,meshes:[torso,legs,arms,head],sh,r};updatePeople(0,0);}
+  [torso,legs,arms,head,hair,shoes].forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true;G('people').add(m);});G('people').add(sh);
+  world.people={list:people,meshes:[torso,legs,arms,head,hair,shoes],sh,r};updatePeople(0,0);}
  // ---- колесо обозрения
  const wheel=new THREE.Group();const wM=new THREE.MeshStandardMaterial({color:LIN('#f2f2f2'),roughness:.35,metalness:.4});
  const R=25;wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R,.45,8,96),wM));wheel.add(new THREE.Mesh(new THREE.TorusGeometry(R-2,.25,6,96),wM));
@@ -591,13 +692,13 @@ function tryMove(dx,dz){const n=Math.max(1,Math.ceil(Math.hypot(dx,dz)/0.1));for
 // смена этажа: та же точка плана на другом этаже (или заданная)
 function setFloor(f,at){if(f===curFloor&&!at)return;curFloor=f;
  if(at){player.x=at.x;player.z=at.z;if(at.yaw!=null)player.yaw=at.yaw;}
- if(blockedF(f,player.x,player.z)){const w=nearestFree(player.x,player.z,160,f);if(w){player.x=w[0];player.z=w[1];}}
+ if(blockedF(f,player.x,player.z)){const w=nearestFree(player.x,player.z,160,f)||nearestAny(f,player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  if(target&&target.floor!==f)closeCard();
  updateFloorUI();setVis();drawMiniBase();}
 function updateFloorUI(){$('bF1').classList.toggle('on',curFloor===1);$('bF2').classList.toggle('on',curFloor===2);$('brandFloor').textContent=curFloor+' этаж · Тула';}
 function goFloor(f){if(f===curFloor||mode==='store'||ride)return;
  if(mode==='top'){setFloor(f);topv.h=clampH(topv.h);return;}
- const go=()=>{setFloor(f);anim=null;applyPose(walkPose());showHint(f===2?'Второй этаж: кино, фуд-корт, DNS, Детский мир и другие магазины':'Первый этаж: входы, гипермаркеты и большинство магазинов');};
+ const go=()=>{setFloor(f);anim=null;applyPose(walkPose());showHint(f===2?'Второй этаж: кино, фуд-корт, ДНС, Детский мир и другие магазины':'Первый этаж: входы, гипермаркеты и большинство магазинов');};
  if(calm)go();else fadeThen(go);}
 
 const ptrs=new Map();let downInfo=null,pinch0=0;
@@ -612,7 +713,8 @@ function isFP(){return mode==='walk'||mode==='store';}
 function panelsClosed(){return $('card').hidden&&$('shop').hidden&&$('lift').hidden&&$('cartBox').hidden;}
 function updateCross(){$('cross').hidden=!(locked&&isFP());$('aim').hidden=!(locked&&isFP());$('lockTip').hidden=!(!coarse&&!locked&&isFP()&&panelsClosed()&&!ride);}
 canvas.addEventListener('pointerdown',e=>{
- if(ride)return;
+ if(ride&&ride.kind!=='esc')return;
+ if(ride){canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});return;}
  if(e.pointerType==='mouse'&&!coarse&&isFP()){
   if(locked){if(e.button===0)pick(innerWidth/2,innerHeight/2,true);return;}
   if(!$('card').hidden)closeCard();if(!$('shop').hidden)closeShopPanel(false);if(!$('lift').hidden)hideLiftPanel(true);
@@ -623,13 +725,13 @@ canvas.addEventListener('pointerdown',e=>{
 canvas.addEventListener('pointermove',e=>{const p=ptrs.get(e.pointerId);if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
  if(downInfo)downInfo.moved+=Math.abs(dx)+Math.abs(dy);
  if(ptrs.size===2&&mode==='top'){const a=[...ptrs.values()];const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(pinch0>0)topv.h=clampH(topv.h*pinch0/d);pinch0=d;return;}
- if(anim||ride)return;
+ if(anim||(ride&&ride.kind!=='esc'))return;
  if(isFP()){const k=coarse?0.006:0.0045;player.yaw-=dx*k;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-dy*k));hideHint();}
  else{const sc=2*(topv.h-topY())*Math.tan(THREE.MathUtils.degToRad(cam.fov/2))/innerHeight;topv.x-=dx*sc;topv.z-=dy*sc;topv.x=Math.max(bb.x0-60,Math.min(bb.x1+60,topv.x));topv.z=Math.max(bb.z0-60,Math.min(bb.z1+80,topv.z));hideGoHere();}});
 const SENS=0.0021;let lookDX=0,lookDY=0;
 document.addEventListener('mousemove',e=>{
  if(e.target===canvas){mouse.in=true;mouse.x=e.clientX;mouse.y=e.clientY;}
- if(coarse||!isFP()||anim||ride)return;
+ if(coarse||!isFP()||anim||(ride&&ride.kind!=='esc'))return;
  if(locked){lookDX+=(e.movementX||0);lookDY+=(e.movementY||0);}});
 canvas.addEventListener('mouseleave',()=>{mouse.in=false;});
 function endPtr(e){ptrs.delete(e.pointerId);if(ptrs.size<2)pinch0=0;
@@ -662,11 +764,12 @@ addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
 const ray=new THREE.Raycaster();
 function visibleHits(x,y){ray.setFromCamera(new THREE.Vector2(x/innerWidth*2-1,-(y/innerHeight)*2+1),cam);
  return ray.intersectObjects(pickables,false).filter(h=>{let o=h.object;while(o){if(!o.visible)return false;o=o.parent;}return true;});}
-function hitId(h){if(h.object.userData.lift!=null)return{lift:world.lifts[h.object.userData.lift]};let id=-1;if(h.object.userData.kiosks&&h.instanceId!=null)id=h.object.userData.kiosks[h.instanceId];else if(h.object.userData.fs)id=h.object.userData.fs[h.faceIndex];return id>=0?{s:S[id]}:null;}
+function hitId(h){if(h.object.userData.lift!=null)return{lift:world.lifts[h.object.userData.lift]};if(h.object.userData.esc!=null)return{esc:world.escs[h.object.userData.esc]};let id=-1;if(h.object.userData.kiosks&&h.instanceId!=null)id=h.object.userData.kiosks[h.instanceId];else if(h.object.userData.fs)id=h.object.userData.fs[h.faceIndex];return id>=0?{s:S[id]}:null;}
 function pick(x,y,fromLock){if(ride)return;if(mode==='store'&&SHOP){shopPick(x,y);return;}
  const hits=visibleHits(x,y);
  for(const h of hits){const r=hitId(h);if(!r)continue;
   if(r.lift){if(fromLock)releaseLock();openLiftPanel(r.lift,true);return;}
+  if(r.esc){if(mode==='walk')goEscalator(r.esc);return;}
   if(mode==='top'&&r.s.floor!==curFloor)continue;
   openCard(r.s);hideGoHere();if(fromLock)releaseLock();return;}
  closeCard();
@@ -678,7 +781,7 @@ function openCard(s){
  $('cCol').style.background=s.colHex;$('cCat').textContent=c.n;$('cName').textContent=s.name;$('cWhat').textContent=s.what||'';
  $('cMeta').textContent=s.kind==='kiosk'?floorName(s.floor)+' · островок в галерее':floorName(s.floor)+' · около '+Math.max(5,Math.round(s.area/5)*5)+' м²';
  const also=(s.names||[]).slice(1);
- $('cInfo').textContent=s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'Свободное помещение или арендатор, которого нет в открытых списках.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+(s.floor===2?'Магазин есть на втором этаже, место на схеме примерное. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.';
+ $('cInfo').textContent=s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.';
  const b=$('cBtns');b.innerHTML='';
  if(s.door){const en=document.createElement('button');en.className='btn pri';en.textContent=s.name==='Синема Парк'?'Войти в кинотеатр':'Войти в магазин';en.onclick=()=>{walkToDoor(s);requestLockIfNeeded();};b.appendChild(en);}
  const go=document.createElement('button');go.className=s.door?'btn':'btn pri';go.textContent=s.floor!==curFloor?'Подойти · '+floorName(s.floor):'Подойти';go.onclick=()=>{walkTo(s);requestLockIfNeeded();};b.appendChild(go);
@@ -721,8 +824,8 @@ function applyFilter(){const dim=LIN('#d9dcdf');
   for(let q=0;q<fs.length;q++){const s=S[fs[q]];const on=!filter||(s&&s.cat===filter);for(let v=0;v<3;v++){const i=(q*3+v)*3;
    if(on){arr[i]=base[i];arr[i+1]=base[i+1];arr[i+2]=base[i+2];}else{arr[i]=dim.r;arr[i+1]=dim.g;arr[i+2]=dim.b;}}}
   attr.needsUpdate=true;});
- const dimC=LIN('#c9cdd1');const ids=world.kBody.userData.kiosks;ids.forEach((id,i)=>{const s=S[id];const on=!filter||s.cat===filter;const c=s.cat==='tbd'?LIN('#9aa3ab'):s.col;world.kBody.setColorAt(i,on?c:dimC);const lc=on?c.clone().lerp(new THREE.Color(1,1,1),0.35).multiplyScalar(1.5):dimC;world.kRings.forEach(r=>r.setColorAt(i,lc));});
- [world.kBody,...world.kRings].forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true;});}
+ const dimC=LIN('#c9cdd1');world.kSets.forEach(({body,rings,ids})=>{ids.forEach((id,i)=>{const s=S[id];const on=!filter||s.cat===filter;body.setColorAt(i,on?kioskBody(s):dimC);rings.forEach(r=>r.setColorAt(i,on?kioskGlow(s):dimC));});
+  [body,...rings].forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true;});});}
 
 /* ---------- Поиск ---------- */
 function openSearch(){$('search').hidden=false;$('q').value='';renderResults('');releaseLock();setTimeout(()=>$('q').focus(),30);}
@@ -774,7 +877,7 @@ function updateRide(dt){const r=ride;if(!r)return;const L=r.L;r.t+=dt;
  else if(r.phase===2){const k=Math.min(1,r.t/2.4),e=ease(k);r.y=FY[r.from]+(FY[r.to]-FY[r.from])*e;L.cab.position.y=r.y;if(k>=1){r.phase=3;r.t=0;L.at=r.to;curFloor=r.to;updateFloorUI();setVis();drawMiniBase();}}
  else if(r.phase===3){if(r.t>0.6){r.phase=4;r.t=0;}}
  else if(r.phase===4){const p=liftFront(L,r.to),k=Math.min(1,r.t/0.8),e=ease(k);player.x=cx+(p.x-cx)*e;player.z=cz+(p.z-cz)*e;
-  if(k>=1){ride=null;player.x=p.x;player.z=p.z;updateJoy();updateCross();showHint('Приехали: '+floorName(curFloor)+(curFloor===2?' · кино, фуд-корт, DNS, Детский мир':''));}}}
+  if(k>=1){ride=null;player.x=p.x;player.z=p.z;updateJoy();updateCross();showHint('Приехали: '+floorName(curFloor)+(curFloor===2?' · кино, фуд-корт, ДНС, Детский мир':''));}}}
 function updateLifts(dt){if(!world.lifts)return;
  world.lifts.forEach(L=>{[1,2].forEach(f=>{let want=0;
   if(ride&&ride.L===L)want=((ride.phase===0&&f===ride.from)||(ride.phase>=3&&f===ride.to))?1:0;
@@ -786,6 +889,37 @@ function updateLifts(dt){if(!world.lifts)return;
   if(near&&liftAuto!==near&&$('lift').hidden){liftAuto=near;openLiftPanel(near,false);}
   if(!near){if(liftAuto&&liftCur===liftAuto&&!$('lift').hidden)hideLiftPanel(false);liftAuto=null;}}}
 
+/* ---------- Эскалаторы: встань на ленту — поедешь на другой этаж ---------- */
+// вверх — правая лента (со стороны r), вниз — левая; точки входа — перед гребёнкой
+function escEntry(E,up){return up?E.bot.clone().addScaledVector(E.d,-0.9).addScaledVector(E.r,0.72):E.top.clone().addScaledVector(E.d,0.9).addScaledVector(E.r,-0.72);}
+function startEsc(E,up){if(ride||mode!=='walk')return;closeCard();hideLiftPanel(false);hideGoHere();
+ const to=up?2:1,lane=up?0.72:-0.72,a=up?E.bot:E.top,b=up?E.top:E.bot,dir=up?E.d:E.d.clone().negate();
+ const off=b.clone().addScaledVector(dir,1.7).addScaledVector(E.r,lane),yaw=Math.atan2(-dir.x,-dir.z);
+ if(calm){setFloor(to,{x:off.x,z:off.z,yaw});player.pitch=0;anim=null;applyPose(walkPose());showHint('Ты на '+(to===2?'втором':'первом')+' этаже');return;}
+ player.vx=player.vz=0;
+ ride={kind:'esc',E,up,to,t:0,phase:0,x0:player.x,z0:player.z,yaw0:player.yaw,yaw,
+  a:a.clone().addScaledVector(E.r,lane),b:b.clone().addScaledVector(E.r,lane),off,y:FY[up?1:2]};
+ updateJoy();updateCross();showHint(up?'Эскалатор едет на второй этаж…':'Эскалатор едет на первый этаж…');}
+function updateEscRide(dt){const r=ride,e=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;r.t+=dt;const yA=r.up?0:FY[2],yB=r.up?FY[2]:0;
+ if(lookDX||lookDY){player.yaw-=lookDX*SENS;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-lookDY*SENS));lookDX=lookDY=0;}
+ if(r.phase===0){const k=Math.min(1,r.t/0.7),q=e(k);player.x=r.x0+(r.a.x-r.x0)*q;player.z=r.z0+(r.a.z-r.z0)*q;
+  let da=((r.yaw-r.yaw0+Math.PI*3)%(Math.PI*2))-Math.PI;player.yaw=r.yaw0+da*q;r.y=yA+0.05;if(k>=1){r.phase=1;r.t=0;}}
+ else if(r.phase===1){const T=7.5,k=Math.min(1,r.t/T);// ровная скорость, плавный въезд и сход
+  const q=k<0.08?k*k/0.16:k>0.92?1-(1-k)*(1-k)/0.16:k-0.04;player.x=r.a.x+(r.b.x-r.a.x)*q;player.z=r.a.z+(r.b.z-r.a.z)*q;r.y=yA+(yB-yA)*q+0.25;
+  if(k>=1){r.phase=2;r.t=0;curFloor=r.to;updateFloorUI();setVis();drawMiniBase();}}
+ else{const k=Math.min(1,r.t/0.7),q=e(k);player.x=r.b.x+(r.off.x-r.b.x)*q;player.z=r.b.z+(r.off.z-r.b.z)*q;r.y=yB+0.25*(1-q);
+  if(k>=1){ride=null;player.x=r.off.x;player.z=r.off.z;if(blocked(player.x,player.z)){const w=nearestFree(player.x,player.z,20);if(w){player.x=w[0];player.z=w[1];}}updateJoy();updateCross();showHint('Приехали: '+floorName(curFloor));}}}
+// подошёл к ленте лицом по ходу — поехал
+function updateEscalators(dt){if(!world.escs)return;
+ if(!calm)world.stepTex.forEach(({t,dir})=>{t.offset.x=(t.offset.x-dir*dt*0.5)%1;});
+ if(mode!=='walk'||ride||anim)return;const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
+ for(const E of world.escs){const up=curFloor===1;const p=escEntry(E,up),dir=up?E.d:E.d.clone().negate();
+  if(Math.hypot(player.x-p.x,player.z-p.z)<0.85&&fx*dir.x+fz*dir.z>0.35){startEsc(E,up);return;}}}
+// нажатие на эскалатор: подойти к нужной ленте и поехать
+function goEscalator(E){const up=curFloor===1,p=escEntry(E,up),dir=up?E.d:E.d.clone().negate();
+ const back=p.clone().addScaledVector(dir,-1.2);moveTo(curFloor,back.x,back.z,Math.atan2(-dir.x,-dir.z),0);
+ setTimeout(()=>{if(mode==='walk'&&!ride)startEsc(E,up);},calm?0:950);}
+
 /* ---------- Мини-карта текущего этажа ---------- */
 const mini=$('mini'),mg=mini.getContext('2d');let miniBase=null,miniT={s:1,ox:0,oz:0};
 function sizeMini(){const r=mini.getBoundingClientRect();const d=Math.min(devicePixelRatio,2);mini.width=Math.max(1,Math.round(r.width*d));mini.height=Math.max(1,Math.round(r.height*d));drawMiniBase();}
@@ -794,11 +928,11 @@ function drawMiniBase(){const w=mini.width,h=mini.height,dp=Math.min(devicePixel
  const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');const X=p=>[p[0]*s+miniT.ox,p[1]*s+miniT.oz];
  const poly=(pts,fill)=>{g.beginPath();pts.forEach((p,i)=>{const q=X(p);i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]);});g.closePath();g.fillStyle=fill;g.fill();};
  D.bld.forEach(b=>poly(b,'#e7e5e0'));
- if(curFloor===2){voidPolys.forEach(v=>poly(v,'#cfe6f1'));F2.tall.forEach(p=>poly(p,'#c9c6bf'));}
+ if(curFloor===2){D.bld.forEach(b=>poly(b,'#cfccc6'));D2.bld.forEach(b=>poly(b,'#e7e5e0'));voidPolys.forEach(v=>poly(v,'#cfe6f1'));}
  S.forEach(st=>{if(st.kind!=='store'||st.floor!==curFloor)return;poly(st.poly,(filter&&st.cat!==filter)?'#dde1e5':st.colHex);});
  // лифты и эскалаторы
  (world.lifts||[]).forEach(L=>{const q=X([L.c.x,L.c.z]);g.fillStyle='#0e7490';g.fillRect(q[0]-3.5*dp,q[1]-3.5*dp,7*dp,7*dp);g.fillStyle='#fff';g.fillRect(q[0]-1*dp,q[1]-2.5*dp,2*dp,5*dp);});
- D.esc.forEach(e=>{const q=X(e.p);g.save();g.translate(q[0],q[1]);g.rotate(e.a);g.fillStyle='#475569';g.fillRect(-5*dp,-1.5*dp,10*dp,3*dp);g.restore();});
+ D2.esc.forEach(e=>{const q=X(e.p);g.save();g.translate(q[0],q[1]);g.rotate(e.a);g.fillStyle='#475569';g.fillRect(-5*dp,-1.5*dp,10*dp,3*dp);g.restore();});
  g.font=`800 ${11*dp}px Manrope, system-ui, sans-serif`;g.textBaseline='top';const lw=g.measureText(floorName(curFloor)).width;g.fillStyle='rgba(255,255,255,.9)';g.fillRect(w-lw-pad-8*dp,h-pad-17*dp,lw+8*dp,17*dp);g.fillStyle='#0e7490';g.fillText(floorName(curFloor),w-lw-pad-4*dp,h-pad-14*dp);
  miniBase=c;}
 function drawMini(){if(!miniBase)return;const w=mini.width,h=mini.height;mg.clearRect(0,0,w,h);mg.drawImage(miniBase,0,0);const s=miniT.s,X=(x,z)=>[x*s+miniT.ox,z*s+miniT.oz],dp=Math.min(devicePixelRatio,2);
@@ -838,7 +972,7 @@ function frameBody(now){
   const acc=calm?1:Math.min(1,dt*(l>0.05?7:10));player.vx+=(tx-player.vx)*acc;player.vz+=(tz-player.vz)*acc;
   if(Math.abs(player.vx)+Math.abs(player.vz)>0.01){const ox=player.x,oz=player.z;tryMove(player.vx*dt,player.vz*dt);if(Math.abs(player.x-ox)<1e-4)player.vx*=0.5;if(Math.abs(player.z-oz)<1e-4)player.vz*=0.5;}
  }
- if(ride)updateRide(rawDt);
+ if(ride)(ride.kind==='esc'?updateEscRide:updateRide)(rawDt);
  const goal=mode==='top'?topPose():walkPose();
  if(anim){anim.t=calm?1:Math.min(1,anim.t+dt/0.9);const e=anim.t<.5?4*anim.t**3:1-Math.pow(-2*anim.t+2,3)/2;
   cam.position.copy(anim.from.p).lerp(goal.p,e);cam.quaternion.copy(anim.from.q).slerp(goal.q,e);
@@ -846,10 +980,10 @@ function frameBody(now){
  else applyPose(goal);
  world.pmark.position.set(player.x,topY()+1,player.z);world.pmark.rotation.y=player.yaw;world.pmark.scale.setScalar(mode==='top'?Math.max(0.4,(topv.h-topY())/160):1);
  {const pk=mode==='top'?'top'+curFloor:'walk';if(world.people&&mode!=='store'&&(!calm||world.people.placed!==pk))updatePeople(calm?0:dt,now);}
- updateMallDoors(dt);updateLifts(rawDt);if(mode==='store'){updateShopExit(dt);if(!calm)updateShopPeople(dt,now);}
+ updateMallDoors(dt);updateLifts(rawDt);updateEscalators(rawDt);if(mode==='store'){updateShopExit(dt);if(!calm)updateShopPeople(dt,now);}
  if(!calm){world.wheel.rotation.z+=dt*0.04;world.cabins.forEach(c=>{c.rotation.z=-world.wheel.rotation.z;});}
  if(world.target.visible){const b=mode==='top'?topY()+3:(world.target.userData.base||GLASS_H+1.4);world.target.position.y=b+(calm?0:Math.sin(now/300)*0.3);if(!calm)world.target.rotation.y+=dt*1.5;world.target.scale.setScalar(mode==='top'?Math.max(1,(topv.h-topY())/50):1);}
- if(locked&&isFP()&&now-(frame.aimAt||0)>120){frame.aimAt=now;const el=$('aim');let txt='';if(mode==='store'&&SHOP){txt=shopAimText();}else{const t=aimAt();txt=!t?'':t.lift?'Лифт · нажми, чтобы выбрать этаж':(t.s.cat==='tbd'?t.s.name:t.s.name+(t.s.door?' · нажми или зайди в дверь':' · нажми, чтобы открыть'));}if(el.textContent!==txt)el.textContent=txt;el.style.opacity=txt?1:0;}
+ if(locked&&isFP()&&now-(frame.aimAt||0)>120){frame.aimAt=now;const el=$('aim');let txt='';if(mode==='store'&&SHOP){txt=shopAimText();}else{const t=aimAt();txt=!t?'':t.esc?(curFloor===1?'Эскалатор на 2 этаж · нажми или встань на ленту':'Эскалатор на 1 этаж · нажми или встань на ленту'):t.lift?'Лифт · нажми, чтобы выбрать этаж':(t.s.cat==='tbd'?t.s.name:t.s.name+(t.s.door?' · нажми или зайди в дверь':' · нажми, чтобы открыть'));}if(el.textContent!==txt)el.textContent=txt;el.style.opacity=txt?1:0;}
  renderer.render(mode==='store'&&SHOP?SHOP.scene:scene,cam);
  if(now-miniAt>80){drawMini();miniAt=now;}
 }
@@ -878,37 +1012,11 @@ const B=(w,h,d,x,y,z)=>new THREE.BoxGeometry(w,h,d).translate(x||0,y||0,z||0);
 const Cy=(r1,r2,h,x,y,z,seg)=>new THREE.CylinderGeometry(r1,r2,h,seg||12).translate(x||0,y||0,z||0);
 // горизонтальный цилиндр вдоль X: сначала поворот, потом сдвиг
 const CyX=(r,h,x,y,z,seg)=>new THREE.CylinderGeometry(r,r,h,seg||12).rotateZ(Math.PI/2).translate(x||0,y||0,z||0);
-let MODELS=null;
-function models(){if(MODELS)return MODELS;
- const bikeFrame=[];const bar=(ax,ay,bx,by)=>{const L=Math.hypot(bx-ax,by-ay);const g=new THREE.CylinderGeometry(0.018,0.018,L,6);g.rotateZ(-Math.atan2(bx-ax,by-ay));g.translate((ax+bx)/2,(ay+by)/2,0);bikeFrame.push(g);};
- bar(-0.5,0.35,-0.15,0.8);bar(-0.15,0.8,0.35,0.8);bar(0.35,0.8,0.5,0.35);bar(-0.15,0.8,0,0.35);bar(0,0.35,0.35,0.8);bar(-0.5,0.35,0,0.35);bar(-0.15,0.8,-0.18,0.9);bikeFrame.push(B(0.22,0.05,0.1,-0.19,0.92,0));bar(0.35,0.8,0.38,0.97);bikeFrame.push(B(0.04,0.04,0.5,0.38,0.98,0));
- const wheel=new THREE.TorusGeometry(0.33,0.028,6,28);
- MODELS={
-  shoe:mergeG([B(0.3,0.035,0.11,0,0.018,0),B(0.2,0.08,0.1,-0.04,0.075,0),B(0.1,0.05,0.095,0.09,0.06,0)]),
-  jacket:mergeG([B(0.52,0.72,0.1,0,-0.42,0),B(0.13,0.62,0.09,-0.33,-0.42,0),B(0.13,0.62,0.09,0.33,-0.42,0)]),
-  pants:mergeG([B(0.4,0.1,0.06,0,-0.12,0),B(0.18,0.9,0.06,-0.1,-0.6,0),B(0.18,0.9,0.06,0.1,-0.6,0)]),
-  tshirt:mergeG([B(0.46,0.6,0.05,0,-0.36,0),B(0.16,0.18,0.05,-0.29,-0.14,0),B(0.16,0.18,0.05,0.29,-0.14,0)]),
-  dress:mergeG([B(0.34,0.35,0.06,0,-0.22,0),new THREE.CylinderGeometry(0.17,0.34,0.7,12,1,true).translate(0,-0.74,0)]),
-  football:new THREE.SphereGeometry(0.11,16,12),basketball:new THREE.SphereGeometry(0.12,16,12),
-  bike:mergeG(bikeFrame),bikeWheels:mergeG([wheel.clone().translate(-0.5,0.35,0),wheel.clone().translate(0.5,0.35,0)]),
-  dumbbell:mergeG([CyX(0.02,0.36,0,0,0,8),CyX(0.06,0.07,-0.15,0,0,10),CyX(0.06,0.07,0.15,0,0,10)]),
-  bottle:mergeG([B(0.07,0.12,0.04,0,0.06,0),Cy(0.015,0.015,0.03,0,0.135,0,8)]),
-  jar:mergeG([Cy(0.05,0.05,0.1,0,0.05,0,12),Cy(0.055,0.055,0.03,0,0.115,0,12)]),
-  small:mergeG([B(0.12,0.03,0.09,0,0.015,0),Cy(0.025,0.025,0.02,0,0.04,0,10)]),
-  phone:B(0.075,0.15,0.008,0,0.085,0).rotateX(-0.35),
-  box:B(0.28,0.22,0.2,0,0.11,0),
-  toy:mergeG([new THREE.SphereGeometry(0.1,10,8).translate(0,0.1,0),new THREE.SphereGeometry(0.07,10,8).translate(0,0.24,0)]),
-  cup:mergeG([Cy(0.04,0.032,0.1,0,0.05,0,10)]),
-  appliance:B(0.62,1.7,0.6,0,0.85,0),
-  sofa:mergeG([B(2.1,0.42,0.9,0,0.3,0),B(2.1,0.5,0.22,0,0.66,-0.34),B(0.2,0.3,0.9,-0.95,0.6,0),B(0.2,0.3,0.9,0.95,0.6,0)]),
-  bed:mergeG([B(1.7,0.3,2.05,0,0.3,0),B(1.62,0.18,1.95,0,0.52,0.02),B(1.7,0.9,0.1,0,0.6,-1.02)]),
-  laptop:mergeG([B(0.36,0.02,0.25,0,0.01,0),B(0.36,0.24,0.012,0,0.13,-0.12).rotateX(-0.25)]),
-  tv:mergeG([B(1.1,0.64,0.04,0,0.52,0),B(0.3,0.02,0.2,0,0.01,0),B(0.05,0.2,0.03,0,0.1,-0.02)]),
-  ticket:B(0.2,0.005,0.08,0,0.003,0),
-  book:B(0.05,0.24,0.17,0,0.12,0)
- };return MODELS;}
-const ballTex=(type)=>canvasTex(256,128,(g,w,h)=>{if(type==='football'){g.fillStyle='#fafafa';g.fillRect(0,0,w,h);g.fillStyle='#1c1c1c';const r=mulberry(4);for(let i=0;i<14;i++){const x=r()*w,y=16+r()*(h-32);g.beginPath();for(let k=0;k<5;k++){const a=k/5*6.283;g.lineTo(x+Math.cos(a)*12,y+Math.sin(a)*12);}g.fill();}}
- else{g.fillStyle='#d9702a';g.fillRect(0,0,w,h);g.strokeStyle='#2a160a';g.lineWidth=4;g.beginPath();g.moveTo(0,h/2);g.lineTo(w,h/2);for(let x=0;x<=w;x+=64){g.moveTo(x,0);g.lineTo(x,h);}g.stroke();}});
+let MOD=null;
+function models(){if(!MOD)MOD=createModels(canvasTex);return MOD.M;}
+// ширина места на полке под товар (м)
+const SLOT={shoe:.36,box:.3,jar:.13,tube:.075,bottle:.12,book:.055,toy:.3,small:.15,phone:.13,laptop:.44,tv:1.25,dumbbell:.42,cup:.13,ticket:.24,football:.26,basketball:.28,appliance:.8,sofa:2.2,bed:1.8,bike:1.2,jacket:.13,tshirt:.1,longsleeve:.11,pants:.1,dress:.12};
+const GARM={jacket:1,pants:1,tshirt:1,longsleeve:1,dress:1};
 
 /* ---------- Зал магазина ---------- */
 let SHOP=null;// текущий магазин {s,scene,col,pick,zones,W,D,exit}
@@ -917,7 +1025,8 @@ function buildShop(s){
  const W=big?40:nd>=4?30:nd>=2?22:15,D=big?30:nd>=4?22:nd>=2?17:12,H=5.2;
  const sc=new THREE.Scene();sc.background=LIN('#efece6');sc.environment=scene.environment;sc.fog=new THREE.Fog(LIN('#efece6'),30,90);
  sc.add(new THREE.HemisphereLight(LIN('#fffaf2'),LIN('#b9ad9c'),0.55));const dl=new THREE.DirectionalLight(LIN('#fff2e0'),0.45);dl.position.set(10,20,8);sc.add(dl);
- const brand=s.col,brandHex=s.colHex;
+ // цвет бренда внутри зала — приглушённый, чтобы не резал глаза
+ const brand=s.col.clone().lerp(LIN('#8d8a84'),0.35),brandHex='#'+new THREE.Color(s.colHex).lerp(new THREE.Color('#8d8a84'),0.35).getHexString();
  const colliders=[],pick=[],zones=[];
  const floorTex=canvasTex(512,512,(g,w,h)=>{const r=mulberry(s.id);const food=s.cat==='food'||s.cat==='furn';
   if(food||s.cat==='fashion'){g.fillStyle='#cfae88';g.fillRect(0,0,w,h);for(let y=0;y<h;y+=32){const off=(y/32%2)*96;for(let x=-off;x<w;x+=192){g.fillStyle=`rgba(${110+r()*30},${70+r()*20},${30+r()*15},${0.12+r()*0.1})`;g.fillRect(x,y,190,31);}g.fillStyle='rgba(60,35,15,.3)';g.fillRect(0,y,w,1);}}
@@ -933,16 +1042,12 @@ function buildShop(s){
  // логотип на задней стене
  const logoT=canvasTex(1024,160,(g,w,h)=>{g.fillStyle=brandHex;g.fillRect(0,0,w,h);g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';fitFont(g,s.name,w-80,110,800);g.fillText(s.name,w/2,h/2+4);});
  const logo=new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W*0.5,14),Math.min(W*0.5,14)*160/1024),new THREE.MeshBasicMaterial({map:logoT,toneMapped:false}));logo.position.set(0,3.6,-D/2+0.03);sc.add(logo);
- // кинотеатр: световые афиши на боковых стенах, двери залов на задней
- if(s.name==='Синема Парк'){const G_=[['Фантастика','#1e1b4b','#818cf8'],['Комедия','#7c2d12','#fdba74'],['Мультфильм','#065f46','#6ee7b7'],['Приключения','#4a044e','#f0abfc'],['Семейное','#0c4a6e','#7dd3fc'],['Скоро в кино','#18181b','#facc15']];
-  const pt=canvasTex(256*G_.length,384,g=>{G_.forEach(([t,bg,fg],i)=>{const x=i*256;const gr=g.createLinearGradient(0,0,0,384);gr.addColorStop(0,fg);gr.addColorStop(1,bg);g.fillStyle=gr;g.fillRect(x,0,256,384);
-   const r=mulberry(i+3);for(let k=0;k<5;k++){g.fillStyle=`rgba(255,255,255,${0.08+r()*0.12})`;g.beginPath();g.arc(x+r()*256,60+r()*220,20+r()*60,0,7);g.fill();}
-   g.fillStyle='rgba(0,0,0,.45)';g.fillRect(x,270,256,114);g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';fitFont(g,t,220,38,800);g.fillText(t,x+128,315);g.font='700 18px Manrope, sans-serif';g.fillText('в Синема Парк',x+128,352);});});
-  const deptT=cat.findIndex(d=>d.key==='movies'),tick=deptT>=0?cat[deptT].items:null;
-  let k=0;[-1,1].forEach(side=>{for(let z=-D/2+2.5;z<D/2-6;z+=3.2){const u=(k%G_.length)/G_.length;const g=new THREE.PlaneGeometry(1.6,2.4);const uv=g.attributes.uv.array;for(let i=0;i<uv.length;i+=2)uv[i]=u+uv[i]/G_.length;
-    const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:pt,toneMapped:false}));m.position.set(side*(W/2-0.09),2.2,z);m.rotation.y=-side*Math.PI/2;if(tick){m.userData.prod=tick[k%tick.length];pick.push(m);}sc.add(m);
-    const fr=new THREE.Mesh(new THREE.BoxGeometry(0.06,2.6,1.8),MAT.darkMetal);fr.position.set(side*(W/2-0.02),2.2,z);sc.add(fr);k++;}});
-  const HALLS=['Зал 1 · IMAX','Зал 2 · 3D','Зал 3 · KIDS','Зал 4 · RELAX'];
+ // кинотеатр: двери залов (по открытым данным: IMAX, 3D, KIDS, RELAX) и указатель расписания — без выдуманных афиш
+ if(s.name==='Синема Парк'){const deptT=cat.findIndex(d=>d.key==='movies'),tick=deptT>=0?cat[deptT].items:null;
+  const bt=canvasTex(1024,512,g=>{g.fillStyle='#16181b';g.fillRect(0,0,1024,512);g.strokeStyle='#8b5cf6';g.lineWidth=6;g.strokeRect(12,12,1000,488);g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';
+   g.font='800 64px Manrope, system-ui, sans-serif';g.fillText('Сеансы и билеты',512,170);g.font='600 40px Manrope, system-ui, sans-serif';g.fillStyle='#c4b5fd';g.fillText('расписание — на сайте кинотеатра',512,260);g.fillStyle='#e5e7eb';g.fillText('8 залов · IMAX · 3D · KIDS · RELAX',512,350);});
+  [-1,1].forEach(side=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(3.2,1.6),new THREE.MeshBasicMaterial({map:bt,toneMapped:false}));m.position.set(side*(W/2-0.05),2.4,-D/4);m.rotation.y=-side*Math.PI/2;if(tick){m.userData.prod=tick[0];pick.push(m);}sc.add(m);});
+  const HALLS=['Зал 1','Зал 2','Зал 3','Зал 4'];
   HALLS.forEach((t,i)=>{const x=-W/2+2+i*2.4;const dt=canvasTex(256,384,g=>{g.fillStyle='#5b1a2b';g.fillRect(0,0,256,384);g.fillStyle='#1f0a10';g.fillRect(126,70,4,314);g.fillStyle='#111';g.fillRect(0,0,256,70);g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';fitFont(g,t,236,34,800);g.fillText(t,128,36);g.fillStyle='#d4af37';g.fillRect(100,210,8,40);g.fillRect(148,210,8,40);});
    const d=new THREE.Mesh(new THREE.PlaneGeometry(1.7,2.55),new THREE.MeshBasicMaterial({map:dt,toneMapped:false}));d.position.set(x,1.28,-D/2+0.04);sc.add(d);if(tick){d.userData.prod=tick[i%tick.length];pick.push(d);}});}
  // вход/выход на передней стене: проём шириной как у двери в галерее, за стеклом — галерея
@@ -982,22 +1087,26 @@ function buildShop(s){
   const signT=canvasTex(512,112,(g,W_,H_)=>{g.fillStyle='#1f2226';rr(g,2,2,W_-4,H_-4,14);g.fill();g.fillStyle=brandHex;g.fillRect(2,H_-12,W_-4,10);g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';fitFont(g,dep.title,W_-40,48,800);g.fillText(dep.title,W_/2,H_/2-2);});
   const sg=new THREE.Mesh(new THREE.PlaneGeometry(3.4,0.74),new THREE.MeshBasicMaterial({map:signT,toneMapped:false,side:THREE.DoubleSide}));sg.position.set(cx,3.7,cz+d/2-0.4);sg.userData.dept=di;sc.add(sg);pick.push(sg);
   [-1,1].forEach(k=>{const w_=new THREE.Mesh(Cy(0.008,0.008,H-4.07,cx+k*1.5,3.7+0.37+(H-4.07)/2,cz+d/2-0.4,4),MAT.darkMetal);sc.add(w_);});
-  const items=dep.items;let pi=0;const next=()=>items[(pi++)%items.length];
+  const items=dep.items;let pi=0;const next=()=>dep.itemAt(pi++);
   const lay=dep.lay;
-  const wallUnit=(ux,uz,ry,len)=>{// стеллаж 4 полки
+  // ряд товаров вдоль полки: у каждого своё место, ширина — по товару
+  const fillRow=(x0_,x1_,place)=>{let x=x0_;for(let guard=0;guard<400;guard++){const p=next();const wdt=(SLOT[p.model]||0.3)*(p.scale||1);if(x+wdt>x1_){pi--;break;}place(x+wdt/2,p);x+=wdt+0.035;}};
+  const wallUnit=(ux,uz,ry,len)=>{// стеллаж: 4 полки (для телевизоров — 2 яруса)
+   const tall=dep.model==='tv'||dep.model==='appliance',lv=tall?[0.06,1.12]:[0.37,0.87,1.37,1.87];
    const g=new THREE.Group();const body=new THREE.Mesh(B(len,2.2,0.5,0,1.1,-0.2),new THREE.MeshStandardMaterial({color:LIN('#f2f0ec'),roughness:.6}));g.add(body);
-   for(let k=0;k<4;k++){const sh=new THREE.Mesh(B(len,0.03,0.45,0,0.35+k*0.5,0.05),MAT.white);g.add(sh);}
+   lv.forEach(y=>{const sh=new THREE.Mesh(B(len,0.03,0.45,0,y-0.02,0.05),MAT.white);g.add(sh);});
    const back=new THREE.Mesh(B(len,2.2,0.02,0,1.1,-0.19),new THREE.MeshStandardMaterial({color:LIN(shade(brandHex,.55)),roughness:.7}));g.add(back);
    g.position.set(ux,0,uz);g.rotation.y=ry;sc.add(g);
    const ca=Math.cos(ry),sa=Math.sin(ry);const hx=Math.abs(len/2*ca)+Math.abs(0.35*sa),hz=Math.abs(len/2*sa)+Math.abs(0.35*ca);colliders.push([ux-hx,ux+hx,uz-hz,uz+hz]);
-   for(let k=0;k<4;k++){const nper=Math.max(3,Math.floor(len/0.42));for(let j=0;j<nper;j++){const p=next();const lx=-len/2+0.25+j*(len-0.5)/(nper-1);const y=0.37+k*0.5;
-    addInst(dep.model,ux+lx*ca+0.05*sa,y,uz-lx*sa+0.05*ca,ry+(dep.model==='shoe'?Math.PI/2*0:0),p.color,p);}}};
+   lv.forEach(y=>fillRow(-len/2+0.12,len/2-0.08,(lx,p)=>addInst(p.model,ux+lx*ca+0.05*sa,y,uz-lx*sa+0.05*ca,ry,p.color,p,p.scale)));};
   if(lay==='wall'){const len=Math.min(4,w-0.4);const n=Math.max(1,Math.floor((d-1)/2.2));for(let k=0;k<n;k++){wallUnit(cx,zz0+0.8+k*2.2,0,len);}}
   else if(lay==='racks'){const nR=Math.max(1,Math.floor((d-0.6)/1.9));for(let k=0;k<nR;k++){const rz=zz0+0.9+k*1.9,len=Math.min(4.4,w-0.6);
     // вешало: две стойки и перекладина
     const g=new THREE.Group();[-len/2,len/2].forEach(px=>g.add(new THREE.Mesh(Cy(0.025,0.025,1.6,px,0.8,0,8),MAT.metal)));const rail=new THREE.Mesh(CyX(0.015,len,0,1.58,0,8),MAT.metal);g.add(rail);
     g.add(new THREE.Mesh(B(len+0.1,0.04,0.5,0,0.02,0),MAT.darkMetal));g.position.set(cx,0,rz);sc.add(g);colliders.push([cx-len/2-0.2,cx+len/2+0.2,rz-0.3,rz+0.3]);
-    const nG=Math.floor(len/0.62);for(let j=0;j<nG;j++){const p=next();addInst(dep.model,cx-len/2+0.35+j*((len-0.7)/Math.max(1,nG-1)),1.56,rz,0,p.color,p);}}
+    // одежда висит плотно, боком к проходу, как в магазине; крайняя — лицом
+    fillRow(cx-len/2+0.2,cx+len/2-0.2,(x,p)=>addInst(p.model,x,1.56,rz,Math.PI/2+(((pi*37)%7)-3)*0.02,p.color,p,p.scale));
+    {const p=next();addInst(p.model,cx+len/2+0.05,1.56,rz,0,p.color,p,p.scale);}}
    // манекен у отдела
    }
   else if(lay==='football'||lay==='basketball'){const ball=lay;
@@ -1029,13 +1138,13 @@ function buildShop(s){
   else if(lay==='counters'){const n=Math.max(1,Math.floor((d-0.8)/2));for(let k=0;k<n;k++){const vz=zz0+1+k*2,len=Math.min(3.4,w-1);
     const base=new THREE.Mesh(B(len,0.9,0.6,0,0.45,0),new THREE.MeshStandardMaterial({color:LIN('#f2f0ec'),roughness:.4}));base.position.set(cx,0,vz);sc.add(base);
     const gl=new THREE.Mesh(B(len,0.3,0.6,0,1.05,0),new THREE.MeshStandardMaterial({color:LIN('#dcecf2'),transparent:true,opacity:.25,roughness:.02,metalness:.6}));gl.position.set(cx,0,vz);sc.add(gl);colliders.push([cx-len/2-0.1,cx+len/2+0.1,vz-0.4,vz+0.4]);
-    const nI=Math.floor(len/0.3);for(let j=0;j<nI;j++){const p=next();addInst(dep.model==='bottle'?'bottle':'small',cx-len/2+0.2+j*((len-0.4)/Math.max(1,nI-1)),0.91,vz,0,p.color,p);}}
+    [-0.14,0.14].forEach(dz=>fillRow(cx-len/2+0.15,cx+len/2-0.1,(x,p)=>addInst(p.model,x,0.91,vz+dz,0,p.color,p,p.scale)));}
    wallUnit(cx,zz1-0.3,Math.PI,Math.min(4,w-0.4));}
   else if(lay==='tables'){const n=Math.max(1,Math.floor((d-0.6)/1.8));for(let k=0;k<n;k++){const tz=zz0+0.9+k*1.8,len=Math.min(2.4,w-1);
     const tb=new THREE.Mesh(B(len,0.85,0.9,0,0.425,0),new THREE.MeshStandardMaterial({color:LIN('#e9e4dc'),roughness:.4}));tb.position.set(cx,0,tz);sc.add(tb);colliders.push([cx-len/2-0.15,cx+len/2+0.15,tz-0.55,tz+0.55]);
-    const nI=Math.floor(len/0.3);for(let j=0;j<nI;j++){const p=next();addInst(dep.model,cx-len/2+0.2+j*((len-0.4)/Math.max(1,nI-1)),0.86,tz,0,p.color,p);}}}
+    const rows=(SLOT[dep.model]||0.3)>0.35?[0]:[-0.2,0.2];rows.forEach(dz=>fillRow(cx-len/2+0.15,cx+len/2-0.1,(x,p)=>addInst(p.model,x,0.86,tz+dz,0,p.color,p,p.scale)));}}
   else if(lay==='floor'){const m=dep.model;const sx=m==='sofa'?2.6:m==='bed'?2.3:m==='appliance'?1.0:1.2,sz=m==='sofa'?1.6:m==='bed'?2.6:m==='appliance'?1.0:1.2;
-   const nx=Math.max(1,Math.floor(w/sx)),nz=Math.max(1,Math.floor(d/sz));for(let a=0;a<nx;a++)for(let b=0;b<nz;b++){if(nx*nz>1&&(a+b)%2&&m!=='appliance'&&m!=='toy')continue;const p=next();const px=zx0+sx/2+a*sx,pz=zz0+sz/2+b*sz;addInst(m,px,0,pz,0,p.color,p,m==='toy'?2.2:1);
+   const nx=Math.max(1,Math.floor(w/sx)),nz=Math.max(1,Math.floor(d/sz));for(let a=0;a<nx;a++)for(let b=0;b<nz;b++){if(nx*nz>1&&(a+b)%2&&m!=='appliance'&&m!=='toy')continue;const p=next();const px=zx0+sx/2+a*sx,pz=zz0+sz/2+b*sz;addInst(p.model,px,0,pz,0,p.color,p,p.model==='toy'?2.2:1);
     const hw=(m==='sofa'?1.15:m==='bed'?0.9:m==='appliance'?0.35:0.3),hd=(m==='sofa'?0.5:m==='bed'?1.1:0.35);colliders.push([px-hw,px+hw,pz-hd,pz+hd]);}}
   else if(lay==='cafe'){// стойка, меню, столики
    const cxz=zz0+0.6;const ct=new THREE.Mesh(B(Math.min(5,w-1),1.1,0.8,0,0.55,0),new THREE.MeshStandardMaterial({color:LIN('#3b2f28'),roughness:.5}));ct.position.set(cx,0,cxz);sc.add(ct);colliders.push([cx-Math.min(5,w-1)/2-0.1,cx+Math.min(5,w-1)/2+0.1,cxz-0.5,cxz+0.5]);
@@ -1048,9 +1157,9 @@ function buildShop(s){
     t.position.set(tx,0,tz);sc.add(t);colliders.push([tx-0.9,tx+0.9,tz-0.45,tz+0.45]);addInst('cup',tx+0.12,0.76,tz,0,'#ffffff',items[a%items.length]);}}
  });
  // вешалки-плечики для одежды, ценники у товаров на полках и столах
- {const GARM={jacket:1,pants:1,tshirt:1,dress:1};const hangers=[],tags=[];
+ {const hangers=[],tags=[];
   Object.entries(inst).forEach(([model,arr])=>arr.forEach(o=>{if(GARM[model])hangers.push(o);else if(o.y>0.3&&!['bike','sofa','bed','appliance','cup','football','basketball'].includes(model))tags.push(o);}));
-  const hg=mergeG([CyX(0.008,0.42,0,0,0,6),Cy(0.006,0.006,0.1,0,0.05,0,6)]);const him=new THREE.InstancedMesh(hg,MAT.metal,Math.max(1,hangers.length));
+  const hg=mergeG([CyX(0.008,0.42,0,0,0,6),Cy(0.006,0.006,0.1,0,0.05,0,6)]);hg.rotateY(Math.PI/2);const him=new THREE.InstancedMesh(hg,MAT.metal,Math.max(1,hangers.length));
   const q=new THREE.Quaternion();hangers.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);mtx.compose(new V3(o.x,o.y,o.z),q,new V3(1,1,1));him.setMatrixAt(i,mtx);});sc.add(him);
   const tg=B(0.07,0.035,0.004,0,-0.01,0);const tim=new THREE.InstancedMesh(tg,new THREE.MeshBasicMaterial({color:LIN('#ffffff')}),Math.max(1,tags.length));
   tags.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);const fx=Math.sin(o.ry)*0.2,fz=Math.cos(o.ry)*0.2;mtx.compose(new V3(o.x+fx,o.y,o.z+fz),q,new V3(1,1,1));tim.setMatrixAt(i,mtx);});sc.add(tim);}
@@ -1070,13 +1179,10 @@ function buildShop(s){
  // инстансы товаров
  const M=models();const byModel={};
  Object.entries(inst).forEach(([model,arr])=>{
-  let geo=M[model]||M.box;let mat;
-  if(model==='football'||model==='basketball')mat=new THREE.MeshStandardMaterial({map:ballTex(model),roughness:.5});
-  else mat=new THREE.MeshStandardMaterial({roughness:model==='bottle'?.1:.6,metalness:model==='small'?.6:0,transparent:model==='bottle',opacity:model==='bottle'?.85:1});
-  const im=new THREE.InstancedMesh(geo,mat,arr.length);const q=new THREE.Quaternion(),sc_=new V3();
-  arr.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);sc_.set(o.scale,o.scale,o.scale);mtx.compose(new V3(o.x,o.y,o.z),q,sc_);im.setMatrixAt(i,mtx);im.setColorAt(i,LIN(o.color));});
-  if(im.instanceColor)im.instanceColor.needsUpdate=true;im.userData.prods=arr.map(o=>o.prod);sc.add(im);pick.push(im);byModel[model]=arr;
-  if(model==='bike'){const wh=new THREE.InstancedMesh(M.bikeWheels,new THREE.MeshStandardMaterial({color:LIN('#1c1d20'),roughness:.7}),arr.length);arr.forEach((o,i)=>{im.getMatrixAt(i,mtx);wh.setMatrixAt(i,mtx);});wh.userData.prods=im.userData.prods;sc.add(wh);pick.push(wh);}});
+  const q=new THREE.Quaternion(),sc_=new V3(),prods=arr.map(o=>o.prod);byModel[model]=arr;
+  (M[model]||M.box).forEach(pt=>{const im=new THREE.InstancedMesh(pt.g,MOD.partMat(pt),arr.length);
+   arr.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);sc_.setScalar(o.scale);mtx.compose(new V3(o.x,o.y,o.z),q,sc_);im.setMatrixAt(i,mtx);if(pt.tint)im.setColorAt(i,LIN(o.color));});
+   if(im.instanceColor)im.instanceColor.needsUpdate=true;im.userData.prods=prods;sc.add(im);pick.push(im);});});
  // несколько покупателей
  {const parts=humanParts();const n=big?8:4;const r=mulberry(s.id+5);const mats=[new THREE.MeshStandardMaterial({roughness:.8}),new THREE.MeshStandardMaterial({roughness:.8}),new THREE.MeshStandardMaterial({roughness:.8}),new THREE.MeshStandardMaterial({roughness:.6})];
   const ms=[parts.torso,parts.legs,parts.arms,parts.head].map((g,i)=>new THREE.InstancedMesh(g,mats[i],n));const cl=['#2f3a4a','#8a3b3b','#3f5e4a','#c9b79c','#4d4f7c'],sk=['#e6c3a5','#c6946b','#f0d2bb'];
@@ -1123,7 +1229,7 @@ function exitShop(rel){if(mode!=='store')return;const s=returnDoor||SHOP.s,d=s.d
  if(blocked(player.x,player.z)){const w=nearestFree(player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  d.open=1;updateDoors();doorCooldown=0.8;updateJoy();updateCross();applyPose(walkPose());}
 function updateShopDoor(){if(!SHOP)return;const o=SHOP.doorOpen,h=SHOP.dw/2;SHOP.leaves[0].position.set(-(h/2+o*h*0.92),0,0.03);SHOP.leaves[1].position.set(h/2+o*h*0.92,0,0.03);}
-function disposeShop(){if(!SHOP)return;SHOP.scene.traverse(o=>{if(o.geometry&&!Object.values(MODELS||{}).includes(o.geometry))o.geometry.dispose();if(o.material){const shared=Object.values(MAT);(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(shared.includes(m))return;if(m.map&&![shelfAtlas,marble,blobTex].includes(m.map))m.map.dispose();m.dispose();});}});SHOP=null;SHOP_PEOPLE=null;}
+function disposeShop(){if(!SHOP)return;SHOP.scene.traverse(o=>{if(o.geometry&&!(MOD&&MOD.geos.has(o.geometry)))o.geometry.dispose();if(o.material){const shared=Object.values(MAT);(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(shared.includes(m))return;if(m.map&&![shelfAtlas,marble,blobTex].includes(m.map)&&!(MOD&&MOD.texs.has(m.map)))m.map.dispose();m.dispose();});}});SHOP=null;SHOP_PEOPLE=null;}
 function setMallUI(on){document.body.classList.toggle('in-store',!on);['chips','mini','note'].forEach(id=>{$(id).style.display=on?'':'none';});document.querySelectorAll('#top .seg').forEach(e=>{e.style.display=on?'':'none';});}
 // двери: открываются при приближении, проход в проём — вход
 function updateMallDoors(dt){if(!world.doors)return;let changed=false;const px=player.x,pz=player.z;
@@ -1156,11 +1262,12 @@ function requestLockIfNeeded(){if(!coarse&&isFP()&&!locked){requestLock();}updat
 $('shopCat').onclick=()=>{shopProd=null;renderShopPanel();openShopPanel();};
 $('shopOut').onclick=()=>exitShop();
 /* ---------- Панель каталога ---------- */
+let shopShown=24;
 function renderShopPanel(){const s=SHOP.s,cat=SHOP.cat;const el=$('shop');
  el.querySelector('.sh-name').textContent=s.name;el.querySelector('.sh-what').textContent=(s.what||'')+' · '+floorName(s.floor);
  el.querySelector('.sh-dot').style.background=s.colHex;
  const tabs=el.querySelector('.sh-tabs');tabs.innerHTML='';
- cat.forEach((d,i)=>{const b=document.createElement('button');b.className='sh-tab'+(i===shopDept?' on':'');b.textContent=d.title;b.onclick=()=>{shopDept=i;shopProd=null;renderShopPanel();};tabs.appendChild(b);});
+ cat.forEach((d,i)=>{const b=document.createElement('button');b.className='sh-tab'+(i===shopDept?' on':'');b.textContent=d.title;b.onclick=()=>{shopDept=i;shopProd=null;shopShown=24;renderShopPanel();};tabs.appendChild(b);});
  const body=el.querySelector('.sh-body');body.innerHTML='';
  if(shopProd){const p=shopProd;const w=document.createElement('div');w.className='sh-detail';
   const img=document.createElement('img');img.src=iconURL(p.icon,p.color);img.alt='';w.appendChild(img);
@@ -1173,45 +1280,57 @@ function renderShopPanel(){const s=SHOP.s,cat=SHOP.cat;const el=$('shop');
   const a=document.createElement('a');a.className='btn pri';a.target='_blank';a.rel='noopener';const site=siteOf(s);a.href=site||mapsOf(s);a.textContent=site?'Смотреть на сайте ↗':'Магазин на картах ↗';row.appendChild(a);
   w.appendChild(row);body.appendChild(w);}
  else{const grid=document.createElement('div');grid.className='sh-grid';
-  cat[shopDept].items.forEach(p=>{const c=document.createElement('button');c.className='sh-card';const img=document.createElement('img');img.src=iconURL(p.icon,p.color);img.alt='';img.loading='lazy';
+  const dep=cat[shopDept];const all=dep.items;const shown=Math.min(all.length,shopShown);
+  const cnt=document.createElement('p');cnt.className='sh-note';cnt.textContent='В отделе '+all.length+' товаров · у каждого своё место в зале';body.appendChild(cnt);
+  all.slice(0,shown).forEach(p=>{const c=document.createElement('button');c.className='sh-card';const img=document.createElement('img');img.src=thumbURL(p);img.alt='';img.loading='lazy';
    const n=document.createElement('span');n.className='sh-cn';n.textContent=p.name;const pr=document.createElement('span');pr.className='sh-cp';pr.textContent=fmtPrice(p.price);
-   c.append(img,n,pr);c.onclick=()=>{openProduct(p);};grid.appendChild(c);});body.appendChild(grid);}
+   c.append(img,n,pr);c.onclick=()=>{openProduct(p);};grid.appendChild(c);});body.appendChild(grid);
+  if(shown<all.length){const more=document.createElement('button');more.className='btn sh-more';more.textContent='Показать ещё '+Math.min(24,all.length-shown);more.onclick=()=>{shopShown+=24;renderShopPanel();};body.appendChild(more);}}
  const site=siteOf(s);const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';}
 $('shExit').onclick=()=>closeShopPanel(true);
 $('shMin').onclick=()=>{$('shop').classList.toggle('min');};
 
 /* ---------- Страница товара: 3D со всех сторон, на манекене, размеры ---------- */
-const SIZES={jacket:['XS','S','M','L','XL','XXL'],pants:['44','46','48','50','52','54'],tshirt:['XS','S','M','L','XL','XXL'],dress:['40','42','44','46','48','50'],shoe:['38','39','40','41','42','43','44','45'],bike:['S · 150–165 см','M · 165–178 см','L · 178–190 см']};
-const WEARABLE={jacket:1,pants:1,tshirt:1,dress:1,shoe:1};
+const SIZES={jacket:['XS','S','M','L','XL','XXL'],pants:['44','46','48','50','52','54'],tshirt:['XS','S','M','L','XL','XXL'],longsleeve:['XS','S','M','L','XL','XXL'],dress:['40','42','44','46','48','50'],shoe:['38','39','40','41','42','43','44','45'],bike:['S · 150–165 см','M · 165–178 см','L · 178–190 см']};
+const WEARABLE={jacket:1,pants:1,tshirt:1,longsleeve:1,dress:1,shoe:1};
 let PV=null;
-function productModel(p){const dep=DEPT[p.dept];let m=dep?dep.model:'box';if(p.icon==='shoe')m='shoe';return m;}
+function productModel(p){if(p.model)return p.model;const dep=DEPT[p.dept];return dep?dep.model:'box';}
+// сцена просмотра: мягкий свет с трёх сторон, подиум
+function viewerScene(){const sc=new THREE.Scene();sc.environment=scene.environment;sc.add(new THREE.HemisphereLight(LIN('#ffffff'),LIN('#c9c1b5'),0.75));
+ const key=new THREE.DirectionalLight(LIN('#fff6ea'),0.85);key.position.set(2,4,3);sc.add(key);const rim=new THREE.DirectionalLight(LIN('#e8f0ff'),0.35);rim.position.set(-3,2,-2);sc.add(rim);
+ const pod=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,0.04,48),new THREE.MeshStandardMaterial({color:LIN('#eceae6'),roughness:.45}));pod.position.y=-0.02;sc.add(pod);
+ const sh=new THREE.Mesh(new THREE.CircleGeometry(0.6,32),new THREE.MeshBasicMaterial({map:blobTex,transparent:true,depthWrite:false}));sh.rotation.x=-Math.PI/2;sh.position.y=0.002;sc.add(sh);
+ const root=new THREE.Group();sc.add(root);return{sc,root,pod,sh};}
 function ensureViewer(){if(PV)return PV;const cv=document.createElement('canvas');cv.className='pv';cv.width=640;cv.height=440;
- const r=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;r.setPixelRatio(1);r.setSize(640,440,false);
- const sc=new THREE.Scene();sc.environment=scene.environment;sc.add(new THREE.HemisphereLight(LIN('#ffffff'),LIN('#c9c1b5'),0.9));const dl=new THREE.DirectionalLight(LIN('#ffffff'),0.8);dl.position.set(2,4,3);sc.add(dl);
- const c=new THREE.PerspectiveCamera(30,640/440,0.05,50);const pod=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,0.04,40),new THREE.MeshStandardMaterial({color:LIN('#eceae6'),roughness:.4}));sc.add(pod);
- const root=new THREE.Group();sc.add(root);PV={cv,r,sc,c,root,pod,rot:0.6,drag:null,raf:0,run:false};
+ const r=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=0.95;r.setPixelRatio(1);r.setSize(640,440,false);
+ const c=new THREE.PerspectiveCamera(30,640/440,0.02,50);const vs=viewerScene();PV=Object.assign({cv,r,c,rot:0.6,drag:null,raf:0,run:false},vs);
  cv.addEventListener('pointerdown',e=>{PV.drag=e.clientX;cv.setPointerCapture(e.pointerId);});cv.addEventListener('pointermove',e=>{if(PV.drag!=null){PV.rot+=(e.clientX-PV.drag)*0.012;PV.drag=e.clientX;}});
  cv.addEventListener('pointerup',()=>{PV.drag=null;});cv.addEventListener('pointercancel',()=>{PV.drag=null;});return PV;}
 function stopViewer(){if(PV){PV.run=false;cancelAnimationFrame(PV.raf);}}
-function viewerShow(p,onMannequin){const V=ensureViewer();while(V.root.children.length)V.root.remove(V.root.children[0]);
- const M=models(),m=productModel(p),col=LIN(p.color);const mat=new THREE.MeshStandardMaterial({color:col,roughness:.55});
- let h=1;
- if(onMannequin&&WEARABLE[m]){const parts=humanParts();const skin=new THREE.MeshStandardMaterial({color:LIN('#f1efeb'),roughness:.3});
-  const top=(m==='jacket'||m==='tshirt'||m==='dress'),bottom=(m==='pants'||m==='dress');
-  const body=new THREE.Mesh(parts.torso,top?mat:skin),legs=new THREE.Mesh(parts.legs,bottom?mat:new THREE.MeshStandardMaterial({color:LIN('#2c3440'),roughness:.8})),arms=new THREE.Mesh(parts.arms,m==='jacket'?mat:skin),head=new THREE.Mesh(parts.head,skin);
-  V.root.add(body,legs,arms,head);
-  if(m==='jacket'){const coat=new THREE.Mesh(B(0.44,0.8,0.3,0,1.3,0),mat);V.root.add(coat);}
-  if(m==='shoe'){[-0.09,0.09].forEach(x=>{const sh=new THREE.Mesh(M.shoe,mat);sh.rotation.y=-Math.PI/2;sh.position.set(x,0,0.05);V.root.add(sh);});}
+// товар целиком (или на манекене) в группе, поставленный на подиум; h — высота для камеры
+function productGroup(p,onMannequin){models();const m=productModel(p);const g=new THREE.Group();let h=1;
+ if(onMannequin&&WEARABLE[m]){const parts=humanParts(true);const skin=new THREE.MeshStandardMaterial({color:LIN('#efece6'),roughness:.35});const fab=MOD.partMat({m:m==='longsleeve'?'knit':'fabric'},p.color);
+  const top=(m==='jacket'||m==='tshirt'||m==='longsleeve'||m==='dress'),bottom=(m==='pants'||m==='dress');const denim=MOD.partMat({m:'fabric'},'#2c3440');
+  g.add(new THREE.Mesh(parts.torso,top?fab:skin),new THREE.Mesh(parts.legs,bottom?fab:denim),new THREE.Mesh(parts.arms,(m==='jacket'||m==='longsleeve')?fab:skin),new THREE.Mesh(parts.head,skin));
+  if(m==='jacket'){const coat=new THREE.Mesh(mergeG([Cy(0.23,0.25,0.62,0,1.32,0,24)]),fab);coat.scale.set(1,1,0.72);g.add(coat);}
+  if(m==='dress'){const sk=new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.34,0.62,28,1,true).translate(0,0.72,0),fab);sk.material.side=THREE.DoubleSide;g.add(sk);}
+  if(m==='shoe'){[-0.09,0.09].forEach(x=>{const s=MOD.group('shoe',p.color);s.rotation.y=-Math.PI/2;s.position.set(x,0,0.03);g.add(s);});}
   h=1.95;}
- else{const geo=M[m]||M.box;let mesh;
-  if(m==='football'||m==='basketball')mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({map:ballTex(m),roughness:.5}));else mesh=new THREE.Mesh(geo,mat);
-  const g=new THREE.Group();g.add(mesh);if(m==='bike'){g.add(new THREE.Mesh(M.bikeWheels,new THREE.MeshStandardMaterial({color:LIN('#1c1d20'),roughness:.7})));}
-  const bb=new THREE.Box3().setFromObject(g);const size=bb.getSize(new V3()),ctr=bb.getCenter(new V3());g.position.set(-ctr.x,-bb.min.y,-ctr.z);
-  if(m==='jacket'||m==='pants'||m==='tshirt'||m==='dress'){g.position.y=-bb.min.y;}
-  V.root.add(g);h=Math.max(size.y,size.x*0.75,size.z*0.75);}
- V.pod.position.y=-0.02;V.target=h;V.c.position.set(0,h*0.62,h*2.6+0.3);V.c.lookAt(0,h*0.48,0);
+ else{const it=MOD.group(m,p.color);const bb=new THREE.Box3().setFromObject(it);const size=bb.getSize(new V3()),ctr=bb.getCenter(new V3());it.position.set(-ctr.x,-bb.min.y,-ctr.z);g.add(it);h=Math.max(size.y,size.x*0.75,size.z*0.75);}
+ return{g,h};}
+function viewerShow(p,onMannequin){const V=ensureViewer();while(V.root.children.length)V.root.remove(V.root.children[0]);
+ const {g,h}=productGroup(p,onMannequin);V.root.add(g);V.pod.scale.setScalar(Math.max(0.35,h*0.7));V.sh.scale.setScalar(Math.max(0.3,h*0.6));
+ V.target=h;V.c.position.set(0,h*0.62,h*2.6+0.3);V.c.lookAt(0,h*0.48,0);
  if(!V.run){V.run=true;const loop=()=>{if(!V.run)return;if(V.drag==null&&!calm)V.rot+=0.006;V.root.rotation.y=V.rot;V.r.render(V.sc,V.c);V.raf=requestAnimationFrame(loop);};loop();}
  return V.cv;}
+// картинки для карточек каталога: тот же 3D-товар, снимок под углом (кешируются)
+let TH=null;const thumbCache=new Map();
+function thumbURL(p){if(thumbCache.has(p.id))return thumbCache.get(p.id);
+ if(!TH){const cv=document.createElement('canvas');cv.width=240;cv.height=180;const r=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,preserveDrawingBuffer:true});r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=0.95;r.setSize(240,180,false);r.setClearColor(0xf1efeb,1);
+  TH=Object.assign({cv,r,c:new THREE.PerspectiveCamera(28,240/180,0.02,50)},viewerScene());}
+ while(TH.root.children.length)TH.root.remove(TH.root.children[0]);const {g,h}=productGroup(p,false);g.rotation.y=0.65;TH.root.add(g);TH.pod.scale.setScalar(Math.max(0.35,h*0.7));TH.sh.scale.setScalar(Math.max(0.3,h*0.6));
+ TH.c.position.set(0,h*0.7,h*2.4+0.25);TH.c.lookAt(0,h*0.45,0);TH.r.render(TH.sc,TH.c);let url;try{url=TH.cv.toDataURL('image/jpeg',0.82);}catch(e){url=iconURL(p.icon,p.color);}
+ thumbCache.set(p.id,url);return url;}
 function openProduct(p){shopProd=p;shopDept=Math.max(0,SHOP.cat.findIndex(d=>d.key===p.dept));renderProduct(p,false);openShopPanel();}
 const el_=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;};
 function renderProduct(p,onMan,size){const s=SHOP.s,el=$('shop');el.querySelector('.sh-name').textContent=p.name;el.querySelector('.sh-what').textContent=s.name+' · '+(DEPT[p.dept]?DEPT[p.dept].t:'');el.querySelector('.sh-dot').style.background=s.colHex;
@@ -1221,15 +1340,15 @@ function renderProduct(p,onMan,size){const s=SHOP.s,el=$('shop');el.querySelecto
  w.appendChild(el_('p','sh-note','Потяни картинку, чтобы повернуть товар.'));
  if(WEARABLE[m]){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
  const info=describe(p,m);
- const pr=el_('div','sh-pricebox');pr.append(el_('span','sh-price',fmtPrice(p.price)),el_('span','sh-rate','★ '+info.rating+' · '+info.reviews+' отзывов'));w.appendChild(pr);
- w.appendChild(el_('p','sh-stock','● В наличии в «'+s.name+'», '+floorName(s.floor)+'. Можно заказать и забрать в магазине.'));
+ const pr=el_('div','sh-pricebox');pr.append(el_('span','sh-price',fmtPrice(p.price)),el_('span','sh-rate','цена условная'));w.appendChild(pr);
+ w.appendChild(el_('p','sh-stock','«'+s.name+'», '+floorName(s.floor)+'. Наличие и настоящую цену уточняй в магазине или на его сайте.'));
  let chosen=size||null;const sz=SIZES[m];let lab=null;
  if(sz){lab=el_('p','sh-lab','Размер');w.appendChild(lab);const row=el_('div','sh-sizes');
   sz.forEach(x=>{const b=el_('button','sh-size'+(x===chosen?' on':''),x);b.onclick=()=>{row.querySelectorAll('.sh-size').forEach(q=>q.classList.remove('on'));b.classList.add('on');chosen=x;lab.textContent='Размер';lab.classList.remove('err');};row.appendChild(b);});w.appendChild(row);}
  const buy=el_('div','sh-row sh-buy');
  const add=el_('button','btn pri','В корзину');const now=el_('button','btn','Купить сейчас');
  const put=()=>{if(sz&&!chosen){lab.textContent='Выбери размер';lab.classList.add('err');return false;}
-  cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color});return true;};
+  cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color,model:productModel(p),pid:p.id});return true;};
  add.onclick=()=>{if(!put())return;add.textContent='В корзине ✓';add.classList.add('ok');showHint('«'+p.name+'» в корзине. Корзина — кнопка с сумкой вверху справа');setTimeout(()=>{add.textContent='Добавить ещё';add.classList.remove('ok');},1600);};
  now.onclick=()=>{if(!put())return;closeShopPanel(false);openCart(true);};
  buy.append(add,now);w.appendChild(buy);
@@ -1250,7 +1369,7 @@ function openCart(checkout){releaseLock();$('cartBox').hidden=false;$('orderDone
 function closeCart(){$('cartBox').hidden=true;updateCross();}
 function renderCart(){const ul=$('cartList');ul.innerHTML='';const its=cart.items();
  $('cartEmpty').hidden=!!its.length;$('cartFoot').hidden=!its.length;
- its.forEach(it=>{const li=el_('li');const img=el_('img');img.src=iconURL(it.icon,it.color);img.alt='';
+ its.forEach(it=>{const li=el_('li');const img=el_('img');img.src=it.model?thumbURL({id:it.pid||it.key,model:it.model,color:it.color}):iconURL(it.icon,it.color);img.alt='';
   const t=el_('div','ci-t');t.append(el_('b',null,it.name),el_('small',null,it.shop+' · '+floorName(it.floor)+(it.size?' · размер '+it.size:'')));
   const q=el_('div','ci-q');const mi=el_('button','icon-s','−'),n=el_('span',null,String(it.qty)),pl=el_('button','icon-s','+');mi.setAttribute('aria-label','Меньше');pl.setAttribute('aria-label','Больше');
   mi.onclick=()=>cart.setQty(it.key,it.qty-1);pl.onclick=()=>cart.setQty(it.key,it.qty+1);q.append(mi,n,pl);
@@ -1273,6 +1392,31 @@ $('orderForm').addEventListener('submit',e=>{e.preventDefault();const name=$('oN
 $('orderOk').onclick=()=>{closeCart();requestLockIfNeeded();};
 updateCartBadge();
 
+/* ---------- Проверка карты: можно ли везде пройти, не протискиваясь ---------- */
+function auditMap(){const res={};
+ [1,2].forEach(f=>{const N=GW*GH,nav=new Uint8Array(N);
+  for(let j=0;j<GH;j++)for(let i=0;i<GW;i++){const k=j*GW+i;if(!GRIDS[f][k])continue;const [x,z]=fromPx(i,j);if(!blockedF(f,x,z))nav[k]=1;}
+  // старт: у входа 2 на первом этаже, у лифта на втором
+  let sx,sz;if(f===1){const e=D.ents.find(e=>e.n===2)||D.ents[0];sx=e.p[0]-e.d[0]*6;sz=e.p[1]-e.d[1]*6;}else{const L=world.lifts[0];sx=L.c.x+L.n.x*(L.HL+1.6);sz=L.c.z+L.n.z*(L.HL+1.6);}
+  const st=nearestFree(sx,sz,80,f)||nearestAny(f,sx,sz);const [si,sj]=toPx(st[0],st[1]);
+  const seen=new Uint8Array(N),q=new Int32Array(N);let h=0,t=0;q[t++]=sj*GW+si;seen[sj*GW+si]=1;
+  while(h<t){const k=q[h++],i=k%GW,j=(k/GW)|0;for(const [di,dj] of [[1,0],[-1,0],[0,1],[0,-1]]){const a=i+di,b=j+dj;if(a<0||b<0||a>=GW||b>=GH)continue;const kk=b*GW+a;if(nav[kk]&&!seen[kk]){seen[kk]=1;q[t++]=kk;}}}
+  let navN=0;for(let k=0;k<N;k++)navN+=nav[k];
+  // двери: точка перед дверью должна быть достижима
+  const bad=[];world.doors.filter(s=>s.door.floor===f).forEach(s=>{const d=s.door;let ok=false;
+   for(let r=0.6;r<=2.4&&!ok;r+=0.3)for(let l=-0.6;l<=0.6&&!ok;l+=0.3){const x=d.c.x+d.n.x*r+d.R.x*l,z=d.c.z+d.n.z*r+d.R.z*l;const [i,j]=toPx(x,z);if(i>=0&&j>=0&&i<GW&&j<GH&&seen[j*GW+i])ok=true;}
+   if(!ok)bad.push(s.name);});
+  // узкие места: проход уже 1,8 м (расстояние до препятствия с учётом плеч < 0,55 м)
+  const dist=new Float32Array(N).fill(1e9);for(let k=0;k<N;k++)if(!nav[k])dist[k]=0;
+  for(let j=0;j<GH;j++)for(let i=0;i<GW;i++){const k=j*GW+i;if(!dist[k])continue;let v=dist[k];if(i>0)v=Math.min(v,dist[k-1]+1);if(j>0)v=Math.min(v,dist[k-GW]+1);if(i>0&&j>0)v=Math.min(v,dist[k-GW-1]+1.414);if(i<GW-1&&j>0)v=Math.min(v,dist[k-GW+1]+1.414);dist[k]=v;}
+  for(let j=GH-1;j>=0;j--)for(let i=GW-1;i>=0;i--){const k=j*GW+i;if(!dist[k])continue;let v=dist[k];if(i<GW-1)v=Math.min(v,dist[k+1]+1);if(j<GH-1)v=Math.min(v,dist[k+GW]+1);if(i<GW-1&&j<GH-1)v=Math.min(v,dist[k+GW+1]+1.414);if(i>0&&j<GH-1)v=Math.min(v,dist[k+GW-1]+1.414);dist[k]=v;}
+  const nearDoor=(x,z)=>world.doors.some(s=>s.door.floor===f&&Math.hypot(x-s.door.c.x,z-s.door.c.z)<3);
+  const narrow=[];for(let j=1;j<GH-1;j+=2)for(let i=1;i<GW-1;i+=2){const k=j*GW+i;if(!seen[k])continue;const dm=dist[k]*CELL;
+   // точка на средней линии прохода (локальный максимум), а проход узкий
+   if(dm<0.55&&dist[k]>=dist[k-1]&&dist[k]>=dist[k+1]&&dist[k]>=dist[k-GW]&&dist[k]>=dist[k+GW]){const [x,z]=fromPx(i,j);if(!nearDoor(x,z))narrow.push([+x.toFixed(1),+z.toFixed(1)]);}}
+  res[f]={reachable:+(t/navN).toFixed(3),doors:world.doors.filter(s=>s.door.floor===f).length,unreachableDoors:bad,narrow:narrow.length,narrowAt:narrow};});
+ res.columns={kept:world.colsKept,dropped:world.colsDropped};return res;}
+
 async function start(){
  try{await Promise.race([document.fonts.load('800 40px Manrope'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
  try{build();}catch(err){$('loading').textContent='Не получилось построить сцену: '+err.message;console.error(err);return;}
@@ -1286,7 +1430,7 @@ async function start(){
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
 if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
- get floor(){return curFloor},get anim(){return anim},setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop};
+ get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop};
 start();
 
 }
