@@ -2,6 +2,7 @@
 // Товары и цены — примеры для концепта. Настоящие данные должны приходить из фидов магазинов.
 // Ассортимент большой: из базовых товаров и настоящих цветов генерируются варианты — у каждого своё место на полке.
 import {mulberry} from '../utils.js';
+import {PHOTOS,PHOTO_BY_ITEM} from './photos.js';
 
 // сайты — только проверенные адреса; для остальных магазинов открывается поиск на Яндекс Картах
 const SITES={'Спортмастер Pro':'https://www.sportmaster.ru/','Лэтуаль':'https://www.letu.ru/','Рив Гош':'https://rivegauche.ru/','Gloria Jeans':'https://www.gloria-jeans.ru/','befree':'https://befree.ru/','Zarina':'https://zarina.ru/','Love Republic':'https://loverepublic.ru/','Henderson':'https://henderson.ru/','Zolla':'https://zolla.com/','Askona':'https://www.askona.ru/','Ormatek':'https://www.ormatek.com/','Sokolov':'https://sokolov.ru/','585 Золотой':'https://www.585zolotoy.ru/','Adamas':'https://www.adamas.ru/','Yves Rocher':'https://www.yves-rocher.ru/','Natura Siberica':'https://naturasiberica.ru/','билайн':'https://beeline.ru/','МегаФон | Yota':'https://moscow.megafon.ru/','T2':'https://t2.ru/','Снежная Королева':'https://snowqueen.ru/','Дом Лента':'https://lenta.com/','Перекрёсток Select':'https://www.perekrestok.ru/','Четыре Лапы':'https://4lapy.ru/','Копицентр Офисмаг':'https://www.officemag.ru/','Kuchenland Home':'https://www.kuchenland.ru/','Ригла':'https://www.rigla.ru/','Calzedonia':'https://www.calzedonia.com/ru/','Terranova':'https://terranovastyle.com/','Kanzler':'https://kanzler-style.ru/','Мир часов':'https://chasy71.ru/','2scoop':'https://tula.2scoop.ru/','Алеф':'https://alefmex.ru/',
@@ -115,6 +116,9 @@ function makeItem(shopId,key,d,k){const base=d.items,nb=base.length,pal=PAL[d.pa
  const price=pr?Math.max(49,Math.round(pr*(0.82+r()*0.46)/10)*10-(pr>500?10:0)):0;
  const line=round>=np?' · модель '+(Math.floor(round/np)+1):'';
  const nm=col[1]?b[0]+', '+col[1]+line:b[0]+(round?' · вариант '+(round+1):'');
+ const ph=PHOTO_BY_ITEM[b[0]];
+ // есть фото настоящей вещи — цвет и название берём с фото (пока пример; дальше — свои фото под каждый магазин)
+ if(ph){const P=PHOTOS[ph];return{name:b[0]+', '+P.colorName+(round?' · вариант '+(round+1):''),price,color:P.color,colorName:P.colorName,icon:d.icon,dept:key,model:b[2]||d.model,scale:d.scale||1,photo:ph,id:key+'-'+shopId+'-'+k};}
  return{name:nm,price,color:col[0],colorName:col[1],icon:d.icon,dept:key,model:b[2]||d.model,scale:d.scale||1,id:key+'-'+shopId+'-'+k};}
 function catalogOf(s){if(s._cat)return s._cat;const deps=deptsFor(s).map(k=>{const d=DEPT[k];const food=d.lay==='cafe';const N=food?d.items.length:Math.max(48,d.items.length*6);
   const dep={key:k,title:d.t,icon:d.icon,model:d.model,lay:d.lay,items:[],itemAt(i){while(dep.items.length<=i)dep.items.push(makeItem(s.id,k,d,dep.items.length));return dep.items[i];}};
@@ -122,4 +126,4 @@ function catalogOf(s){if(s._cat)return s._cat;const deps=deptsFor(s).map(k=>{con
  s._cat=deps;return deps;}
 const fmtPrice=p=>p?p.toLocaleString('ru-RU')+' ₽':'бесплатно';
 
-export {SITES,siteOf,mapsOf,DEPT,deptsFor,PALETTE,catalogOf,fmtPrice};
+export {SITES,siteOf,mapsOf,DEPT,deptsFor,PALETTE,catalogOf,fmtPrice,PHOTOS};

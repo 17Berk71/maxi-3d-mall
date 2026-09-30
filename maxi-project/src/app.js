@@ -2,7 +2,7 @@
 // Пока один большой модуль — план разбиения описан в CLAUDE.md.
 import * as THREE from 'three';
 import {mulberry,shade} from './utils.js';
-import {SITES,siteOf,mapsOf,DEPT,deptsFor,PALETTE,catalogOf,fmtPrice} from './shop/catalog.js';
+import {SITES,siteOf,mapsOf,DEPT,deptsFor,PALETTE,catalogOf,fmtPrice,PHOTOS} from './shop/catalog.js';
 import {iconURL} from './shop/icons.js';
 import {LIFTS_PLAN} from './floor2.js';
 import {describe} from './shop/describe.js';
@@ -293,7 +293,7 @@ function build(){
   const y0=F.y0,GH_=F.GH,FH=F.FH,TOP=y0+FH;const grp=G(F.group);
   const tint=new Merger(),fascia=new Merger(),walls=new Merger(),interior=new Merger(),inWalls=new Merger(),inFloor=new Merger(),inCeil=new Merger(),lights=new Merger(),glass=new Merger(),mull=new Merger(),ao=new Merger(),mats=new Merger(),posters=new Merger();
   const signs=signAtlases.map(()=>new Merger()),labels=labelAtlases.map(()=>new Merger());
-  const CEIL=LIN('#f4f3f0');const fixtures=[],mannequins=[];
+  const CEIL=LIN('#f4f3f0');const fixtures=[],mannequins=[],winPhotos=[],fixturesPosts=[],fixturesBars=[];
   list.forEach(s=>{
    // крыша помещения (цвет для вида сверху)
    try{tint.add(flatShape(s.poly,TOP+0.02+Math.max(0,(3000-s.area))/3000*0.03),()=>s.col,s.id);}catch(e){}
@@ -379,8 +379,11 @@ function build(){
       lights.quad(new V3(l0.x-n.x*h,ly,l0.z-n.z*h),new V3(l1.x-n.x*h,ly,l1.z-n.z*h),new V3(l1.x+n.x*h,ly,l1.z+n.z*h),new V3(l0.x+n.x*h,ly,l0.z+n.z*h),[0,0,1,1]);}
      // стойки с товаром внутри
      const nearDoor=isDoor&&u0<du1+1.2&&u1>du0-1.2;
-     if(!nearDoor&&(s.cat==='fashion'||s.cat==='sport'||s.cat==='kids')&&depth>1.6&&pw>2.2){const Rm=new V3(n.z,0,-n.x);[-0.25,0.25].forEach((f,mi)=>{if(pw<3.5&&mi)return;mannequins.push({x:c.x-n.x*0.9+Rm.x*f*pw,z:c.z-n.z*0.9+Rm.z*f*pw,y:y0,a:Math.atan2(n.x,n.z),col:LIN(WEAR_COLS[(s.id*3+mi*5+k)%WEAR_COLS.length])});});}
-     if(!nearDoor&&s.cat!=='tbd'&&depth>2.2&&pw>2.4)fixtures.push({x:c.x-n.x*depth*0.45,z:c.z-n.z*depth*0.45,y:y0,a:Math.atan2(n.x,n.z),w:Math.min(1.6,pw*0.35),col:LIN(['#b9a489','#8f7a62','#d9d4cc','#6f6a64'][(s.id+k)%4]),cat:s.cat});
+     const ph=photoKeysFor(s);
+     if(!nearDoor&&(s.cat==='fashion'||s.cat==='sport'||s.cat==='kids')&&depth>1.6&&pw>2.2){const Rm=new V3(n.z,0,-n.x);[-0.25,0.25].forEach((f,mi)=>{if(pw<3.5&&mi)return;const tops=ph.filter(q=>q!=='trousers_beige'),pc=tops.length?PHOTOS[tops[(mi+k)%tops.length]].color:null;mannequins.push({x:c.x-n.x*0.9+Rm.x*f*pw,z:c.z-n.z*0.9+Rm.z*f*pw,y:y0,a:Math.atan2(n.x,n.z),col:LIN(pc||WEAR_COLS[(s.id*3+mi*5+k)%WEAR_COLS.length])});});}
+     // магазины одежды: в витрине висят настоящие вещи (фото) на вешале, а не условные коробки
+     if(!nearDoor&&ph.length&&depth>2.2&&pw>2.4)winPhotos.push({x:c.x-n.x*depth*0.5,z:c.z-n.z*depth*0.5,y:y0,a:Math.atan2(n.x,n.z),R:new V3(n.z,0,-n.x),w:Math.min(2.2,pw*0.55),keys:ph,id:s.id});
+     else if(!nearDoor&&s.cat!=='tbd'&&depth>2.2&&pw>2.4)fixtures.push({x:c.x-n.x*depth*0.45,z:c.z-n.z*depth*0.45,y:y0,a:Math.atan2(n.x,n.z),w:Math.min(1.6,pw*0.35),col:LIN(['#b9a489','#8f7a62','#d9d4cc','#6f6a64'][(s.id+k)%4]),cat:s.cat});
      // световой знак с пиктограммой категории — один на витрину, в стороне от двери
      if(!s._pic&&s.cat!=='tbd'&&pw>1.4&&depth>0.6&&!(isDoor&&u0<du1+0.6&&u1>du0-0.6)){s._pic=1;const ps=0.72,pc=c.clone().addScaledVector(n,-0.22);
       posters.panel(pc,n,ps,y0+GH_-1.05,y0+GH_-1.05+ps,pictoUV(s.cat),null,s.id);}
@@ -430,6 +433,20 @@ function build(){
    fixtures.forEach((f,i)=>{q.setFromAxisAngle(new V3(0,1,0),f.a);sc.set(f.w,1,1);mtx.compose(new V3(f.x,f.y,f.z),q,sc);im1.setMatrixAt(i,mtx);
     sc.set(f.w*0.85,1,1);mtx.compose(new V3(f.x,f.y,f.z),q,sc);im2.setMatrixAt(i,mtx);im2.setColorAt(i,f.col);});
    im1.count=im2.count=fixtures.length;if(im2.instanceColor)im2.instanceColor.needsUpdate=true;grp.add(im1);grp.add(im2);}
+  {// вещи-фото в витринах: вешало (две стойки и перекладина) и вещи лицом к галерее
+   const byK={};winPhotos.forEach(W_=>{const L=W_.w,top=W_.y+1.95;
+    const k0=W_.keys;const n_=Math.max(1,Math.min(4,Math.floor(L/0.62)));
+    for(let i=0;i<n_;i++){const k=k0[i%k0.length],P=PHOTOS[k];const u=(i-(n_-1)/2)*(L/n_);(byK[k]=byK[k]||[]).push({x:W_.x+W_.R.x*u,z:W_.z+W_.R.z*u,y:top-P.h/2-0.06,a:W_.a,id:W_.id});}
+    [-1,1].forEach(sg=>{const px=W_.x+W_.R.x*sg*L/2,pz=W_.z+W_.R.z*sg*L/2;fixturesPosts.push([px,W_.y,pz,top]);});
+    fixturesBars.push([W_.x-W_.R.x*L/2,W_.z-W_.R.z*L/2,W_.x+W_.R.x*L/2,W_.z+W_.R.z*L/2,top]);});
+   const q=new THREE.Quaternion();
+   Object.entries(byK).forEach(([k,arr])=>{const im=new THREE.InstancedMesh(photoGeo(k),photoMat(k),arr.length);
+    arr.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.a);mtx.compose(new V3(o.x,o.y,o.z),q,new V3(1,1,1));im.setMatrixAt(i,mtx);});
+    im.userData.kiosks=arr.map(o=>o.id);grp.add(im);pickables.push(im);});
+   if(fixturesPosts.length){const pg=new THREE.CylinderGeometry(0.018,0.018,1,8);pg.translate(0,0.5,0);const pi_=new THREE.InstancedMesh(pg,MAT.metal,fixturesPosts.length);
+    fixturesPosts.forEach(([x,y,z,t],i)=>{mtx.compose(new V3(x,y,z),new THREE.Quaternion(),new V3(1,t-y,1));pi_.setMatrixAt(i,mtx);});grp.add(pi_);
+    const bg=new THREE.CylinderGeometry(0.014,0.014,1,8);bg.rotateZ(Math.PI/2);const bi=new THREE.InstancedMesh(bg,MAT.metal,fixturesBars.length);
+    fixturesBars.forEach(([x0,z0,x1,z1,t],i)=>{const L=Math.hypot(x1-x0,z1-z0);q.setFromAxisAngle(new V3(0,1,0),-Math.atan2(z1-z0,x1-x0));mtx.compose(new V3((x0+x1)/2,t,(z0+z1)/2),q,new V3(L,1,1));bi.setMatrixAt(i,mtx);});grp.add(bi);}}
   {// манекены в витринах магазинов одежды
    const parts=humanParts();const N=Math.max(1,mannequins.length);const q=new THREE.Quaternion();
    const white=new THREE.MeshStandardMaterial({color:LIN('#f1efeb'),roughness:.25,metalness:.05});
@@ -474,13 +491,22 @@ function build(){
  G('roof').add(truss.mesh(MAT.white));
  // ограждение: стекло, стойки, поручень; светодиодная линия под кромкой
  const rail=new Merger(),hand=new Merger(),led=new Merger();const posts=[];
- voidPolys.forEach(v=>{let acc=0;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length];const A=new V3(a[0],0,a[1]),B=new V3(b[0],0,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
+ // у верхних площадок эскалаторов ограждения нет — там проход на ленту
+ const escGap=D2.esc.map(e=>({x:e.top[0],z:e.top[1],dx:Math.cos(e.a),dz:Math.sin(e.a)}));
+ const inEscGap=(x,z)=>escGap.some(g=>{const px=x-g.x,pz=z-g.z,s=px*g.dx+pz*g.dz,l=-px*g.dz+pz*g.dx;return s>-4&&s<1.3&&Math.abs(l)<1.62;});
+ const cutSeg=(A,B)=>{const L=A.distanceTo(B),n=Math.max(1,Math.ceil(L/0.05)),out=[];let st=null;
+  for(let k=0;k<=n;k++){const t=k/n,x=A.x+(B.x-A.x)*t,z=A.z+(B.z-A.z)*t,ins=inEscGap(x,z);if(!ins&&st===null)st=t;if((ins||k===n)&&st!==null){const te=ins?(k-1)/n:t;if(te-st>1e-3)out.push([A.clone().lerp(B,st),A.clone().lerp(B,te),st>0,ins]);st=null;}}
+  return out;};
+ const gapEnds=[];
+ voidPolys.forEach(v=>{let acc=0;for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length];const A0=new V3(a[0],0,a[1]),B0=new V3(b[0],0,b[1]);if(A0.distanceTo(B0)<0.05)continue;
+  for(const [A,B,cutA,cutB] of cutSeg(A0,B0)){const L=A.distanceTo(B);if(L<0.05)continue;if(cutA)gapEnds.push(A.clone());if(cutB)gapEnds.push(B.clone());
   const y0=FLOOR_H+SLAB,y1=y0+1.05;rail.quad(new V3(A.x,y0+0.05,A.z),new V3(B.x,y0+0.05,B.z),new V3(B.x,y1,B.z),new V3(A.x,y1,A.z),[0,0,1,1]);
   const ry=-Math.atan2(B.z-A.z,B.x-A.x);
   const m1=new THREE.Matrix4().makeRotationY(ry);m1.setPosition((A.x+B.x)/2,y1+0.03,(A.z+B.z)/2);hand.add(new THREE.CylinderGeometry(0.035,0.035,L,8).rotateZ(Math.PI/2),null,null,m1);
   const m2=new THREE.Matrix4().makeRotationY(ry);m2.setPosition((A.x+B.x)/2,FLOOR_H+0.25,(A.z+B.z)/2);hand.add(new THREE.BoxGeometry(L,0.52,0.06),null,null,m2);
   const m3=new THREE.Matrix4().makeRotationY(ry);m3.setPosition((A.x+B.x)/2,FLOOR_H-0.02,(A.z+B.z)/2);led.add(new THREE.BoxGeometry(L,0.04,0.1),null,null,m3);
-  let d=(1.6-acc%1.6);while(d<L){posts.push(A.clone().lerp(B,d/L));d+=1.6;}acc+=L;}});
+  let d=(1.6-acc%1.6);while(d<L){posts.push(A.clone().lerp(B,d/L));d+=1.6;}acc+=L;}}});
+ gapEnds.forEach(p=>posts.push(p));
  const railMesh=rail.mesh(new THREE.MeshStandardMaterial({color:LIN('#cfe3ea'),transparent:true,opacity:.22,roughness:.04,metalness:.6,depthWrite:false,side:THREE.DoubleSide}));railMesh.renderOrder=2;G('slab').add(railMesh);
  G('slab').add(hand.mesh(MAT.metal));G('slab').add(led.mesh(MAT.light));
  {const pg=new THREE.CylinderGeometry(0.025,0.025,1.05,6);pg.translate(0,FLOOR_H+SLAB+0.52,0);const pi=new THREE.InstancedMesh(pg,MAT.metal,Math.max(1,posts.length));posts.forEach((p,i)=>{mtx.makeTranslation(p.x,0,p.z);pi.setMatrixAt(i,mtx);});G('slab').add(pi);}
@@ -925,6 +951,10 @@ function updateLifts(dt){if(!world.lifts)return;
   const o=L.open[f];const n=calm?want:o+(want-o)*Math.min(1,dt*5);L.open[f]=n;
   L.leaves[f].forEach((l,k)=>{const sg=k?1:-1,w=1-n*0.85;l.scale.x=w;l.position.x=sg*(L.HL-(L.HL-0.05)*w/2-0.02);});});});
  // панель лифта появляется сама, когда подходишь к дверям
+ // лифт: шагнул в открытые двери — поехал на другой этаж (этажей два, выбирать нечего)
+ if(mode==='walk'&&!ride&&!anim){const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),mv=Math.hypot(player.vx||0,player.vz||0)>0.3;
+  for(const L of world.lifts){const dx=player.x-L.c.x,dz=player.z-L.c.z,a=dx*L.n.x+dz*L.n.z,lat=Math.abs(dx*L.R.x+dz*L.R.z);
+   if(a>L.HL-0.2&&a<L.HL+1.1&&lat<L.HL-0.05&&-(fx*L.n.x+fz*L.n.z)>0.5&&mv&&L.open[curFloor]>0.6){hideLiftPanel(false);startRide(L,curFloor===1?2:1);return;}}}
  if(mode==='walk'&&!ride){let near=null;world.lifts.forEach(L=>{const dx=player.x-L.c.x,dz=player.z-L.c.z;const a=dx*L.n.x+dz*L.n.z;if(a>L.HL&&a<L.HL+2.8&&Math.abs(dx*L.R.x+dz*L.R.z)<L.HL+0.6)near=L;});
   if(near&&liftAuto!==near&&$('lift').hidden){liftAuto=near;openLiftPanel(near,false);}
   if(!near){if(liftAuto&&liftCur===liftAuto&&!$('lift').hidden)hideLiftPanel(false);liftAuto=null;}}}
@@ -953,8 +983,11 @@ function updateEscRide(dt){const r=ride,e=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;r
 function updateEscalators(dt){if(!world.escs)return;
  if(!calm)world.stepTex.forEach(({t,dir})=>{t.offset.x=(t.offset.x-dir*dt*0.5)%1;});
  if(mode!=='walk'||ride||anim)return;const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
- for(const E of world.escs){const up=curFloor===1;const p=escEntry(E,up),dir=up?E.d:E.d.clone().negate();
-  if(Math.hypot(player.x-p.x,player.z-p.z)<0.85&&fx*dir.x+fz*dir.z>0.35){startEsc(E,up);return;}}}
+ const moving=Math.hypot(player.vx||0,player.vz||0)>0.4;
+ for(const E of world.escs){const up=curFloor===1;const end=up?E.bot:E.top,dir=up?E.d:E.d.clone().negate();
+  // просто подойди к эскалатору: в любую из двух лент, лицом к нему — и поедешь
+  const px=player.x-end.x,pz=player.z-end.z,sOut=-(px*dir.x+pz*dir.z),lat=px*E.r.x+pz*E.r.z;
+  if(sOut>-0.4&&sOut<1.5&&Math.abs(lat)<1.5&&fx*dir.x+fz*dir.z>0.25&&(moving||sOut<1.0)){startEsc(E,up);return;}}}
 // нажатие на эскалатор: подойти к нужной ленте и поехать
 function goEscalator(E){const up=curFloor===1,p=escEntry(E,up),dir=up?E.d:E.d.clone().negate();
  const back=p.clone().addScaledVector(dir,-1.2);moveTo(curFloor,back.x,back.z,Math.atan2(-dir.x,-dir.z),0);
@@ -1055,6 +1088,13 @@ const CyX=(r,h,x,y,z,seg)=>new THREE.CylinderGeometry(r,r,h,seg||12).rotateZ(Mat
 let MOD=null;
 function models(){if(!MOD)MOD=createModels(canvasTex);return MOD.M;}
 // ширина места на полке под товар (м)
+// фото настоящих вещей: текстура с прозрачным фоном, плоскость по размеру вещи
+var photoTexCache={};
+function photoTex(k){if(photoTexCache[k])return photoTexCache[k];const t=new THREE.TextureLoader().load(PHOTOS[k].url);t.encoding=THREE.sRGBEncoding;t.anisotropy=4;return photoTexCache[k]=t;}
+function photoMat(k){return new THREE.MeshStandardMaterial({map:photoTex(k),alphaTest:0.45,side:THREE.DoubleSide,roughness:.85});}
+function photoGeo(k){const P=PHOTOS[k];return new THREE.PlaneGeometry(P.h*P.aspect,P.h);}
+// какие фото-вещи уместны в магазине: только если в его ассортименте есть такой отдел
+function photoKeysFor(s){if(s._ph)return s._ph;const d=deptsFor(s),o=[];if(d.includes('tshirts'))o.push('tee_black');if(d.includes('jackets'))o.push('puffer_red');if(d.includes('pants'))o.push('trousers_beige');return s._ph=o;}
 const SLOT={shoe:.36,box:.3,jar:.13,tube:.075,bottle:.12,book:.055,toy:.3,small:.15,phone:.13,laptop:.44,tv:1.25,dumbbell:.42,cup:.13,ticket:.24,football:.26,basketball:.28,appliance:.8,sofa:2.2,bed:1.8,bike:1.2,jacket:.13,tshirt:.1,longsleeve:.11,pants:.1,dress:.12};
 const GARM={jacket:1,pants:1,tshirt:1,longsleeve:1,dress:1};
 
@@ -1120,6 +1160,7 @@ function buildShop(s){
  const cols=nd<=1?1:nd<=4?2:4,rows=Math.ceil(nd/cols);
  const x0=-W/2+1.2,x1=W/2-1.2,z0=-D/2+1.2,z1=D/2-5.5;const zw=(x1-x0)/cols,zd=(z1-z0)/rows;
  const inst={};const addInst=(model,x,y,z,ry,color,prod,scale)=>{(inst[model]=inst[model]||[]).push({x,y,z,ry,color,prod,scale:scale||1});};
+ const pinst={};const addPhoto=(p,x,yTop,z,ry)=>{(pinst[p.photo]=pinst[p.photo]||[]).push({x,y:yTop-PHOTOS[p.photo].h/2-0.05,z,ry,prod:p,top:yTop});};
  cat.forEach((dep,di)=>{const c=di%cols,rI=Math.floor(di/cols);const zx0=x0+c*zw+0.6,zx1=x0+(c+1)*zw-0.6,zz0=z0+rI*zd+0.6,zz1=z0+(rI+1)*zd-0.6;const cx=(zx0+zx1)/2,cz=(zz0+zz1)/2,w=zx1-zx0,d=zz1-zz0;
   zones.push({dep,cx,cz,w,d});
   // коврик отдела и подвесная табличка
@@ -1145,8 +1186,12 @@ function buildShop(s){
     const g=new THREE.Group();[-len/2,len/2].forEach(px=>g.add(new THREE.Mesh(Cy(0.025,0.025,1.6,px,0.8,0,8),MAT.metal)));const rail=new THREE.Mesh(CyX(0.015,len,0,1.58,0,8),MAT.metal);g.add(rail);
     g.add(new THREE.Mesh(B(len+0.1,0.04,0.5,0,0.02,0),MAT.darkMetal));g.position.set(cx,0,rz);sc.add(g);colliders.push([cx-len/2-0.2,cx+len/2+0.2,rz-0.3,rz+0.3]);
     // одежда висит плотно, боком к проходу, как в магазине; крайняя — лицом
-    fillRow(cx-len/2+0.2,cx+len/2-0.2,(x,p)=>addInst(p.model,x,1.56,rz,Math.PI/2+(((pi*37)%7)-3)*0.02,p.color,p,p.scale));
-    {const p=next();addInst(p.model,cx+len/2+0.05,1.56,rz,0,p.color,p,p.scale);}}
+    // вещи с настоящим фото висят лицом к проходу (слева), остальные — плотно боком
+    {const pk=[],L0=cx-len/2+0.2,L1=cx+len/2-0.2;let used=0;
+     for(let guard=0;guard<400;guard++){const p=next();const wd=p.photo?PHOTOS[p.photo].h*PHOTOS[p.photo].aspect*0.86:(SLOT[p.model]||0.3)*(p.scale||1)+0.035;if(used+wd>L1-L0){pi--;break;}pk.push([p,wd]);used+=wd;}
+     pk.sort((a,b)=>(b[0].photo?1:0)-(a[0].photo?1:0));let x=L0;
+     pk.forEach(([p,wd],j)=>{if(p.photo)addPhoto(p,x+wd/2,1.56,rz+(j%2?0.012:-0.012),0);else addInst(p.model,x+wd/2,1.56,rz,Math.PI/2+(((pi+j)*37%7)-3)*0.02,p.color,p,p.scale);x+=wd;});}
+    {const p=next();if(p.photo)addPhoto(p,cx+len/2+0.05,1.56,rz,Math.PI/2);else addInst(p.model,cx+len/2+0.05,1.56,rz,0,p.color,p,p.scale);}}
    // манекен у отдела
    }
   else if(lay==='football'||lay==='basketball'){const ball=lay;
@@ -1198,6 +1243,7 @@ function buildShop(s){
  });
  // вешалки-плечики для одежды, ценники у товаров на полках и столах
  {const hangers=[],tags=[];
+  Object.values(pinst).forEach(arr=>arr.forEach(o=>hangers.push({x:o.x,y:o.top,z:o.z,ry:o.ry+Math.PI/2})));
   Object.entries(inst).forEach(([model,arr])=>arr.forEach(o=>{if(GARM[model])hangers.push(o);else if(o.y>0.3&&!['bike','sofa','bed','appliance','cup','football','basketball'].includes(model))tags.push(o);}));
   const hg=mergeG([CyX(0.008,0.42,0,0,0,6),Cy(0.006,0.006,0.1,0,0.05,0,6)]);hg.rotateY(Math.PI/2);const him=new THREE.InstancedMesh(hg,MAT.metal,Math.max(1,hangers.length));
   const q=new THREE.Quaternion();hangers.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);mtx.compose(new V3(o.x,o.y,o.z),q,new V3(1,1,1));him.setMatrixAt(i,mtx);});sc.add(him);
@@ -1223,6 +1269,10 @@ function buildShop(s){
   (M[model]||M.box).forEach(pt=>{const im=new THREE.InstancedMesh(pt.g,MOD.partMat(pt),arr.length);
    arr.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);sc_.setScalar(o.scale);mtx.compose(new V3(o.x,o.y,o.z),q,sc_);im.setMatrixAt(i,mtx);if(pt.tint)im.setColorAt(i,LIN(o.color));});
    if(im.instanceColor)im.instanceColor.needsUpdate=true;im.userData.prods=prods;sc.add(im);pick.push(im);});});
+ // вещи на фото
+ Object.entries(pinst).forEach(([k,arr])=>{const im=new THREE.InstancedMesh(photoGeo(k),photoMat(k),arr.length);const q=new THREE.Quaternion();
+  arr.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);mtx.compose(new V3(o.x,o.y,o.z),q,new V3(1,1,1));im.setMatrixAt(i,mtx);});
+  im.userData.prods=arr.map(o=>o.prod);sc.add(im);pick.push(im);});
  // несколько покупателей
  {const parts=humanParts();const n=big?8:4;const r=mulberry(s.id+5);const mats=[new THREE.MeshStandardMaterial({roughness:.8}),new THREE.MeshStandardMaterial({roughness:.8}),new THREE.MeshStandardMaterial({roughness:.8}),new THREE.MeshStandardMaterial({roughness:.6})];
   const ms=[parts.torso,parts.legs,parts.arms,parts.head].map((g,i)=>new THREE.InstancedMesh(g,mats[i],n));const cl=['#2f3a4a','#8a3b3b','#3f5e4a','#c9b79c','#4d4f7c'],sk=['#e6c3a5','#c6946b','#f0d2bb'];
@@ -1365,7 +1415,7 @@ function viewerShow(p,onMannequin){const V=ensureViewer();while(V.root.children.
  return V.cv;}
 // картинки для карточек каталога: тот же 3D-товар, снимок под углом (кешируются)
 let TH=null;const thumbCache=new Map();
-function thumbURL(p){if(thumbCache.has(p.id))return thumbCache.get(p.id);
+function thumbURL(p){if(p.photo&&PHOTOS[p.photo])return PHOTOS[p.photo].url;if(thumbCache.has(p.id))return thumbCache.get(p.id);
  if(!TH){const cv=document.createElement('canvas');cv.width=240;cv.height=180;const r=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,preserveDrawingBuffer:true});r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=0.95;r.setSize(240,180,false);r.setClearColor(0xf1efeb,1);
   TH=Object.assign({cv,r,c:new THREE.PerspectiveCamera(28,240/180,0.02,50)},viewerScene());}
  while(TH.root.children.length)TH.root.remove(TH.root.children[0]);const {g,h}=productGroup(p,false);g.rotation.y=0.65;TH.root.add(g);TH.pod.scale.setScalar(Math.max(0.35,h*0.7));TH.sh.scale.setScalar(Math.max(0.3,h*0.6));
@@ -1376,9 +1426,10 @@ const el_=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className
 function renderProduct(p,onMan,size){const s=SHOP.s,el=$('shop');el.querySelector('.sh-name').textContent=p.name;el.querySelector('.sh-what').textContent=s.name+' · '+(DEPT[p.dept]?DEPT[p.dept].t:'');el.querySelector('.sh-dot').style.background=s.colHex;
  el.querySelector('.sh-tabs').innerHTML='';const body=el.querySelector('.sh-body');body.innerHTML='';body.scrollTop=0;
  const w=el_('div','sh-detail');
- const m=productModel(p);const cv=viewerShow(p,onMan);w.appendChild(cv);
- w.appendChild(el_('p','sh-note','Потяни картинку, чтобы повернуть товар.'));
- if(WEARABLE[m]){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
+ const m=productModel(p);
+ if(p.photo){stopViewer();const im=el_('img','pv pv-photo');im.src=PHOTOS[p.photo].url;im.alt=p.name;w.appendChild(im);w.appendChild(el_('p','sh-note','Фото вещи. Пока пример — позже у каждого магазина будут свои фото.'));}
+ else{const cv=viewerShow(p,onMan);w.appendChild(cv);w.appendChild(el_('p','sh-note','Потяни картинку, чтобы повернуть товар.'));}
+ if(WEARABLE[m]&&!p.photo){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
  const info=describe(p,m);
  const pr=el_('div','sh-pricebox');pr.append(el_('span','sh-price',fmtPrice(p.price)),el_('span','sh-rate','цена условная'));w.appendChild(pr);
  w.appendChild(el_('p','sh-stock','«'+s.name+'», '+floorName(s.floor)+'. Наличие и настоящую цену уточняй в магазине или на его сайте.'));
@@ -1388,7 +1439,7 @@ function renderProduct(p,onMan,size){const s=SHOP.s,el=$('shop');el.querySelecto
  const buy=el_('div','sh-row sh-buy');
  const add=el_('button','btn pri','В корзину');const now=el_('button','btn','Купить сейчас');
  const put=()=>{if(sz&&!chosen){lab.textContent='Выбери размер';lab.classList.add('err');return false;}
-  cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color,model:productModel(p),pid:p.id});return true;};
+  cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color,model:productModel(p),pid:p.id,photo:p.photo});return true;};
  add.onclick=()=>{if(!put())return;add.textContent='В корзине ✓';add.classList.add('ok');showHint('«'+p.name+'» в корзине. Корзина — кнопка с сумкой вверху справа');setTimeout(()=>{add.textContent='Добавить ещё';add.classList.remove('ok');},1600);};
  now.onclick=()=>{if(!put())return;closeShopPanel(false);openCart(true);};
  buy.append(add,now);w.appendChild(buy);
@@ -1409,7 +1460,7 @@ function openCart(checkout){releaseLock();$('cartBox').hidden=false;$('orderDone
 function closeCart(){$('cartBox').hidden=true;updateCross();}
 function renderCart(){const ul=$('cartList');ul.innerHTML='';const its=cart.items();
  $('cartEmpty').hidden=!!its.length;$('cartFoot').hidden=!its.length;
- its.forEach(it=>{const li=el_('li');const img=el_('img');img.src=it.model?thumbURL({id:it.pid||it.key,model:it.model,color:it.color}):iconURL(it.icon,it.color);img.alt='';
+ its.forEach(it=>{const li=el_('li');const img=el_('img');img.src=it.model?thumbURL({id:it.pid||it.key,model:it.model,color:it.color,photo:it.photo}):iconURL(it.icon,it.color);img.alt='';
   const t=el_('div','ci-t');t.append(el_('b',null,it.name),el_('small',null,it.shop+' · '+floorName(it.floor)+(it.size?' · размер '+it.size:'')));
   const q=el_('div','ci-q');const mi=el_('button','icon-s','−'),n=el_('span',null,String(it.qty)),pl=el_('button','icon-s','+');mi.setAttribute('aria-label','Меньше');pl.setAttribute('aria-label','Больше');
   mi.onclick=()=>cart.setQty(it.key,it.qty-1);pl.onclick=()=>cart.setQty(it.key,it.qty+1);q.append(mi,n,pl);

@@ -222,3 +222,5 @@ html.calm *,html.calm *::before,html.calm *::after{transition:none!important;ani
 }
 @media (max-width:720px){#shop .pv{max-height:26vh;width:auto;max-width:100%;margin:0 auto}}
 .sh-more{width:100%;justify-content:center;margin:10px 0 4px}
+
+.pv-photo{object-fit:contain;padding:14px;box-sizing:border-box;cursor:default;touch-action:auto}
