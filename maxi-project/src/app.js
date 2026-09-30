@@ -9,6 +9,7 @@ import {describe} from './shop/describe.js';
 import {cart} from './shop/cart.js';
 import {createModels} from './shop/models.js';
 import {makeStyler} from './styles.js';
+import {makeFX} from './fx.js';
 
 export function startApp(D,D2){
 
@@ -99,6 +100,7 @@ renderer.outputEncoding=THREE.sRGBEncoding;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.9;
 renderer.physicallyCorrectLights=false;
 const scene=new THREE.Scene();
+const FX=makeFX(renderer,scene);const QS0=new URLSearchParams(location.search),DEC=QS0.has('decor');
 const FOG=LIN('#e9ecef');scene.fog=new THREE.Fog(FOG,140,620);
 const cam=new THREE.PerspectiveCamera(64,innerWidth/innerHeight,0.1,3000);cam.rotation.order='YXZ';
 const maxAniso=renderer.capabilities.getMaxAnisotropy();
@@ -110,7 +112,7 @@ const maxAniso=renderer.capabilities.getMaxAnisotropy();
  const floorE=new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.MeshBasicMaterial({color:LIN('#e8e2d8')}));floorE.rotation.x=-Math.PI/2;floorE.position.y=-9.9;env.add(floorE);
  const pm=new THREE.PMREMGenerator(renderer);scene.environment=pm.fromScene(env,0.02).texture;pm.dispose();}
 const hemi=new THREE.HemisphereLight(LIN('#ffffff'),LIN('#bfb4a4'),0.55);scene.add(hemi);
-var skyMesh=null,FOGW=[120,520];var MERGED={walls:[],fascia:[],interior:[],inWalls:[],inFloor:[],inCeil:[]},floorMats=[];
+var skyMesh=null,FOGW=[120,520];var MERGED={walls:[],fascia:[],interior:[],inWalls:[],inFloor:[],inCeil:[]},floorMats=[],floorMatsF=[];
 const sun=new THREE.DirectionalLight(LIN('#fff4e6'),0.55);sun.position.set(-80,160,-60);scene.add(sun);
 // небо
 {const sky=new THREE.Mesh(new THREE.SphereGeometry(1800,32,16),new THREE.MeshBasicMaterial({side:THREE.BackSide,depthWrite:false,fog:false,map:canvasTex(16,256,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#6f9cc9');gr.addColorStop(.45,'#a9c7e2');gr.addColorStop(.5,'#dde6ec');gr.addColorStop(1,'#c9ccce');g.fillStyle=gr;g.fillRect(0,0,w,h);})}));scene.add(sky);skyMesh=sky;}
@@ -269,7 +271,7 @@ function build(){
  // пол: полированный мрамор
  const fg=flatShape(bpoly,0.01);
  {const P=fg.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}fg.setAttribute('uv',new THREE.BufferAttribute(U,2));}
- const floor=new THREE.Mesh(fg,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55}));scene.add(floor);floorMats.push(floor.material);
+ const floor=new THREE.Mesh(fg,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55}));scene.add(floor);floorMats.push(floor.material);floorMatsF.push([floor.material,1]);
  // цветные полосы вдоль проёмов (как на фото)
  const band=new Merger();const OR=LIN('#ef7d35'),GRN=LIN('#7ab04f');
  voidPolys.forEach(v=>{for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length];const A=new V3(a[0],0.025,a[1]),B=new V3(b[0],0.025,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
@@ -479,7 +481,7 @@ function build(){
  const holesIn=poly=>voidPolys.filter(v=>{let x=0,z=0;v.forEach(p=>{x+=p[0];z+=p[1];});return inPoly(poly,x/v.length,z/v.length);});
  // пол второго этажа: тот же мрамор, с проёмами — только там, где второй этаж есть
  D2.bld.forEach(bp=>{const g=new THREE.ShapeGeometry(shapeOf(bp,holesIn(bp)));g.rotateX(-Math.PI/2);g.translate(0,FY[2]+0.006,0);const P=g.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}g.setAttribute('uv',new THREE.BufferAttribute(U,2));
-  const fm2=new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55});floorMats.push(fm2);G('slab').add(new THREE.Mesh(g,fm2));});
+  const fm2=new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55});floorMats.push(fm2);floorMatsF.push([fm2,2]);G('slab').add(new THREE.Mesh(g,fm2));});
  const roofMat=new THREE.MeshStandardMaterial({color:LIN('#f3f3f1'),roughness:1});world.roofMat=roofMat;
  D2.bld.forEach(bp=>{G('roof').add(new THREE.Mesh(extrude(shapeOf(bp,holesIn(bp)),ROOF_Y,0.6),roofMat));});
  // стеклянная крыша с фермами
@@ -673,7 +675,7 @@ function build(){
    if(f===2)for(let j=0;j<GH;j+=Math.round(4.0/CELL))for(let i=0;i<GW;i+=Math.round(4.0/CELL)){if(!hall2[j*GW+i])continue;const [x,z]=fromPx(i,j);
     if(clearance(2,x,z,3)<2.6||!freeDisk(2,x,z,1.3)||near(2,x,z,3.5))continue;tables.push({x,z,a:rnd()*0.4});blockRect(x,z,0,0.95,0.95,2);}
    for(let j=0;j<GH;j+=st)for(let i=0;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);
-    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<4.8||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<16))continue;if(near(f,x,z,6))continue;
+    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<(DEC?4.2:4.8)||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<(DEC?9:16)))continue;if(near(f,x,z,6))continue;
     const a=rnd()*Math.PI*2;plants.push({x,z,a,bx:x+Math.cos(a)*1.25,bz:z+Math.sin(a)*1.25});}
    plants.forEach(p=>{blockRect(p.x,p.z,0,0.6,0.6,f);blockRect(p.bx,p.bz,p.a+Math.PI/2,0.85,0.35,f);});
    const N=Math.max(1,plants.length),q=new THREE.Quaternion(),Y=new V3(0,1,0),one=new V3(1,1,1);
@@ -689,7 +691,7 @@ function build(){
    world['decor'+f]={plants:plants.length,tables:tables.length};});}
 
  // ---- посетители: гуляют по галереям обоих этажей
- {const parts=humanParts();const NP=coarse?48:110;const r=mulberry(77);
+ {const parts=humanParts();const NP=(coarse?48:110)*(DEC?2:1);const r=mulberry(77);
   const cloth=['#2f3a4a','#6b7a8f','#7a3a3a','#3f5e4a','#c9b79c','#1f1f24','#8b6a4a','#4d4f7c','#d9d4cc','#5e3b4f','#9ea2a6','#e7e2d8'].map(LIN),pants=['#23262c','#3b4252','#5a5148','#2c3440','#6b6e73'].map(LIN),skin=['#e6c3a5','#d9b08c','#c6946b','#f0d2bb'].map(LIN);
   const torso=new THREE.InstancedMesh(parts.torso,new THREE.MeshStandardMaterial({roughness:.85}),NP),legs=new THREE.InstancedMesh(parts.legs,new THREE.MeshStandardMaterial({roughness:.8}),NP),arms=new THREE.InstancedMesh(parts.arms,new THREE.MeshStandardMaterial({roughness:.85}),NP),head=new THREE.InstancedMesh(parts.head,new THREE.MeshStandardMaterial({roughness:.6}),NP);
   const hair=new THREE.InstancedMesh(parts.hair,new THREE.MeshStandardMaterial({roughness:.7}),NP),shoes=new THREE.InstancedMesh(parts.shoes,new THREE.MeshStandardMaterial({roughness:.6}),NP);
@@ -1059,7 +1061,7 @@ function frameBody(now){
  if(!calm){world.wheel.rotation.z+=dt*0.04;world.cabins.forEach(c=>{c.rotation.z=-world.wheel.rotation.z;});}
  if(world.target.visible){const b=mode==='top'?topY()+3:(world.target.userData.base||GLASS_H+1.4);world.target.position.y=b+(calm?0:Math.sin(now/300)*0.3);if(!calm)world.target.rotation.y+=dt*1.5;world.target.scale.setScalar(mode==='top'?Math.max(1,(topv.h-topY())/50):1);}
  if(locked&&isFP()&&now-(frame.aimAt||0)>120){frame.aimAt=now;const el=$('aim');let txt='';if(mode==='store'&&SHOP){txt=shopAimText();}else{const t=aimAt();txt=!t?'':t.esc?(curFloor===1?'Эскалатор на 2 этаж · нажми или встань на ленту':'Эскалатор на 1 этаж · нажми или встань на ленту'):t.lift?'Лифт · нажми, чтобы выбрать этаж':(t.s.cat==='tbd'?t.s.name:t.s.name+(t.s.door?' · нажми или зайди в дверь':' · нажми, чтобы открыть'));}if(el.textContent!==txt)el.textContent=txt;el.style.opacity=txt?1:0;}
- renderer.render(mode==='store'&&SHOP?SHOP.scene:scene,cam);
+ {const sc_=mode==='store'&&SHOP?SHOP.scene:scene;if(FX.active)FX.render(sc_,cam,curFloor,FY[curFloor]);else renderer.render(sc_,cam);}
  if(now-miniAt>80){drawMini();miniAt=now;}
 }
 const _q=new THREE.Quaternion(),_s=new V3(),_p=new V3(),_Y=new V3(0,1,0);
@@ -1516,6 +1518,7 @@ async function start(){
  {const w=nearestFree(player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  const qs=new URLSearchParams(location.search);if(qs.has('calm'))calm=qs.get('calm')!=='0';setCalm(calm);
  {const st=qs.get('style');if(st)applyStyle(st);}
+ {const fx=(qs.get('fx')||'').split(',');if(fx[0]){FX.set({refl:fx.includes('refl'),bloom:fx.includes('bloom'),grade:fx.includes('grade')});if(fx.includes('refl'))FX.patchFloors(floorMatsF);}}
  buildChips();updateFloorUI();sizeMini();updateJoy();setVis();updateCross();applyPose(walkPose());
  $('loading').hidden=true;
  showHint(coarse?'Джойстик — идти, проведи по экрану — осмотреться. Нажми на витрину.':'Ты у входа 2. Кликни по сцене — курсор скроется, и обзор пойдёт за мышью · WASD — идти · Esc — вернуть курсор');
@@ -1527,7 +1530,7 @@ const applyStyle=name=>makeStyler({scene,renderer,hemi,sun,sky:skyMesh,S,MAT,flo
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
 if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
- get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle};
+ get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX};
 start();
 
 }
