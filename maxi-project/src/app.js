@@ -986,7 +986,7 @@ function frameBody(now){
  }
  if(ride)(ride.kind==='esc'?updateEscRide:updateRide)(rawDt);
  const goal=mode==='top'?topPose():walkPose();
- if(anim){anim.t=calm?1:Math.min(1,anim.t+dt/0.9);const e=anim.t<.5?4*anim.t**3:1-Math.pow(-2*anim.t+2,3)/2;
+ if(anim){anim.t=calm?1:Math.min(1,anim.t+Math.min(0.3,rawDt)/0.9);const e=anim.t<.5?4*anim.t**3:1-Math.pow(-2*anim.t+2,3)/2;
   cam.position.copy(anim.from.p).lerp(goal.p,e);cam.quaternion.copy(anim.from.q).slerp(goal.q,e);
   if(anim.t>=1){anim=null;if(mode==='walk')setVis();}}
  else applyPose(goal);
