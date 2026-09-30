@@ -297,20 +297,31 @@ function build(){
    const P=s.poly;let best=null;const rnd=mulberry(s.id*7+F.f);
    const depth0=Math.max(1.6,Math.min(5,Math.sqrt(s.area)*0.45));
    // главная витрина (самая длинная сторона в коридор) — в ней будет вход
-   let doorEdge=-1,doorL=0;
+   let doorEdge=-1,doorL=0,doorU=0;
    if(s.cat!=='tbd'){for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.6)continue;const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;
     const w1=isFloorF(F.f,mx-tz*0.7,mz+tx*0.7),w2=isFloorF(F.f,mx+tz*0.7,mz-tx*0.7);if(w1===w2||L<=doorL)continue;
-    // перед дверью должно быть просторно, иначе в неё не войти
-    const sg=w1?1:-1,ox=mx-tz*1.6*sg,oz=mz+tx*1.6*sg;if(clearance(F.f,ox,oz,2)<1.0)continue;doorL=L;doorEdge=i;}}
+    // перед дверью должно быть просторно, иначе в неё не войти: ищем такое место вдоль витрины, ближе к середине
+    const sg=w1?1:-1,dw=Math.min(2.8,Math.max(1.8,L*0.45),L-0.4),us=[];for(let u=dw/2+0.2;u<=L-dw/2-0.2+1e-6;u+=0.4)us.push(u);if(!us.length)us.push(L/2);us.sort((p,q)=>Math.abs(p-L/2)-Math.abs(q-L/2));
+    const ok=us.find(u=>{const px=a[0]+tx*u,pz=a[1]+tz*u;return isFloorF(F.f,px-tz*0.7*sg,pz+tx*0.7*sg)&&clearance(F.f,px-tz*1.6*sg,pz+tx*1.6*sg,2)>=1.0;});
+    if(ok==null)continue;doorL=L;doorEdge=i;doorU=ok;}}
+   // запасной вариант: магазин касается коридора только углом или через узкую полосу стены —
+   // дверь в ближайшей к коридору стене, короткий проход до коридора (не длиннее 2,4 м)
+   let doorGap=0,doorSg=0;
+   if(doorEdge<0&&s.cat!=='tbd'){let bestG=9;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.2)continue;
+     const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2,sg=inPoly(P,mx-tz*0.3,mz+tx*0.3)?-1:1;
+     const dw=Math.min(2.8,Math.max(1.8,L*0.45),L-0.4),us=[];for(let u=dw/2+0.2;u<=L-dw/2-0.2+1e-6;u+=0.4)us.push(u);if(!us.length)us.push(L/2);
+     for(const u of us){const px=a[0]+tx*u,pz=a[1]+tz*u;for(let r=0.3;r<=2.4&&r<bestG;r+=0.15){const qx=px-tz*r*sg,qz=pz+tx*r*sg;
+      if(isFloorF(F.f,qx,qz)&&clearance(F.f,px-tz*(r+1.0)*sg,pz+tx*(r+1.0)*sg,2)>=1.0){bestG=r;doorEdge=i;doorL=L;doorU=u;doorGap=r;doorSg=sg;break;}}}}}
    const DW=Math.min(2.8,Math.max(1.8,doorL*0.45),doorL-0.4);
    for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const A=new V3(a[0],y0,a[1]),B=new V3(b[0],y0,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
     const t=new V3().subVectors(B,A).divideScalar(L);let n=new V3(-t.z,0,t.x);const mid=A.clone().lerp(B,.5);
-    const isDoor=i===doorEdge,du0=L/2-DW/2,du1=L/2+DW/2;
+    const isDoor=i===doorEdge,du0=doorU-DW/2,du1=doorU+DW/2;
     const w1=L>=0.9&&isFloorF(F.f,mid.x+n.x*0.7,mid.z+n.z*0.7),w2=L>=0.9&&isFloorF(F.f,mid.x-n.x*0.7,mid.z-n.z*0.7);
-    if(w1===w2){ // глухая стена между помещениями / наружу / над проёмом
+    const forced=isDoor&&doorGap>0;if(forced&&doorSg<0)n.negate();
+    if(w1===w2&&!forced){ // глухая стена между помещениями / наружу / над проёмом
      const nn=new V3(-t.z,0,t.x);walls.panel(mid,nn,L,y0,TOP,[0,0,1,1],wallCol,s.id);walls.panel(mid,nn.clone().negate(),L,y0,TOP,[0,0,1,1],wallCol,s.id);
      continue;}
-    if(w2)n.negate();
+    if(w2&&!forced)n.negate();
     const pieces=Math.max(1,Math.round(L/5));const pw=L/pieces;
     for(let k=0;k<pieces;k++){const c=A.clone().lerp(B,(k+.5)/pieces);
      // глубина интерьера не больше реальной глубины помещения
@@ -352,7 +363,7 @@ function build(){
      const o0=c.clone().addScaledVector(R,-pw/2),o1=c.clone().addScaledVector(R,pw/2);
      ao.quad(new V3(o1.x,y0+0.02,o1.z),new V3(o0.x,y0+0.02,o0.z),new V3(o0.x+n.x*0.9,y0+0.02,o0.z+n.z*0.9),new V3(o1.x+n.x*0.9,y0+0.02,o1.z+n.z*0.9),[0,1,1,0]);
     }
-    if(isDoor){const dc=A.clone().addScaledVector(t,L/2);s.door={c:dc,n:n.clone(),R:new V3(n.z,0,-n.x),w:DW,open:0,floor:F.f};doors.push(s);
+    if(isDoor){const dc=A.clone().addScaledVector(t,doorU);s.door={c:dc,n:n.clone(),R:new V3(n.z,0,-n.x),w:DW,open:0,floor:F.f,gap:doorGap};doors.push(s);
      // рамка проёма, ригель над дверью, коврик
      [-1,1].forEach(sg=>{const pp=dc.clone().addScaledVector(s.door.R,sg*DW/2);mtx.makeTranslation(pp.x+n.x*0.03,y0+GH_/2,pp.z+n.z*0.03);mull.add(new THREE.BoxGeometry(0.12,GH_,0.12),null,null,mtx);});
      mtx.makeRotationY(Math.atan2(n.x,n.z));mtx.setPosition(dc.x+n.x*0.03,y0+2.7,dc.z+n.z*0.03);mull.add(new THREE.BoxGeometry(DW+0.1,0.1,0.14),null,null,mtx);
@@ -409,7 +420,8 @@ function build(){
    const leaves=new THREE.InstancedMesh(lg,MAT.glass,N);leaves.renderOrder=2;const handles=new THREE.InstancedMesh(hG,MAT.metal,N);
    const ids=[];list.forEach(s=>{ids.push(s.id,s.id);});leaves.userData.kiosks=ids;pickables.push(leaves);G(FLOORS[f].group).add(leaves,handles);
    return{list,leaves,handles};});
-  doors.forEach(s=>{const d=s.door;const c=d.c.clone().addScaledVector(d.n,-0.2);setRect(c.x,c.z,Math.atan2(d.R.z,d.R.x),d.w/2-0.12,0.75,1,d.floor);});
+  doors.forEach(s=>{const d=s.door;const c=d.c.clone().addScaledVector(d.n,-0.2);setRect(c.x,c.z,Math.atan2(d.R.z,d.R.x),d.w/2-0.12,0.75,1,d.floor);
+   if(d.gap){const pc=d.c.clone().addScaledVector(d.n,d.gap/2+0.2);setRect(pc.x,pc.z,Math.atan2(d.R.z,d.R.x),d.w/2-0.12,d.gap/2+0.45,1,d.floor);}});
   updateDoors();}
  G('toplabels1').visible=false;G('toplabels2').visible=false;
 
@@ -803,7 +815,7 @@ function moveTo(f,x,z,yaw,pitch){const other=f!==curFloor;
  if(other&&!calm&&mode!=='top')fadeThen(put);else put();}
 function walkTo(s){const sp=standPoint(s);if(!sp)return;
  moveTo(s.floor,sp.x,sp.z,sp.yaw,0.08);openCard(s);if(coarse)$('card').hidden=true;}
-function walkToDoor(s){const d=s.door;closeCard();moveTo(d.floor,d.c.x+d.n.x*2.2,d.c.z+d.n.z*2.2,Math.atan2(d.n.x,d.n.z),0);showHint('Двери открыты — пройди вперёд, чтобы войти');}
+function walkToDoor(s){const d=s.door,r=2.2+(d.gap||0);closeCard();moveTo(d.floor,d.c.x+d.n.x*r,d.c.z+d.n.z*r,Math.atan2(d.n.x,d.n.z),0);showHint('Двери открыты — пройди вперёд, чтобы войти');}
 function showTop(s){if(s.floor!==curFloor)setFloor(s.floor);topv.x=s.c[0];topv.z=s.c[1];topv.h=clampH(topY()+Math.max(45,Math.min(160,Math.sqrt(s.area||40)*4)));setMode('top',{keep:true});openCard(s);}
 
 /* ---------- Вид сверху: нажми на коридор — «Перейти сюда» ---------- */
