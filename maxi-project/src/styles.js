@@ -98,6 +98,24 @@ Object.assign(PRESET, {
     wall: () => LIN('#2a2522'), fascia: () => LIN('#ffffff'), inWall: s => LIN('#6e5238').lerp(s.col, 0.3),
     glow: true, pools: { color: '#ffb35c', op: .55, size: 5.5, doors: 1, corridor: '#ffc98a', corridorOp: .25 } },
 });
+// между D (evening, прохладный) и A (dusk, светлее): прохладный графит + светлый тёплый пол, от темнее к светлее
+Object.assign(PRESET, {
+  coolE: { exp: 1.05, env: .18, hemi: ['#8a90a8', '#1a1614', 0.5], sun: ['#aebcff', 0.12], fog: '#1c1d22', fogNear: 80, fogFar: 340, sky: ['#070a12', '#1a2338', '#2a3450'],
+    white: '#4a4b50', col: '#3c3d42', slab: '#2e2f34', roof: '#2a2b30', dark: '#121316', metal: '#c9a260', light: [3, 2.7, 2.2], railOp: .12, rail: '#c8ccd4',
+    floorTex: 'warm', floorRough: .12, floorEnv: .4, floorColor: '#e3d1b6', wood: true,
+    wall: () => LIN('#46474d'), fascia: () => LIN('#ffffff'), inWall: s => LIN('#8a6b4b').lerp(s.col, 0.25),
+    glow: { interior: .34, inWalls: .2, inCeil: .28, inFloor: .45 }, pools: { color: '#ffc27a', op: .5, size: 6, doors: 0.9, corridor: '#ffd9a8', corridorOp: .25 } },
+  coolF: { exp: 1.0, env: .3, hemi: ['#c6cce0', '#2a2522', 0.62], sun: ['#dfe6ff', 0.25], fog: '#3a3c42', fogNear: 100, fogFar: 420, sky: ['#2c3a58', '#6f84a8', '#aab8cc'],
+    white: '#77797f', col: '#6a6c72', slab: '#56585e', roof: '#505258', dark: '#1c1d20', metal: '#c9a260', light: [2.6, 2.45, 2.1], railOp: .14, rail: '#d0d6de',
+    floorTex: 'warm', floorRough: .14, floorEnv: .4, floorColor: '#eadbc3', wood: true,
+    wall: () => LIN('#6d6e74'), fascia: () => LIN('#ffffff'), inWall: s => LIN('#b08c64').lerp(s.col, 0.2),
+    glow: { interior: .26, inWalls: .14, inCeil: .2, inFloor: .3 }, pools: { color: '#ffc98a', op: .42, size: 6.5, doors: 0.7, corridor: '#dbe6ff', corridorOp: .18 } },
+  coolG: { exp: 0.98, env: .45, hemi: ['#eef1f8', '#4a403a', 0.72], sun: ['#f2f5ff', 0.4], fog: '#c9ccd2', fogNear: 120, fogFar: 520, sky: ['#5f86b8', '#a9c1dc', '#dde4ec'],
+    white: '#b7b9bf', col: '#a9abb1', slab: '#9ea1a8', roof: '#9a9ca3', dark: '#2a2b2f', metal: '#c9a260', light: [2.1, 2.05, 1.9], railOp: .18, rail: '#dfe4ea',
+    floorTex: 'warm', floorRough: .18, floorEnv: .42, floorColor: '#f1e4cf', wood: true,
+    wall: () => LIN('#a3a5ab'), fascia: () => LIN('#ffffff'), inWall: s => LIN('#d4b48a').lerp(s.col, 0.18),
+    glow: { interior: .15, inWalls: .08, inCeil: .12, inFloor: .15 }, pools: { color: '#ffd29a', op: .35, size: 7, doors: 0.6 } },
+});
 function vivid(c) { const h = {}; c.getHSL(h); return new THREE.Color().setHSL(h.h, Math.min(1, h.s * 1.35 + 0.15), 0.42); }
 
 export function makeStyler(ctx) {
