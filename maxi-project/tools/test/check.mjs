@@ -33,6 +33,7 @@ const shot = async (page, name) => { await page.waitForFunction(() => !window.__
 // встать перед дверью магазина (на его этаже) и шагнуть в проём
 async function enter(page, name) {
   await page.evaluate(n => { const T = window.__maxi, s = T.S.find(x => x.name === n); T.walkToDoor(s); }, name);
+  await page.waitForFunction(() => !window.__maxi.anim, null, {timeout: 30000});
   await page.waitForTimeout(1600);
   await page.evaluate(n => { const T = window.__maxi, d = T.S.find(x => x.name === n).door; T.player.x = d.c.x - d.n.x * 0.3; T.player.z = d.c.z - d.n.z * 0.3; }, name);
   await page.waitForFunction(() => window.__maxi.mode === 'store', null, {timeout: 20000});

@@ -248,15 +248,15 @@ function kioskBody(s){return LIN('#eceae6');}
 function kioskGlow(s){const c=s.cat==='tbd'?LIN('#9aa3ab'):s.col;return c.clone().lerp(new THREE.Color(1,1,1),0.3).multiplyScalar(1.3);}
 let HP=null;
 function humanParts(){if(HP)return HP;
- const lat=(pts,seg)=>new THREE.LatheGeometry(pts.map(p=>new THREE.Vector2(p[0],p[1])),seg||14);
+ const lat=(pts,seg)=>new THREE.LatheGeometry(pts.map(p=>new THREE.Vector2(p[0],p[1])),seg||10);
  const torso=lat([[0,0.86],[0.14,0.88],[0.165,0.98],[0.15,1.1],[0.155,1.26],[0.19,1.4],[0.2,1.46],[0.16,1.52],[0.07,1.56],[0,1.57]]);torso.scale(1,1,0.66);
- const leg=x=>[new THREE.CylinderGeometry(0.07,0.058,0.44,10).translate(x,0.66,0),new THREE.SphereGeometry(0.06,10,8).translate(x,0.44,0),new THREE.CylinderGeometry(0.057,0.045,0.38,10).translate(x,0.25,0)];
- const arm=x=>[new THREE.SphereGeometry(0.055,10,8).translate(x,1.45,0),new THREE.CylinderGeometry(0.05,0.043,0.32,10).translate(x,1.28,0),new THREE.CylinderGeometry(0.042,0.035,0.3,10).translate(x,0.99,0.01)];
- const hands=[-1,1].map(s=>new THREE.SphereGeometry(0.045,10,8).scale(0.8,1.1,0.6).translate(s*0.215,0.8,0.015));
- const head=new THREE.SphereGeometry(0.1,18,14);head.scale(0.92,1.12,1);head.translate(0,1.72,0.005);
- const neck=new THREE.CylinderGeometry(0.045,0.05,0.1,10);neck.translate(0,1.6,0);
- const hair=new THREE.SphereGeometry(0.104,18,12,0,Math.PI*2,0,Math.PI*0.55);hair.scale(0.95,1.1,1.05);hair.translate(0,1.735,-0.01);
- const shoes=[-1,1].map(s=>new THREE.SphereGeometry(0.06,12,8).scale(0.85,0.55,1.7).translate(s*0.09,0.035,0.035));
+ const leg=x=>[new THREE.CylinderGeometry(0.07,0.058,0.44,7).translate(x,0.66,0),new THREE.SphereGeometry(0.06,7,5).translate(x,0.44,0),new THREE.CylinderGeometry(0.057,0.045,0.38,7).translate(x,0.25,0)];
+ const arm=x=>[new THREE.SphereGeometry(0.055,7,5).translate(x,1.45,0),new THREE.CylinderGeometry(0.05,0.043,0.32,7).translate(x,1.28,0),new THREE.CylinderGeometry(0.042,0.035,0.3,7).translate(x,0.99,0.01)];
+ const hands=[-1,1].map(s=>new THREE.SphereGeometry(0.045,7,5).scale(0.8,1.1,0.6).translate(s*0.215,0.8,0.015));
+ const head=new THREE.SphereGeometry(0.1,12,9);head.scale(0.92,1.12,1);head.translate(0,1.72,0.005);
+ const neck=new THREE.CylinderGeometry(0.045,0.05,0.1,7);neck.translate(0,1.6,0);
+ const hair=new THREE.SphereGeometry(0.104,12,7,0,Math.PI*2,0,Math.PI*0.55);hair.scale(0.95,1.1,1.05);hair.translate(0,1.735,-0.01);
+ const shoes=[-1,1].map(s=>new THREE.SphereGeometry(0.06,8,5).scale(0.85,0.55,1.7).translate(s*0.09,0.035,0.035));
  const merge=(gs)=>{const m=new Merger();gs.forEach(g=>m.add(g));const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(m.p,3));bg.setAttribute('normal',new THREE.Float32BufferAttribute(m.n,3));return bg;};
  HP={torso:merge([torso]),legs:merge([...leg(-0.09),...leg(0.09)]),arms:merge([...arm(-0.215),...arm(0.215)]),head:merge([head,neck,...hands]),hair:merge([hair]),shoes:merge(shoes)};return HP;}
 function build(){
@@ -457,7 +457,7 @@ function build(){
  // светильники-кольца: под перекрытием первого этажа, под крышей второго и большие — в атриумах
  {const ringsLow=[],ringsHigh=[];const st=Math.round(6.5/CELL);
   for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(!isWalkPx(i,j))continue;const [x,z]=fromPx(i,j);if(inVoid(x,z)){if(((i+j)/st)%2===0)ringsHigh.push([x,z]);}else ringsLow.push([x,z]);}
-  const rg1=new THREE.TorusGeometry(0.9,0.05,6,40);rg1.rotateX(Math.PI/2);
+  const rg1=new THREE.TorusGeometry(0.9,0.05,4,28);rg1.rotateX(Math.PI/2);
   const r1=new THREE.InstancedMesh(rg1,MAT.light,Math.max(1,ringsLow.length));ringsLow.forEach((p,i)=>{mtx.makeTranslation(p[0],FLOOR_H-0.04,p[1]);r1.setMatrixAt(i,mtx);});G('slab').add(r1);
   // светильники второго этажа — над его собственной галереей
   const rings2=[];for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(walk2[j*GW+i])rings2.push(fromPx(i,j));}
@@ -603,7 +603,7 @@ function build(){
   const freeDisk=(f,x,z,r)=>{for(let a=0;a<8;a++)for(const d of [0,r*0.5,r]){if(!isWalkF(f,x+Math.cos(a*0.785)*d,z+Math.sin(a*0.785)*d))return false;}return true;};
   [1,2].forEach(f=>{const y0=FY[f],grp=f===1?scene:G('f2'),rnd=mulberry(31+f),plants=[],tables=[],st=Math.round(2.5/CELL);
    // столики фуд-корта
-   if(f===2)for(let j=0;j<GH;j+=Math.round(3.1/CELL))for(let i=0;i<GW;i+=Math.round(3.1/CELL)){if(!hall2[j*GW+i])continue;const [x,z]=fromPx(i,j);
+   if(f===2)for(let j=0;j<GH;j+=Math.round(4.0/CELL))for(let i=0;i<GW;i+=Math.round(4.0/CELL)){if(!hall2[j*GW+i])continue;const [x,z]=fromPx(i,j);
     if(clearance(2,x,z,3)<2.6||!freeDisk(2,x,z,1.3)||near(2,x,z,3.5))continue;tables.push({x,z,a:rnd()*0.4});blockRect(x,z,0,0.95,0.95,2);}
    for(let j=0;j<GH;j+=st)for(let i=0;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);
     if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<4.8||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<16))continue;if(near(f,x,z,6))continue;
@@ -1428,7 +1428,7 @@ async function start(){
  requestAnimationFrame(frame);
 }
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
-if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,
+if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
  get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop};
 start();
