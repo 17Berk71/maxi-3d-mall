@@ -100,7 +100,7 @@ renderer.outputEncoding=THREE.sRGBEncoding;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.9;
 renderer.physicallyCorrectLights=false;
 const scene=new THREE.Scene();
-const FX=makeFX(renderer,scene);const QS0=new URLSearchParams(location.search),DEC=QS0.has('decor');
+const FX=makeFX(renderer,scene,coarse);const QS0=new URLSearchParams(location.search),DEC=true;
 const FOG=LIN('#e9ecef');scene.fog=new THREE.Fog(FOG,140,620);
 const cam=new THREE.PerspectiveCamera(64,innerWidth/innerHeight,0.1,3000);cam.rotation.order='YXZ';
 const maxAniso=renderer.capabilities.getMaxAnisotropy();
@@ -675,7 +675,7 @@ function build(){
    if(f===2)for(let j=0;j<GH;j+=Math.round(4.0/CELL))for(let i=0;i<GW;i+=Math.round(4.0/CELL)){if(!hall2[j*GW+i])continue;const [x,z]=fromPx(i,j);
     if(clearance(2,x,z,3)<2.6||!freeDisk(2,x,z,1.3)||near(2,x,z,3.5))continue;tables.push({x,z,a:rnd()*0.4});blockRect(x,z,0,0.95,0.95,2);}
    for(let j=0;j<GH;j+=st)for(let i=0;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);
-    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<(DEC?4.2:4.8)||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<(DEC?9:16)))continue;if(near(f,x,z,6))continue;
+    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<(DEC?4.5:4.8)||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<(DEC?13:16)))continue;if(near(f,x,z,6))continue;
     const a=rnd()*Math.PI*2;plants.push({x,z,a,bx:x+Math.cos(a)*1.25,bz:z+Math.sin(a)*1.25});}
    plants.forEach(p=>{blockRect(p.x,p.z,0,0.6,0.6,f);blockRect(p.bx,p.bz,p.a+Math.PI/2,0.85,0.35,f);});
    const N=Math.max(1,plants.length),q=new THREE.Quaternion(),Y=new V3(0,1,0),one=new V3(1,1,1);
@@ -691,7 +691,7 @@ function build(){
    world['decor'+f]={plants:plants.length,tables:tables.length};});}
 
  // ---- посетители: гуляют по галереям обоих этажей
- {const parts=humanParts();const NP=(coarse?48:110)*(DEC?2:1);const r=mulberry(77);
+ {const parts=humanParts();const NP=(coarse?48:110)*1;const r=mulberry(77);
   const cloth=['#2f3a4a','#6b7a8f','#7a3a3a','#3f5e4a','#c9b79c','#1f1f24','#8b6a4a','#4d4f7c','#d9d4cc','#5e3b4f','#9ea2a6','#e7e2d8'].map(LIN),pants=['#23262c','#3b4252','#5a5148','#2c3440','#6b6e73'].map(LIN),skin=['#e6c3a5','#d9b08c','#c6946b','#f0d2bb'].map(LIN);
   const torso=new THREE.InstancedMesh(parts.torso,new THREE.MeshStandardMaterial({roughness:.85}),NP),legs=new THREE.InstancedMesh(parts.legs,new THREE.MeshStandardMaterial({roughness:.8}),NP),arms=new THREE.InstancedMesh(parts.arms,new THREE.MeshStandardMaterial({roughness:.85}),NP),head=new THREE.InstancedMesh(parts.head,new THREE.MeshStandardMaterial({roughness:.6}),NP);
   const hair=new THREE.InstancedMesh(parts.hair,new THREE.MeshStandardMaterial({roughness:.7}),NP),shoes=new THREE.InstancedMesh(parts.shoes,new THREE.MeshStandardMaterial({roughness:.6}),NP);
@@ -1517,8 +1517,9 @@ async function start(){
  try{build();}catch(err){$('loading').textContent='Не получилось построить сцену: '+err.message;console.error(err);return;}
  {const w=nearestFree(player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  const qs=new URLSearchParams(location.search);if(qs.has('calm'))calm=qs.get('calm')!=='0';setCalm(calm);
- {const st=qs.get('style');if(st)applyStyle(st);}
- {const fx=(qs.get('fx')||'').split(',');if(fx[0]){FX.set({refl:fx.includes('refl'),bloom:fx.includes('bloom'),grade:fx.includes('grade')});if(fx.includes('refl'))FX.patchFloors(floorMatsF);}}
+ applyStyle(qs.get('style')||'coolG');
+ FX.patchFloors(floorMatsF);FX.init();
+ if(qs.get('fx')==='0')FX.setTier(0);else if(qs.has('q'))FX.setTier(+qs.get('q'));
  buildChips();updateFloorUI();sizeMini();updateJoy();setVis();updateCross();applyPose(walkPose());
  $('loading').hidden=true;
  showHint(coarse?'Джойстик — идти, проведи по экрану — осмотреться. Нажми на витрину.':'Ты у входа 2. Кликни по сцене — курсор скроется, и обзор пойдёт за мышью · WASD — идти · Esc — вернуть курсор');

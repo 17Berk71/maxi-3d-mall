@@ -1,23 +1,51 @@
-// Пробные эффекты картинки (превью): отражения в полу, свечение ламп и вывесок, цветокоррекция и виньетка.
-// Включаются параметром ?fx=refl,bloom,grade (любой набор) или __maxi.setFX({...}).
+// Эффекты картинки: отражения в полу, свечение ламп и вывесок, цветокоррекция и виньетка.
+// Качество выбирается само по замеру времени кадра: уровень 0 (без эффектов) … 3 (полный).
+// Телефон стартует с 1, компьютер с 3; если кадры тяжёлые — уровень падает, если есть запас — растёт
+// (уровень, на котором было тяжело, больше не включается). Для проверки: ?q=0..3 фиксирует уровень.
 import * as THREE from 'three';
 
 const QUAD_V = 'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}';
 
-export function makeFX(renderer, scene) {
+export function makeFX(renderer, scene, coarse) {
   const gl2 = renderer.capabilities.isWebGL2;
-  const o = { refl: false, bloom: false, grade: false, reflK: .38, bloomK: .35, thr: .96 };
+  const o = { refl: true, bloom: true, grade: true, reflK: .38, bloomK: .35, thr: .96, auto: true };
+  const dpr = window.devicePixelRatio || 1;
+  const TIERS = [
+    { pr: 1 },
+    { pr: Math.min(dpr, 1.25), ms: false, bs: 3, bi: 1, rs: 0 },
+    { pr: Math.min(dpr, coarse ? 1.5 : 1.75), ms: !coarse, bs: 2, bi: 1, rs: 2, every: 2, far: 45, rms: false },
+    { pr: Math.min(dpr, coarse ? 1.75 : 2), ms: true, bs: 2, bi: 2, rs: 1, every: 1, far: 0, rms: true },
+  ];
+  let tier = coarse ? 1 : 3, cfg = TIERS[tier], ban = 4, frameNo = 0;
   const size = new THREE.Vector2();
   const mk = (w, h, ms) => {
     const C = ms && gl2 ? THREE.WebGLMultisampleRenderTarget : THREE.WebGLRenderTarget;
     const t = new C(Math.max(1, w), Math.max(1, h), { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat });
     t.texture.encoding = THREE.sRGBEncoding; if (ms && gl2) t.samples = 4; return t;
   };
-  let rtMain = null, rtA = null, rtB = null, rtR = null, W = 0, H = 0;
+  let rtMain = null, rtA = null, rtB = null, rtR = null, W = 0, H = 0, key = '';
   function ensure() {
-    renderer.getDrawingBufferSize(size); if (size.x === W && size.y === H && rtMain) return; W = size.x; H = size.y;
+    renderer.getDrawingBufferSize(size); const k = size.x + 'x' + size.y + ':' + tier;
+    if (k === key && rtMain) return; key = k; W = size.x; H = size.y;
     [rtMain, rtA, rtB, rtR].forEach(t => t && t.dispose());
-    rtMain = mk(W, H, true); rtA = mk(W >> 2, H >> 2); rtB = mk(W >> 2, H >> 2); rtR = mk(W >> 1, H >> 1, true);
+    if (tier < 1) { rtMain = rtA = rtB = rtR = null; return; }
+    rtMain = mk(W, H, cfg.ms); rtA = mk(W >> cfg.bs, H >> cfg.bs); rtB = mk(W >> cfg.bs, H >> cfg.bs);
+    rtR = cfg.rs ? mk(W >> cfg.rs, H >> cfg.rs, cfg.rms) : mk(4, 4);
+  }
+  function setTier(t) {
+    tier = Math.max(0, Math.min(3, t)); cfg = TIERS[tier]; warm = 40; acc = 0; n = 0;
+    renderer.setPixelRatio(cfg.pr); renderer.setSize(innerWidth, innerHeight);
+  }
+  // автоподбор качества по времени кадра
+  let last = 0, last0 = false, acc = 0, n = 0, warm = 90;
+  document.addEventListener('visibilitychange', () => { last0 = false; });
+  function measure() {
+    const t = performance.now(), dt = Math.min(t - last, 1500); last = t;
+    if (!o.auto || dt <= 0 || !last0 || document.hidden) { last0 = true; return; }
+    if (warm > 0) { warm--; return; }
+    acc += dt; n++;
+    if (n === 45 && acc / n > (tier === 1 ? 38 : 25) && tier > 0) { ban = tier; setTier(tier - 1); return; }
+    if (n >= 180) { if (acc / n < 18.5 && tier + 1 < ban) setTier(tier + 1); else { acc = 0; n = 0; } }
   }
   const qcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), qscene = new THREE.Scene();
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)); qscene.add(quad);
@@ -57,7 +85,7 @@ export function makeFX(renderer, scene) {
     _m.extractRotation(cam.matrixWorld); _la.set(0, 0, -1).applyMatrix4(_m).add(_c);
     _t.subVectors(_p, _la); _t.reflect(_n).negate(); _t.add(_p);
     vcam.position.copy(_v); vcam.up.set(0, 1, 0).applyMatrix4(_m).reflect(_n); vcam.lookAt(_t);
-    vcam.far = cam.far; vcam.near = cam.near; vcam.updateMatrixWorld(); vcam.projectionMatrix.copy(cam.projectionMatrix); vcam.projectionMatrixInverse.copy(cam.projectionMatrixInverse);
+    vcam.fov = cam.fov; vcam.aspect = cam.aspect; vcam.near = cam.near; vcam.far = cfg.far || cam.far; vcam.updateProjectionMatrix(); vcam.updateMatrixWorld();
     const tm = U[f].tmRefl.value; tm.set(.5, 0, 0, .5, 0, .5, 0, .5, 0, 0, .5, .5, 0, 0, 0, 1); tm.multiply(vcam.projectionMatrix); tm.multiply(vcam.matrixWorldInverse);
     plane.constant = -(h + 0.02); const oc = renderer.clippingPlanes; renderer.clippingPlanes = [plane];
     renderer.setRenderTarget(rtR); renderer.clear(); renderer.render(scene, vcam); renderer.clippingPlanes = oc;
@@ -67,22 +95,26 @@ export function makeFX(renderer, scene) {
     opts: o,
     set(p) { Object.assign(o, p); },
     patchFloors(list) { list.forEach(([m, f]) => patch(m, f)); },
-    get active() { return o.refl || o.bloom || o.grade; },
+    init() { setTier(tier); },
+    get tier() { return tier; },
+    setTier(t) { o.auto = false; setTier(t); },
+    get active() { return true; },
     render(sc, cam, floor, floorY) {
-      ensure();
-      [1, 2].forEach(f => { U[f].reflK.value = o.refl && sc === scene && f === floor ? o.reflK : 0; U[f].tRefl.value = rtR.texture; });
-      if (o.refl && sc === scene) renderRefl(cam, floorY, floor);
-      const post = o.bloom || o.grade;
-      if (!post) { renderer.setRenderTarget(null); renderer.render(sc, cam); return; }
+      measure(); ensure(); frameNo++;
+      const refl = o.refl && cfg.rs > 0 && sc === scene;
+      [1, 2].forEach(f => { U[f].reflK.value = refl && f === floor ? o.reflK : 0; U[f].tRefl.value = rtR ? rtR.texture : null; });
+      if (refl && frameNo % cfg.every === 0) renderRefl(cam, floorY, floor);
+      if (tier < 1) { renderer.setRenderTarget(null); renderer.render(sc, cam); return; }
+      const bloom = o.bloom;
       renderer.setRenderTarget(rtMain); renderer.clear(); renderer.render(sc, cam);
-      if (o.bloom) {
+      if (bloom) {
         bright.uniforms.t.value = rtMain.texture; bright.uniforms.thr.value = o.thr; pass(bright, rtA);
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < cfg.bi; i++) {
           blur.uniforms.t.value = rtA.texture; blur.uniforms.d.value.set((1 + i) / rtA.width, 0); pass(blur, rtB);
           blur.uniforms.t.value = rtB.texture; blur.uniforms.d.value.set(0, (1 + i) / rtA.height); pass(blur, rtA);
         }
       }
-      comp.uniforms.t.value = rtMain.texture; comp.uniforms.b.value = rtA.texture; comp.uniforms.bk.value = o.bloom ? o.bloomK : 0; comp.uniforms.gr.value = o.grade ? 1 : 0;
+      comp.uniforms.t.value = rtMain.texture; comp.uniforms.b.value = rtA.texture; comp.uniforms.bk.value = bloom ? o.bloomK : 0; comp.uniforms.gr.value = o.grade ? 1 : 0;
       pass(comp, null);
     },
   };
