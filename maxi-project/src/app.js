@@ -282,6 +282,8 @@ function build(){
  buildAtlases();
 
  // ---- магазины: витрины, двери, интерьер за стеклом — одинаково для обоих этажей
+ // туалеты: у их дверей и проёмов входов в магазины быть не должно (значки туалетов — из карты)
+ const WC_R=7,nearWC=(f,x,z)=>((f===1?D.wc:D2&&D2.wc)||[]).some(w=>Math.hypot(w[0]-x,w[1]-z)<WC_R);
  const doors=[];world.doors=doors;world.tint={};world.tintColors={};
  const wood=canvasTex(256,256,(g,w,h)=>{const r=mulberry(9);g.fillStyle='#cdb190';g.fillRect(0,0,w,h);for(let y=0;y<h;y+=32){g.fillStyle=`rgba(90,60,30,${.05+r()*.06})`;g.fillRect(0,y,w,32);g.fillStyle='rgba(80,50,20,.25)';g.fillRect(0,y,w,1);for(let i=0;i<14;i++){g.fillStyle=`rgba(120,80,40,${r()*.08})`;g.fillRect(0,y+r()*32,w,1);}}});
  wood.wrapS=wood.wrapT=THREE.RepeatWrapping;
@@ -299,6 +301,7 @@ function build(){
    // главная витрина (самая длинная сторона в коридор) — в ней будет вход
    let doorEdge=-1,doorL=0,doorU=0;
    if(s.cat!=='tbd'){for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.6)continue;const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;
+    if(nearWC(F.f,mx,mz))continue;
     const w1=isFloorF(F.f,mx-tz*0.7,mz+tx*0.7),w2=isFloorF(F.f,mx+tz*0.7,mz-tx*0.7);if(w1===w2||L<=doorL)continue;
     // перед дверью должно быть просторно, иначе в неё не войти: ищем такое место вдоль витрины, ближе к середине
     const sg=w1?1:-1,dw=Math.min(2.8,Math.max(1.8,L*0.45),L-0.4),us=[];for(let u=dw/2+0.2;u<=L-dw/2-0.2+1e-6;u+=0.4)us.push(u);if(!us.length)us.push(L/2);us.sort((p,q)=>Math.abs(p-L/2)-Math.abs(q-L/2));
@@ -308,7 +311,7 @@ function build(){
    // дверь в ближайшей к коридору стене, короткий проход до коридора (не длиннее 2,4 м)
    let doorGap=0,doorSg=0;
    if(doorEdge<0&&s.cat!=='tbd'){let bestG=9;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<2.2)continue;
-     const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2,sg=inPoly(P,mx-tz*0.3,mz+tx*0.3)?-1:1;
+     const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L,mx=(a[0]+b[0])/2,mz=(a[1]+b[1])/2;if(nearWC(F.f,mx,mz))continue;const sg=inPoly(P,mx-tz*0.3,mz+tx*0.3)?-1:1;
      const dw=Math.min(2.8,Math.max(1.8,L*0.45),L-0.4),us=[];for(let u=dw/2+0.2;u<=L-dw/2-0.2+1e-6;u+=0.4)us.push(u);if(!us.length)us.push(L/2);
      for(const u of us){const px=a[0]+tx*u,pz=a[1]+tz*u;for(let r=0.3;r<=2.4&&r<bestG;r+=0.15){const qx=px-tz*r*sg,qz=pz+tx*r*sg;
       if(isFloorF(F.f,qx,qz)&&clearance(F.f,px-tz*(r+1.0)*sg,pz+tx*(r+1.0)*sg,2)>=1.0){bestG=r;doorEdge=i;doorL=L;doorU=u;doorGap=r;doorSg=sg;break;}}}}}

@@ -65,12 +65,16 @@ for r,v in roomNames.items():
     if any(n_ in o or o in n_ for o in vv):continue
     vv.append(n_)
   roomNames[r]=vv
+# подписи, которые лежат в одной комнате и не означают отдельных магазинов (главное имя идёт первым)
+INSIDE_ONE_ROOM={'Спортмастер Pro','Pro Сервис'};MAIN_OF_ROOM={'Спортмастер Pro'}
 # split rooms having >=2 inside names
 nextId=int(L.max())+1
 yy_,xx_=np.mgrid[0:CH,0:CW]
 for r,v in list(roomNames.items()):
   P=[(n_,x,y) for n_,x,y in pts_in.get(r,[]) if n_ in v]
   if len(P)<2:continue
+  # Pro Сервис — пункт внутри Спортмастера, на карте это одно помещение: не делим его по подписям
+  if set(v)<=INSIDE_ONE_ROOM:roomNames[r]=sorted(v,key=lambda n_:n_ not in MAIN_OF_ROOM);continue
   m=L==r;area=m.sum()*MPX*MPX
   if area<30*len(P):continue
   ys_,xs_=np.nonzero(m)
