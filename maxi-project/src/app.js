@@ -8,6 +8,7 @@ import {LIFTS_PLAN} from './floor2.js';
 import {describe} from './shop/describe.js';
 import {cart} from './shop/cart.js';
 import {createModels} from './shop/models.js';
+import {makeStyler} from './styles.js';
 
 export function startApp(D,D2){
 
@@ -108,10 +109,11 @@ const maxAniso=renderer.capabilities.getMaxAnisotropy();
  const warm=new THREE.MeshBasicMaterial({color:new THREE.Color(2.2,1.9,1.5)});[[-29.8,Math.PI/2],[29.8,-Math.PI/2]].forEach(([x,r])=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(50,5),warm);p.position.set(x,2.5,0);p.rotation.y=r;env.add(p);});
  const floorE=new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.MeshBasicMaterial({color:LIN('#e8e2d8')}));floorE.rotation.x=-Math.PI/2;floorE.position.y=-9.9;env.add(floorE);
  const pm=new THREE.PMREMGenerator(renderer);scene.environment=pm.fromScene(env,0.02).texture;pm.dispose();}
-scene.add(new THREE.HemisphereLight(LIN('#ffffff'),LIN('#bfb4a4'),0.55));
+const hemi=new THREE.HemisphereLight(LIN('#ffffff'),LIN('#bfb4a4'),0.55);scene.add(hemi);
+var skyMesh=null,FOGW=[120,520];var MERGED={walls:[],fascia:[],interior:[],inWalls:[],inFloor:[],inCeil:[]},floorMats=[];
 const sun=new THREE.DirectionalLight(LIN('#fff4e6'),0.55);sun.position.set(-80,160,-60);scene.add(sun);
 // небо
-{const sky=new THREE.Mesh(new THREE.SphereGeometry(1800,32,16),new THREE.MeshBasicMaterial({side:THREE.BackSide,depthWrite:false,fog:false,map:canvasTex(16,256,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#6f9cc9');gr.addColorStop(.45,'#a9c7e2');gr.addColorStop(.5,'#dde6ec');gr.addColorStop(1,'#c9ccce');g.fillStyle=gr;g.fillRect(0,0,w,h);})}));scene.add(sky);}
+{const sky=new THREE.Mesh(new THREE.SphereGeometry(1800,32,16),new THREE.MeshBasicMaterial({side:THREE.BackSide,depthWrite:false,fog:false,map:canvasTex(16,256,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#6f9cc9');gr.addColorStop(.45,'#a9c7e2');gr.addColorStop(.5,'#dde6ec');gr.addColorStop(1,'#c9ccce');g.fillStyle=gr;g.fillRect(0,0,w,h);})}));scene.add(sky);skyMesh=sky;}
 
 function canvasTex(w,h,draw,linear){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');draw(g,w,h);const t=new THREE.CanvasTexture(c);t.anisotropy=Math.min(8,maxAniso);if(!linear)t.encoding=THREE.sRGBEncoding;return t;}
 function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
@@ -267,7 +269,7 @@ function build(){
  // пол: полированный мрамор
  const fg=flatShape(bpoly,0.01);
  {const P=fg.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}fg.setAttribute('uv',new THREE.BufferAttribute(U,2));}
- const floor=new THREE.Mesh(fg,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55}));scene.add(floor);
+ const floor=new THREE.Mesh(fg,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55}));scene.add(floor);floorMats.push(floor.material);
  // цветные полосы вдоль проёмов (как на фото)
  const band=new Merger();const OR=LIN('#ef7d35'),GRN=LIN('#7ab04f');
  voidPolys.forEach(v=>{for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length];const A=new V3(a[0],0.025,a[1]),B=new V3(b[0],0.025,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
@@ -411,12 +413,12 @@ function build(){
     labels[s.atlas].quad(P0(-cellW/2,cellH/2),P0(cellW/2,cellH/2),P0(cellW/2,-cellH/2),P0(-cellW/2,-cellH/2),s.uv,null,s.id);}
   });
   const tintMesh=tint.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.6,side:THREE.DoubleSide}));grp.add(tintMesh);pickables.push(tintMesh);world.tint[F.f]=tintMesh;world.tintColors[F.f]=tintMesh.geometry.attributes.color.array.slice();
-  grp.add(walls.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.7})));
-  const fm=fascia.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.5,metalness:.05}));grp.add(fm);pickables.push(fm);
-  const inTex=interior.mesh(new THREE.MeshStandardMaterial({map:shelfAtlas,roughness:.8}));grp.add(inTex);pickables.push(inTex);
-  grp.add(inWalls.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85})));
-  grp.add(inFloor.mesh(new THREE.MeshStandardMaterial({map:wood,roughness:.35})));
-  grp.add(inCeil.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9})));
+  const wm=walls.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.7}));grp.add(wm);MERGED.walls.push(wm);
+  const fm=fascia.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.5,metalness:.05}));grp.add(fm);pickables.push(fm);MERGED.fascia.push(fm);
+  const inTex=interior.mesh(new THREE.MeshStandardMaterial({map:shelfAtlas,roughness:.8}));grp.add(inTex);pickables.push(inTex);MERGED.interior.push(inTex);
+  const iw=inWalls.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85}));grp.add(iw);MERGED.inWalls.push(iw);
+  const ifl=inFloor.mesh(new THREE.MeshStandardMaterial({map:wood,roughness:.35}));grp.add(ifl);MERGED.inFloor.push(ifl);
+  const ic=inCeil.mesh(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9}));grp.add(ic);MERGED.inCeil.push(ic);
   grp.add(lights.mesh(MAT.light));
   if(posters.p.length){const pm=posters.mesh(new THREE.MeshBasicMaterial({map:pictoAtlas,toneMapped:false}));grp.add(pm);pickables.push(pm);}
   const glassMesh=glass.mesh(MAT.glass);glassMesh.renderOrder=2;grp.add(glassMesh);pickables.push(glassMesh);
@@ -468,7 +470,7 @@ function build(){
  G('toplabels1').visible=false;G('toplabels2').visible=false;
 
  // ---- перекрытие и галерея второго этажа
- const slabMat=new THREE.MeshStandardMaterial({color:LIN('#fbfbfa'),roughness:.6});
+ const slabMat=new THREE.MeshStandardMaterial({color:LIN('#fbfbfa'),roughness:.6});world.slabMat=slabMat;
  G('slab').add(new THREE.Mesh(extrude(shapeOf(bpoly,voidPolys),FLOOR_H,SLAB),slabMat));
  // кровля над частями без второго этажа
  {const rt=canvasTex(256,256,(g,w,h)=>{const r=mulberry(21);g.fillStyle='#9a9c9e';g.fillRect(0,0,w,h);for(let i=0;i<2500;i++){const v=120+Math.floor(r()*60);g.fillStyle=`rgba(${v},${v},${v},.35)`;g.fillRect(r()*w,r()*h,2,2);}});rt.wrapS=rt.wrapT=THREE.RepeatWrapping;
@@ -477,8 +479,8 @@ function build(){
  const holesIn=poly=>voidPolys.filter(v=>{let x=0,z=0;v.forEach(p=>{x+=p[0];z+=p[1];});return inPoly(poly,x/v.length,z/v.length);});
  // пол второго этажа: тот же мрамор, с проёмами — только там, где второй этаж есть
  D2.bld.forEach(bp=>{const g=new THREE.ShapeGeometry(shapeOf(bp,holesIn(bp)));g.rotateX(-Math.PI/2);g.translate(0,FY[2]+0.006,0);const P=g.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}g.setAttribute('uv',new THREE.BufferAttribute(U,2));
-  G('slab').add(new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55})));});
- const roofMat=new THREE.MeshStandardMaterial({color:LIN('#f3f3f1'),roughness:1});
+  const fm2=new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55});floorMats.push(fm2);G('slab').add(new THREE.Mesh(g,fm2));});
+ const roofMat=new THREE.MeshStandardMaterial({color:LIN('#f3f3f1'),roughness:1});world.roofMat=roofMat;
  D2.bld.forEach(bp=>{G('roof').add(new THREE.Mesh(extrude(shapeOf(bp,holesIn(bp)),ROOF_Y,0.6),roofMat));});
  // стеклянная крыша с фермами
  const skyG=new THREE.MeshStandardMaterial({color:LIN('#dbe8f2'),transparent:true,opacity:.35,roughness:.05,metalness:.5,side:THREE.DoubleSide,depthWrite:false});
@@ -507,12 +509,12 @@ function build(){
   const m3=new THREE.Matrix4().makeRotationY(ry);m3.setPosition((A.x+B.x)/2,FLOOR_H-0.02,(A.z+B.z)/2);led.add(new THREE.BoxGeometry(L,0.04,0.1),null,null,m3);
   let d=(1.6-acc%1.6);while(d<L){posts.push(A.clone().lerp(B,d/L));d+=1.6;}acc+=L;}}});
  gapEnds.forEach(p=>posts.push(p));
- const railMesh=rail.mesh(new THREE.MeshStandardMaterial({color:LIN('#cfe3ea'),transparent:true,opacity:.22,roughness:.04,metalness:.6,depthWrite:false,side:THREE.DoubleSide}));railMesh.renderOrder=2;G('slab').add(railMesh);
+ const railMat=new THREE.MeshStandardMaterial({color:LIN('#cfe3ea'),transparent:true,opacity:.22,roughness:.04,metalness:.6,depthWrite:false,side:THREE.DoubleSide});world.railMat=railMat;const railMesh=rail.mesh(railMat);railMesh.renderOrder=2;G('slab').add(railMesh);
  G('slab').add(hand.mesh(MAT.metal));G('slab').add(led.mesh(MAT.light));
  {const pg=new THREE.CylinderGeometry(0.025,0.025,1.05,6);pg.translate(0,FLOOR_H+SLAB+0.52,0);const pi=new THREE.InstancedMesh(pg,MAT.metal,Math.max(1,posts.length));posts.forEach((p,i)=>{mtx.makeTranslation(p.x,0,p.z);pi.setMatrixAt(i,mtx);});G('slab').add(pi);}
  // колонны — только в атриумах, на перекрёстках и у эскалаторов; проходят через оба этажа
  {const colG=new THREE.CylinderGeometry(0.42,0.42,ROOF_Y,24);colG.translate(0,ROOF_Y/2,0);const baseG=new THREE.CylinderGeometry(0.55,0.55,0.12,24);baseG.translate(0,0.06,0);
-  const cols=new THREE.InstancedMesh(colG,new THREE.MeshStandardMaterial({color:LIN('#fafaf8'),roughness:.25,envMapIntensity:.7}),Math.max(1,D.cols.length));
+  const colMat=new THREE.MeshStandardMaterial({color:LIN('#fafaf8'),roughness:.25,envMapIntensity:.7});world.colMat=colMat;const cols=new THREE.InstancedMesh(colG,colMat,Math.max(1,D.cols.length));
   const bases=new THREE.InstancedMesh(baseG,MAT.metal,Math.max(1,D.cols.length));
   const keep=D.cols.filter(keepColumn);world.colsKept=keep.length;world.colsDropped=D.cols.length-keep.length;
   keep.forEach((p,i)=>{mtx.makeTranslation(p[0],0,p[1]);cols.setMatrixAt(i,mtx);bases.setMatrixAt(i,mtx);blockRect(p[0],p[1],0,0.55,0.55,1);blockRect(p[0],p[1],0,0.55,0.55,2);});
@@ -741,7 +743,7 @@ function setVis(){const top=mode==='top',f=curFloor;
  G('shell').visible=!top;G('roof').visible=!top;G('spots').visible=!top;G('slab').visible=!top||f===2;G('f2').visible=!top||f===2;
  G('toplabels1').visible=top&&f===1;G('toplabels2').visible=top&&f===2;G('toponly1').visible=top&&f===1;G('toponly2').visible=top&&f===2;
  world.pmark.visible=top;
- scene.fog.near=top?3000:120;scene.fog.far=top?5000:520;}
+ scene.fog.near=top?3000:FOGW[0];scene.fog.far=top?5000:FOGW[1];}
 function topY(){return curFloor===1?FLOOR_H:ROOF_Y;}
 function setMode(m,opts){
  if(m===mode&&!opts)return;const from={p:cam.position.clone(),q:cam.quaternion.clone()};
@@ -1513,15 +1515,19 @@ async function start(){
  try{build();}catch(err){$('loading').textContent='Не получилось построить сцену: '+err.message;console.error(err);return;}
  {const w=nearestFree(player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  const qs=new URLSearchParams(location.search);if(qs.has('calm'))calm=qs.get('calm')!=='0';setCalm(calm);
+ {const st=qs.get('style');if(st)applyStyle(st);}
  buildChips();updateFloorUI();sizeMini();updateJoy();setVis();updateCross();applyPose(walkPose());
  $('loading').hidden=true;
  showHint(coarse?'Джойстик — идти, проведи по экрану — осмотреться. Нажми на витрину.':'Ты у входа 2. Кликни по сцене — курсор скроется, и обзор пойдёт за мышью · WASD — идти · Esc — вернуть курсор');
  requestAnimationFrame(frame);
 }
+// пробные стили оформления: ?style=warm|game|night
+const walkPoints=(f,step)=>{const st=Math.round(step/CELL),o=[];for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);if(!blockedF(f,x,z))o.push([x,z]);}return o;};
+const applyStyle=name=>makeStyler({scene,renderer,hemi,sun,sky:skyMesh,S,MAT,floors:floorMats,slabMat:world.slabMat,roofMat:world.roofMat,railMat:world.railMat,colMat:world.colMat,merged:MERGED,signAtlases,PER,walkPoints,FY,G,lockFog:(n,f)=>{FOGW=[n,f];}})(name);
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
 if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
- get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop};
+ get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle};
 start();
 
 }
