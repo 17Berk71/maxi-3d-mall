@@ -1160,7 +1160,7 @@ function buildShop(s){
     const hw=(m==='sofa'?1.15:m==='bed'?0.9:m==='appliance'?0.35:0.3),hd=(m==='sofa'?0.5:m==='bed'?1.1:0.35);colliders.push([px-hw,px+hw,pz-hd,pz+hd]);}}
   else if(lay==='cafe'){// стойка, меню, столики
    const cxz=zz0+0.6;const ct=new THREE.Mesh(B(Math.min(5,w-1),1.1,0.8,0,0.55,0),new THREE.MeshStandardMaterial({color:LIN('#3b2f28'),roughness:.5}));ct.position.set(cx,0,cxz);sc.add(ct);colliders.push([cx-Math.min(5,w-1)/2-0.1,cx+Math.min(5,w-1)/2+0.1,cxz-0.5,cxz+0.5]);
-   const menuT=canvasTex(512,256,(g,W_,H_)=>{g.fillStyle='#1f1b18';g.fillRect(0,0,W_,H_);g.fillStyle='#fff';g.font='800 30px Manrope, sans-serif';g.fillText('Меню',24,40);g.font='600 22px Manrope, sans-serif';items.forEach((it,i)=>{g.fillStyle='#eee';g.fillText(it.name,24,80+i*28);g.textAlign='right';g.fillText(fmtPrice(it.price),W_-24,80+i*28);g.textAlign='left';});});
+   const menuT=canvasTex(512,256,(g,W_,H_)=>{g.fillStyle='#1f1b18';g.fillRect(0,0,W_,H_);g.fillStyle='#fff';g.font='800 30px Manrope, sans-serif';g.fillText('Меню',24,40);g.font='600 22px Manrope, sans-serif';items.forEach((it,i)=>{g.fillStyle='#eee';g.fillText(it.name,24,80+i*28);});g.fillStyle='#b9b2aa';g.font='600 18px Manrope, sans-serif';g.fillText('Цены — на кассе',24,H_-18);});
    const mb=new THREE.Mesh(new THREE.PlaneGeometry(3.2,1.6),new THREE.MeshBasicMaterial({map:menuT,toneMapped:false}));mb.position.set(cx,2.6,-D/2+0.05);sc.add(mb);mb.userData.prod=items[0];pick.push(mb);
    for(let j=0;j<5;j++){const p=items[j];addInst('cup',cx-1.5+j*0.7,1.1,cxz,0,'#ffffff',p);}
    const nT=Math.max(1,Math.floor(w/2.2)),rowsT=Math.max(1,Math.floor((d-2)/2.2));for(let a=0;a<nT;a++)for(let b=0;b<rowsT;b++){const tx=zx0+1.1+a*2.2,tz=cxz+2+b*2.2;if(tz>zz1)continue;
