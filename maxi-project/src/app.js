@@ -10,7 +10,7 @@ import {cart} from './shop/cart.js';
 import {createModels} from './shop/models.js';
 import {makeStyler} from './styles.js';
 import {makeFX} from './fx.js';
-import {INTERIORS} from './shop/interiors.js';
+import {INTERIORS,pickInterior} from './shop/interiors.js';
 
 export function startApp(D,D2){
 
@@ -1105,12 +1105,12 @@ const GARM={jacket:1,pants:1,tshirt:1,longsleeve:1,dress:1};
 
 /* ---------- Зал магазина ---------- */
 let SHOP=null;// текущий магазин {s,scene,col,pick,zones,W,D,exit}
-let shopStyle=new URLSearchParams(location.search).get('shop')||'base';
-function setShopStyle(n){shopStyle=INTERIORS[n]?n:'base';if(SHOP&&mode==='store'){const s=SHOP.s;disposeShop();SHOP=buildShop(s);SHOP.doorOpen=1;updateShopDoor();}return shopStyle;}
+let shopStyle=new URLSearchParams(location.search).get('shop')||'auto';
+function setShopStyle(n){shopStyle=INTERIORS[n]||n==='auto'?n:'auto';if(SHOP&&mode==='store'){const s=SHOP.s;disposeShop();SHOP=buildShop(s);SHOP.doorOpen=1;updateShopDoor();}return shopStyle;}
 function buildShop(s){
  const cat=catalogOf(s);const nd=cat.length;const big=nd>=6;
  const W=big?40:nd>=4?30:nd>=2?22:15,D=big?30:nd>=4?22:nd>=2?17:12,H=5.2;
- const ST=INTERIORS[shopStyle]||INTERIORS.base,SX=ST!==INTERIORS.base;
+ const ST=pickInterior(s,shopStyle),SX=ST.key!=='base';
  const sc=new THREE.Scene();const bgc=SX?ST.bg:'#efece6';sc.background=LIN(bgc);sc.environment=scene.environment;sc.fog=new THREE.Fog(LIN(bgc),30,90);
  {const hm=SX?ST.hemi:['#fffaf2','#b9ad9c',0.55],dr=SX?ST.dir:['#fff2e0',0.45];sc.add(new THREE.HemisphereLight(LIN(hm[0]),LIN(hm[1]),hm[2]));const dl=new THREE.DirectionalLight(LIN(dr[0]),dr[1]);dl.position.set(10,20,8);sc.add(dl);}
  // цвет бренда внутри зала — приглушённый, чтобы не резал глаза
@@ -1147,7 +1147,7 @@ function buildShop(s){
  {const fw=new THREE.MeshStandardMaterial({color:LIN(SX?ST.wall:'#f4f2ee'),roughness:.8});const side=(W-DWs)/2;
   [[-(DWs/2+side/2)],[DWs/2+side/2]].forEach(([x])=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(side,H),fw);p.position.set(x,H/2,D/2-0.01);p.rotation.y=Math.PI;sc.add(p);});
   const top=new THREE.Mesh(new THREE.PlaneGeometry(DWs,H-2.75),fw);top.position.set(0,2.75+(H-2.75)/2,D/2-0.01);top.rotation.y=Math.PI;sc.add(top);
-  room.material[4]=new THREE.MeshBasicMaterial({visible:false});}
+  room.material[4]=new THREE.MeshBasicMaterial({visible:false});room.material[3]=room.material[4];}
  const galT=canvasTex(1024,512,(g,w,h)=>{const gr=g.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#f7f7f5');gr.addColorStop(.55,'#efeeea');gr.addColorStop(.56,'#e8e2d6');gr.addColorStop(1,'#d9d1c3');g.fillStyle=gr;g.fillRect(0,0,w,h);
   const r=mulberry(s.id+3);for(let i=0;i<7;i++){const x=i*150+20,c=PALETTE[Math.floor(r()*PALETTE.length)];g.fillStyle=c;g.fillRect(x,120,130,34);g.fillStyle='rgba(200,220,230,.7)';g.fillRect(x,154,130,130);g.fillStyle='rgba(255,255,255,.35)';g.fillRect(x+10,160,20,118);}
   g.fillStyle='#ffffff';g.fillRect(0,40,w,18);g.fillStyle='rgba(239,125,53,.8)';g.fillRect(0,330,w,8);g.fillStyle='rgba(122,176,79,.8)';g.fillRect(0,338,w,12);
@@ -1253,11 +1253,12 @@ function buildShop(s){
     [[0.6,0],[-0.6,0]].forEach(([ox])=>{t.add(new THREE.Mesh(B(0.42,0.05,0.42,ox,0.45,0),new THREE.MeshStandardMaterial({color:LIN('#8a6a4a')})));t.add(new THREE.Mesh(B(0.42,0.5,0.05,ox+Math.sign(ox)*0.2,0.7,0).rotateY(Math.PI/2),new THREE.MeshStandardMaterial({color:LIN('#8a6a4a')})));});
     t.position.set(tx,0,tz);sc.add(t);colliders.push([tx-0.9,tx+0.9,tz-0.45,tz+0.45]);addInst('cup',tx+0.12,0.76,tz,0,'#ffffff',items[a%items.length]);}}
  });
+ if(SX&&ST.floorPlan)shopFloorPlan(sc,ST.floorPlan,W,D,zones,{x0,x1,z0,z1,cols,rows,zw,zd,dw:DWs},s);
  // вешалки-плечики для одежды, ценники у товаров на полках и столах
  {const hangers=[],tags=[];
   Object.values(pinst).forEach(arr=>arr.forEach(o=>hangers.push({x:o.x,y:o.top,z:o.z,ry:o.ry+Math.PI/2})));
   Object.entries(inst).forEach(([model,arr])=>arr.forEach(o=>{if(GARM[model])hangers.push(o);else if(o.y>0.3&&!['bike','sofa','bed','appliance','cup','football','basketball'].includes(model))tags.push(o);}));
-  const hg=mergeG([CyX(0.008,0.42,0,0,0,6),Cy(0.006,0.006,0.1,0,0.05,0,6)]);hg.rotateY(Math.PI/2);const him=new THREE.InstancedMesh(hg,SX&&shopStyle==='wood'?new THREE.MeshStandardMaterial({color:LIN('#c9a477'),roughness:.5}):MAT.metal,Math.max(1,hangers.length));
+  const hg=mergeG([CyX(0.008,0.42,0,0,0,6),Cy(0.006,0.006,0.1,0,0.05,0,6)]);hg.rotateY(Math.PI/2);const him=new THREE.InstancedMesh(hg,SX&&ST.key==='wood'?new THREE.MeshStandardMaterial({color:LIN('#c9a477'),roughness:.5}):MAT.metal,Math.max(1,hangers.length));
   const q=new THREE.Quaternion();hangers.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);mtx.compose(new V3(o.x,o.y,o.z),q,new V3(1,1,1));him.setMatrixAt(i,mtx);});sc.add(him);
   const tg=B(0.07,0.035,0.004,0,-0.01,0);const tim=new THREE.InstancedMesh(tg,new THREE.MeshBasicMaterial({color:LIN('#ffffff')}),Math.max(1,tags.length));
   tags.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);const fx=Math.sin(o.ry)*0.2,fz=Math.cos(o.ry)*0.2;mtx.compose(new V3(o.x+fx,o.y,o.z+fz),q,new V3(1,1,1));tim.setMatrixAt(i,mtx);});sc.add(tim);}
@@ -1318,19 +1319,19 @@ function shopDecor(sc,ST,W,D,H,colliders,DWs,s){const r=mulberry(s.id+9),ex=ST.e
  const freeR=(x,z,rad)=>{for(let a=0;a<8;a++){if(shopBlockedRaw(colliders,W,D,x+Math.cos(a*0.785)*rad,z+Math.sin(a*0.785)*rad,0))return false;}return!shopBlockedRaw(colliders,W,D,x,z,0);};
  const nearDoor=(x,z)=>Math.abs(x)<DWs/2+1.5&&z>D/2-3;
  // растения у стен
- if(ST.plants){const potC={gallery:'#e8e6e1',wood:'#b5754e',loft:'#2a2a2a',boutique:'#b8925a'}[shopStyle]||'#ddd';const cand=[];
+ if(ST.plants){const potC={gallery:'#e8e6e1',wood:'#b5754e',loft:'#2a2a2a',boutique:'#b8925a'}[ST.key]||'#ddd';const cand=[];
   for(let x=-W/2+0.9;x<=W/2-0.9;x+=1.1){cand.push([x,-D/2+0.9],[x,D/2-0.9]);}for(let z=-D/2+0.9;z<=D/2-0.9;z+=1.1){cand.push([-W/2+0.9,z],[W/2-0.9,z]);}
   for(let i=cand.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[cand[i],cand[j]]=[cand[j],cand[i]];}
   const pl=[];for(const [x,z] of cand){if(pl.length>=ST.plants)break;if(nearDoor(x,z)||!freeR(x,z,0.5)||pl.some(p=>Math.hypot(p[0]-x,p[1]-z)<5))continue;pl.push([x,z]);colliders.push([x-0.35,x+0.35,z-0.35,z+0.35]);}
-  const pot=new THREE.MeshStandardMaterial({color:LIN(potC),roughness:shopStyle==='boutique'?.3:.7,metalness:shopStyle==='boutique'?.8:0}),leaf=new THREE.MeshStandardMaterial({color:LIN('#4c7a43'),roughness:.8,flatShading:true}),stem=new THREE.MeshStandardMaterial({color:LIN('#5a4632')});
+  const pot=new THREE.MeshStandardMaterial({color:LIN(potC),roughness:ST.key==='boutique'?.3:.7,metalness:ST.key==='boutique'?.8:0}),leaf=new THREE.MeshStandardMaterial({color:LIN('#4c7a43'),roughness:.8,flatShading:true}),stem=new THREE.MeshStandardMaterial({color:LIN('#5a4632')});
   pl.forEach(([x,z],i)=>{const g=new THREE.Group();g.add(new THREE.Mesh(Cy(0.3,0.24,0.55,0,0.275,0,18),pot));g.add(new THREE.Mesh(Cy(0.03,0.04,1.3,0,1.1,0,6),stem));
    for(let k=0;k<7;k++){const m=new THREE.Mesh(new THREE.IcosahedronGeometry(0.32+r()*0.18,0),leaf);m.position.set((r()-.5)*0.7,1.25+r()*0.9,(r()-.5)*0.7);m.rotation.set(r()*3,r()*3,0);g.add(m);}
    g.position.set(x,0,z);sc.add(g);});}
  // свободное место ближе к входу для ковра/пуфа/скамьи
  const spot=rad=>{let best=null;for(let z=D/2-3.2;z>-D/2+2;z-=0.5)for(let x=0;x<W/2-1;x+=0.5)for(const sx of [1,-1]){const X=x*sx;if(freeR(X,z,rad)){best=[X,z];return best;}}return best;};
  if(ex.includes('ottoman')){const p=spot(1.7);if(p){const rug=new THREE.Mesh(new THREE.CircleGeometry(1.6,40).rotateX(-Math.PI/2),new THREE.MeshStandardMaterial({color:LIN('#cdbb9d'),roughness:1}));rug.position.set(p[0],0.02,p[1]);sc.add(rug);
-  const ot=new THREE.Mesh(Cy(0.75,0.75,0.42,0,0.21,0,32),new THREE.MeshStandardMaterial({color:LIN('#2f4a3e'),roughness:.9}));ot.position.set(p[0],0,p[1]);sc.add(ot);
-  const tp=new THREE.Mesh(Cy(0.73,0.7,0.05,0,0.44,0,32),new THREE.MeshStandardMaterial({color:LIN('#3b5a4c'),roughness:.95}));tp.position.copy(ot.position);sc.add(tp);
+  const ot=new THREE.Mesh(Cy(0.75,0.75,0.42,0,0.21,0,32),new THREE.MeshStandardMaterial({color:LIN(ST.wallTone||'#2f4a3e'),roughness:.9}));ot.position.set(p[0],0,p[1]);sc.add(ot);
+  const tp=new THREE.Mesh(Cy(0.73,0.7,0.05,0,0.44,0,32),new THREE.MeshStandardMaterial({color:LIN(shade(ST.wallTone||'#2f4a3e',.12)),roughness:.95}));tp.position.copy(ot.position);sc.add(tp);
   const bb=new THREE.Mesh(Cy(0.78,0.78,0.04,0,0.02,0,32),new THREE.MeshStandardMaterial({color:LIN('#b8925a'),roughness:.25,metalness:1}));bb.position.copy(ot.position);sc.add(bb);colliders.push([p[0]-0.8,p[0]+0.8,p[1]-0.8,p[1]+0.8]);}}
  else if(ex.includes('rug')){const p=spot(1.4);if(p){const rt=canvasTex(512,320,(g,w,h)=>{g.fillStyle='#e3d6c0';g.fillRect(0,0,w,h);g.strokeStyle='#b99c74';g.lineWidth=10;g.strokeRect(24,24,w-48,h-48);g.lineWidth=3;g.strokeRect(46,46,w-92,h-92);noise(g,w,h,mulberry(3),9000,.12);});
   const rug=new THREE.Mesh(new THREE.PlaneGeometry(3.2,2).rotateX(-Math.PI/2),new THREE.MeshStandardMaterial({map:rt,roughness:1}));rug.position.set(p[0],0.02,p[1]);sc.add(rug);}}
@@ -1342,6 +1343,30 @@ function shopDecor(sc,ST,W,D,H,colliders,DWs,s){const r=mulberry(s.id+9),ex=ST.e
   [[0,-D/2+0.03,W,0],[-W/2+0.03,0,D,Math.PI/2],[W/2-0.03,0,D,-Math.PI/2]].forEach(([x,z,l,ry])=>{const p=new THREE.Mesh(new THREE.PlaneGeometry(l,0.07),m);p.position.set(x,H-0.32,z);p.rotation.y=ry;sc.add(p);});}
  if(ST.strip==='brass'||ST.strip==='wood'){const m=ST.strip==='brass'?new THREE.MeshStandardMaterial({color:LIN('#b8925a'),roughness:.25,metalness:1}):new THREE.MeshStandardMaterial({color:LIN('#a87c50'),roughness:.6});
   [[0,-D/2+0.04,W,0],[-W/2+0.04,0,D,Math.PI/2],[W/2-0.04,0,D,-Math.PI/2]].forEach(([x,z,l,ry])=>{const p=new THREE.Mesh(B(l,ST.strip==='brass'?0.05:0.14,0.04,0,0,0),m);p.position.set(x,ST.strip==='brass'?H-0.5:0.07,z);p.rotation.y=ry;sc.add(p);});}}
+// разметка пола: дорожки между отделами (от входа вглубь и поперёк) и светлые площадки отделов; одна текстура поверх пола
+function shopFloorPlan(sc,P,W,D,zones,L,s){const px=Math.min(48,2048/W),cw=Math.round(W*px),ch=Math.round(D*px);const X=x=>(x+W/2)*px,Z=z=>(z+D/2)*px;
+ const aisles=[],hw=P.aisleW/2;
+ for(let c=1;c<L.cols;c++){const x=L.x0+c*L.zw;aisles.push([x-hw,L.z0+0.3,x+hw,L.z1]);}
+ for(let r=1;r<L.rows;r++){const z=L.z0+r*L.zd;aisles.push([L.x0+0.3,z-hw,L.x1-0.3,z+hw]);}
+ const zf=L.z1+0.9;aisles.push([L.x0+0.3,zf-hw,L.x1-0.3,zf+hw]);// поперёк перед отделами
+ aisles.push([-Math.max(hw,L.dw/2-0.2),zf,Math.max(hw,L.dw/2-0.2),D/2-1.5]);// от входа
+ if(L.cols%2)aisles.push([-hw,L.z0+0.3,hw,L.z1]);// по центру, если отделы не делятся пополам
+ const tex=canvasTex(cw,ch,(g)=>{const r=mulberry(s.id+21);const e=Math.max(2,0.05*px);
+  const rect=(a,grow)=>g.fillRect(X(a[0])-grow,Z(a[1])-grow,(a[2]-a[0])*px+grow*2,(a[3]-a[1])*px+grow*2);
+  // площадки отделов
+  zones.forEach(z=>{const a=[z.cx-z.w/2+0.15,z.cz-z.d/2+0.15,z.cx+z.w/2-0.15,z.cz+z.d/2-0.15];g.fillStyle=P.edge;rect(a,e);g.fillStyle=P.zone;rect(a,0);
+   g.strokeStyle='rgba(120,100,70,.18)';g.lineWidth=1;g.strokeRect(X(a[0])+0.35*px,Z(a[1])+0.35*px,(a[2]-a[0]-0.7)*px,(a[3]-a[1]-0.7)*px);});
+  for(let i=0;i<9000;i++){g.fillStyle=`rgba(90,70,40,${r()*.06})`;g.fillRect(r()*cw,r()*ch,2,2);}
+  // дорожки: сначала кромка, потом камень — кромка остаётся только по внешнему контуру
+  g.fillStyle=P.edge;aisles.forEach(a=>rect(a,e));g.fillStyle=P.aisle;aisles.forEach(a=>rect(a,0));
+  g.save();g.beginPath();aisles.forEach(a=>g.rect(X(a[0]),Z(a[1]),(a[2]-a[0])*px,(a[3]-a[1])*px));g.clip();
+  for(let i=0;i<60;i++){let x=r()*cw,y=r()*ch;g.strokeStyle=`rgba(${P.vein},${.08+r()*.12})`;g.lineWidth=0.6+r()*1.4;g.beginPath();g.moveTo(x,y);for(let k=0;k<8;k++){x+=(r()-.5)*90;y+=(r()-.5)*90;g.lineTo(x,y);}g.stroke();}
+  for(let i=0;i<6000;i++){g.fillStyle=`rgba(255,255,255,${r()*.05})`;g.fillRect(r()*cw,r()*ch,1.5,1.5);}
+  // швы плит на дорожках
+  g.strokeStyle='rgba(0,0,0,.25)';g.lineWidth=1;for(let x=0;x<W;x+=1.2){g.beginPath();g.moveTo(X(x-W/2),0);g.lineTo(X(x-W/2),ch);g.stroke();}for(let z=0;z<D;z+=1.2){g.beginPath();g.moveTo(0,Z(z-D/2));g.lineTo(cw,Z(z-D/2));g.stroke();}
+  g.restore();});
+ const m=new THREE.Mesh(new THREE.PlaneGeometry(W,D).rotateX(-Math.PI/2),new THREE.MeshStandardMaterial({map:tex,transparent:true,roughness:.42,envMapIntensity:.18,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1}));
+ m.position.y=0.004;m.renderOrder=-1;sc.add(m);}
 function noise(g,w,h,r,n,a){for(let i=0;i<n;i++){g.fillStyle=`rgba(80,60,40,${a*r()})`;g.fillRect(r()*w,r()*h,2,2);}}
 function shopBlockedRaw(cols,W,D,x,z,dw){const r=0.35;const inDoor=dw&&Math.abs(x)<dw/2-0.3&&z>0&&z<D/2+0.9;if(Math.abs(x)>W/2-0.3-r||(!inDoor&&Math.abs(z)>D/2-0.3-r)||z>D/2+0.9)return true;for(const c of cols){if(x>c[0]-r&&x<c[1]+r&&z>c[2]-r&&z<c[3]+r)return true;}return false;}
 function shopBlocked(x,z){return shopBlockedRaw(SHOP.colliders,SHOP.W,SHOP.D,x,z,SHOP.dw);}

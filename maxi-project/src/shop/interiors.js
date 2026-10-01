@@ -80,5 +80,28 @@ export const INTERIORS = {
     wall: '#efe8dd', back: plaster('#2f4a3e'), side: null, ceil: '#f6f1ea', strip: 'brass',
     lights: 'downlight', shelf: '#b8925a', rack: ['#b8925a', .22, 1], unit: ['#2f4a3e', '#284035'], desk: '#2f4a3e', deskTop: '#e9e2d6', table: '#2f4a3e',
     sign: ['#2f4a3e', '#f3ead9', '#b8925a'], deptMat: null, pools: .09, plants: 4, extras: ['ottoman', 'rug', 'cove'],
+    // разметка пола: тёмные каменные дорожки с латунной кромкой между отделами и светлые «ковры» под отделами
+    floorPlan: { aisle: '#4f4841', vein: '200,190,175', zone: '#ddd2bd', edge: '#b8925a', aisleW: 1.05 },
   },
 };
+Object.keys(INTERIORS).forEach(k => { INTERIORS[k].key = k; });
+
+// Какой стиль у какого магазина. Сначала — по названию, потом — по категории.
+const BY_NAME = {
+  loft: ['Gloria Jeans', 'New Yorker', 'befree', 'Terranova', 'SneakerBox', 'Zolla', 'Ostin', 'FunDay', 'Climber', 'Mrk', '5КармаNов', "Levi's", 'Top People', 'Brand Man', 'Спортмастер', 'Спортмастер Pro', 'Urbera', 'Kosmika'],
+  wood: ['Детский мир', 'Король и принц', 'Mila & Kris', 'Фамилия', 'Белорусский лён', 'Kari'],
+};
+const BY_CAT = { fashion: 'boutique', beauty: 'boutique', acc: 'boutique', tech: 'loft', sport: 'loft', kids: 'wood', food: 'wood', gifts: 'wood', furn: 'wood', home: 'wood', serv: 'wood', misc: 'wood', tbd: 'wood' };
+// у бутиков — свой глубокий цвет стены (зелёный, синий, сливовый, бордовый, графит), чтобы соседние не были одинаковыми
+const BOUTIQUE_TONES = [['#2f4a3e', '#284035'], ['#22344a', '#1c2c3f'], ['#3d2e45', '#33263a'], ['#4a2c2c', '#3e2424'], ['#2e2f31', '#262729']];
+
+export function interiorKey(s) {
+  for (const [k, list] of Object.entries(BY_NAME)) if (list.includes(s.name)) return k;
+  return BY_CAT[s.cat] || 'wood';
+}
+export function pickInterior(s, forced) {
+  const key = forced && forced !== 'auto' && INTERIORS[forced] ? forced : interiorKey(s);
+  const base = INTERIORS[key]; if (key !== 'boutique') return base;
+  const t = BOUTIQUE_TONES[(s.id * 7 + 3) % BOUTIQUE_TONES.length];
+  return Object.assign({}, base, { back: plaster(t[0]), unit: [t[0], t[1]], desk: t[0], table: t[0], sign: [t[0], '#f3ead9', '#b8925a'], wallTone: t[0] });
+}
