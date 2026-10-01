@@ -609,13 +609,13 @@ function build(){
  // ---- островки: квадратные стенды с прилавком по периметру и продавцом в центре (на каждом этаже свои)
  const kList=S.filter(s=>s.kind==='kiosk');world.kSets=[];
  [1,2].forEach(f=>{const kl=kList.filter(s=>s.floor===f);if(!kl.length)return;const y0=FY[f],grp=f===1?scene:G('f2');
-  const SZ=2.0,CH=1.0,PH=2.5,d=SZ/2;
-  const counterG=mergeG([B(SZ,CH,0.42,0,CH/2,d-0.21),B(SZ,CH,0.42,0,CH/2,-d+0.21),B(0.42,CH,SZ-0.84,d-0.21,CH/2,0),B(0.42,CH,SZ-0.84,-d+0.21,CH/2,0)]);
-  const topG=mergeG([B(SZ+0.06,0.05,0.5,0,CH+0.025,d-0.22),B(SZ+0.06,0.05,0.5,0,CH+0.025,-d+0.22),B(0.5,0.05,SZ-0.94,d-0.22,CH+0.025,0),B(0.5,0.05,SZ-0.94,-d+0.22,CH+0.025,0)]);
+  const SZ=1.6,CH=1.0,PH=2.45,d=SZ/2;
+  const counterG=mergeG([B(SZ,CH,0.36,0,CH/2,d-0.18),B(SZ,CH,0.36,0,CH/2,-d+0.18),B(0.36,CH,SZ-0.72,d-0.18,CH/2,0),B(0.36,CH,SZ-0.72,-d+0.18,CH/2,0)]);
+  const topG=mergeG([B(SZ+0.05,0.05,0.42,0,CH+0.025,d-0.19),B(SZ+0.05,0.05,0.42,0,CH+0.025,-d+0.19),B(0.42,0.05,SZ-0.8,d-0.19,CH+0.025,0),B(0.42,0.05,SZ-0.8,-d+0.19,CH+0.025,0)]);
   const stripG=mergeG([B(SZ+0.014,0.06,0.014,0,CH-0.14,d),B(SZ+0.014,0.06,0.014,0,CH-0.14,-d),B(0.014,0.06,SZ+0.014,d,CH-0.14,0),B(0.014,0.06,SZ+0.014,-d,CH-0.14,0)]);
   const postG=mergeG([[1,1],[1,-1],[-1,1],[-1,-1]].map(([a,b])=>Cy(0.028,0.028,PH-CH,a*(d-0.06),CH+(PH-CH)/2,b*(d-0.06),8)));
   const crownG=mergeG([B(SZ,0.34,0.05,0,PH+0.17,d-0.03),B(SZ,0.34,0.05,0,PH+0.17,-d+0.03),B(0.05,0.34,SZ,d-0.03,PH+0.17,0),B(0.05,0.34,SZ,-d+0.03,PH+0.17,0)]);
-  const goodsG=mergeG([[-0.55,d-0.2],[0.05,d-0.22],[0.6,d-0.2],[-0.5,-d+0.2],[0.45,-d+0.22],[d-0.2,0.35],[-d+0.2,-0.3]].map(([x,z],k)=>B(0.2+(k%3)*0.06,0.1+(k%2)*0.08,0.15,x,CH+0.05+(0.1+(k%2)*0.08)/2,z)));
+  const goodsG=mergeG([[-0.45,d-0.18],[0.05,d-0.19],[0.48,d-0.18],[-0.4,-d+0.18],[0.38,-d+0.19],[d-0.18,0.28],[-d+0.18,-0.25]].map(([x,z],k)=>B(0.16+(k%3)*0.05,0.1+(k%2)*0.08,0.13,x,CH+0.05+(0.1+(k%2)*0.08)/2,z)));
   const N=kl.length;
   const body=new THREE.InstancedMesh(counterG,new THREE.MeshStandardMaterial({roughness:.45,metalness:.05}),N);
   const top=new THREE.InstancedMesh(topG,new THREE.MeshStandardMaterial({color:LIN('#f7f5f1'),roughness:.3}),N);
