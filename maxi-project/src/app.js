@@ -676,20 +676,28 @@ function build(){
    if(f===2)for(let j=0;j<GH;j+=Math.round(4.0/CELL))for(let i=0;i<GW;i+=Math.round(4.0/CELL)){if(!hall2[j*GW+i])continue;const [x,z]=fromPx(i,j);
     if(clearance(2,x,z,3)<2.6||!freeDisk(2,x,z,1.3)||near(2,x,z,3.5))continue;tables.push({x,z,a:rnd()*0.4});blockRect(x,z,0,0.95,0.95,2);}
    for(let j=0;j<GH;j+=st)for(let i=0;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);
-    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<(DEC?4.5:4.8)||!freeDisk(f,x,z,2.6))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<(DEC?13:16)))continue;if(near(f,x,z,6))continue;
-    const a=rnd()*Math.PI*2;plants.push({x,z,a,bx:x+Math.cos(a)*1.25,bz:z+Math.sin(a)*1.25});}
-   plants.forEach(p=>{blockRect(p.x,p.z,0,0.6,0.6,f);blockRect(p.bx,p.bz,p.a+Math.PI/2,0.85,0.35,f);});
+    if(f===2&&hall2[j*GW+i])continue;if(clearance(f,x,z,6)<2.8||!freeDisk(f,x,z,1.2))continue;if(plants.some(q=>Math.hypot(q.x-x,q.z-z)<(DEC?13:16)))continue;
+    // ось коридора: направление, вдоль которого дальше всего свободно; группа «кадка + лавочка» ставится по центру коридора вдоль оси
+    const run=(x0,z0,dx,dz,mx)=>{let t=0;for(;t<mx;t+=0.3){if(!isWalkF(f,x0+dx*t,z0+dz*t))break;}return t;};
+    let bestA=0,bestL=-1;for(let k=0;k<36;k++){const a=k*Math.PI/36,dx=Math.cos(a),dz=Math.sin(a);const L=run(x,z,dx,dz,14)+run(x,z,-dx,-dz,14);if(L>bestL){bestL=L;bestA=a;}}
+    const ax=Math.cos(bestA),az=Math.sin(bestA),px_=-az,pz_=ax;const wl=run(x,z,px_,pz_,12),wr=run(x,z,-px_,-pz_,12);
+    if(wl+wr<6.2||bestL<8)continue;const sh=(wl-wr)/2,cx=x+px_*sh,cz=z+pz_*sh;
+    // всё место под группой и по 2.4 м по бокам должно быть свободно
+    let ok=true;for(let t=-1.9;t<=1.9&&ok;t+=0.3)for(const o of [-2.4,0,2.4]){if(!isWalkF(f,cx+ax*t+px_*o,cz+az*t+pz_*o)){ok=false;break;}}
+    if(!ok||near(f,cx,cz,6)||plants.some(q=>Math.hypot(q.x-cx,q.z-cz)<(DEC?13:16)))continue;
+    plants.push({x:cx-ax*1.25,z:cz-az*1.25,a:bestA,bx:cx+ax*0.35,bz:cz+az*0.35});}
+   plants.forEach(p=>{blockRect(p.x,p.z,0,0.6,0.6,f);blockRect(p.bx,p.bz,p.a,0.85,0.35,f);});
    const N=Math.max(1,plants.length),q=new THREE.Quaternion(),Y=new V3(0,1,0),one=new V3(1,1,1);
    const pot=new THREE.InstancedMesh(potG,new THREE.MeshStandardMaterial({color:LIN('#e9e6e0'),roughness:.4}),N),trunk=new THREE.InstancedMesh(trunkG,new THREE.MeshStandardMaterial({color:LIN('#6b5139'),roughness:.9}),N);
    const leaf=new THREE.InstancedMesh(leafG,new THREE.MeshStandardMaterial({color:LIN('#4f7a44'),roughness:.85,flatShading:true}),N);
    const seat=new THREE.InstancedMesh(seatG,new THREE.MeshStandardMaterial({color:LIN('#a47b52'),roughness:.6}),N),bl=new THREE.InstancedMesh(legsG,MAT.darkMetal,N);
    plants.forEach((p,i)=>{mtx.makeTranslation(p.x,y0,p.z);pot.setMatrixAt(i,mtx);trunk.setMatrixAt(i,mtx);q.setFromAxisAngle(Y,p.a);mtx.compose(new V3(p.x,y0,p.z),q,one);leaf.setMatrixAt(i,mtx);leaf.setColorAt(i,LIN(['#4f7a44','#5b8a4c','#44703f'][i%3]));
-    q.setFromAxisAngle(Y,-p.a+Math.PI/2);mtx.compose(new V3(p.bx,y0,p.bz),q,one);seat.setMatrixAt(i,mtx);bl.setMatrixAt(i,mtx);});
+    q.setFromAxisAngle(Y,-p.a);mtx.compose(new V3(p.bx,y0,p.bz),q,one);seat.setMatrixAt(i,mtx);bl.setMatrixAt(i,mtx);});
    [pot,trunk,leaf,seat,bl].forEach(m=>{m.count=plants.length;if(m.instanceColor)m.instanceColor.needsUpdate=true;grp.add(m);});
    if(tables.length){const T=tables.length,top=new THREE.InstancedMesh(topG,MAT.white,T),stem=new THREE.InstancedMesh(stemG,MAT.darkMetal,T),ch=new THREE.InstancedMesh(chairG,new THREE.MeshStandardMaterial({color:LIN('#8a6a4a'),roughness:.6}),T*4);
     tables.forEach((t,i)=>{mtx.makeTranslation(t.x,y0,t.z);top.setMatrixAt(i,mtx);stem.setMatrixAt(i,mtx);for(let k=0;k<4;k++){const a=t.a+k*Math.PI/2;q.setFromAxisAngle(Y,a+Math.PI);mtx.compose(new V3(t.x+Math.sin(a)*0.72,y0,t.z+Math.cos(a)*0.72),q,one);ch.setMatrixAt(i*4+k,mtx);}});
     [top,stem,ch].forEach(m=>grp.add(m));}
-   world['decor'+f]={plants:plants.length,tables:tables.length};});}
+   world['decor'+f]={plants:plants.length,tables:tables.length,list:plants.map(p=>({x:+p.x.toFixed(2),z:+p.z.toFixed(2),a:+p.a.toFixed(3),bx:+p.bx.toFixed(2),bz:+p.bz.toFixed(2)}))};});}
 
  // ---- посетители: гуляют по галереям обоих этажей
  {const parts=humanParts();const NP=(coarse?48:110)*1;const r=mulberry(77);
@@ -1613,7 +1621,7 @@ const applyStyle=name=>makeStyler({scene,renderer,hemi,sun,sky:skyMesh,S,MAT,flo
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
 if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
- get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX,setShopStyle,INTERIORS};
+ get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX,setShopStyle,INTERIORS,decor:()=>[world.decor1,world.decor2]};
 start();
 
 }

@@ -58,14 +58,14 @@ export const INTERIORS = {
     floor: microcement('#c9c5be', '110,104,95', '240,238,232'), floorM: 4, floorRough: .6,
     wall: '#f6f5f2', back: plaster('#f2f1ee'), ceil: '#fbfbfa', strip: 'none',
     lights: 'track', rack: ['#1d1f22', .35, .6], unit: ['#f6f5f2', '#e4e2de'], desk: '#1d1f22', deskTop: '#efeeeb', table: '#dcd9d3',
-    sign: ['#ffffff', '#16181b', '#16181b'], deptMat: null, pools: .1, plants: 2, extras: ['bench'],
+    sign: ['#ffffff', '#16181b', '#16181b'], deptMat: null, pools: .1, plants: 2, extras: [],
   },
   wood: {
     title: 'Тёплое дерево', bg: '#efe6da', hemi: ['#fff3e2', '#a68d70', .58], dir: ['#ffe6c4', .45], exp: 1,
     floor: herringbone(['#b98a5a', '#c49766', '#ad7f50', '#c9a070', '#b2834f']), floorM: 3.2, floorRough: .62,
     wall: '#efe5d6', back: slats(['#c39468', '#b98a5c', '#cc9e72'], '#4a3424'), backM: 2, ceil: '#f5ede2', strip: 'wood',
     lights: 'globe', rack: ['#a8865a', .3, .75], unit: ['#c9a477', '#b88f60'], desk: '#a87c50', deskTop: '#efe5d6', table: '#c49a6c',
-    sign: ['#f6efe4', '#4a3424', '#b98a5c'], deptMat: ['#d8c6aa', .45], pools: .1, plants: 5, extras: ['rug'],
+    sign: ['#f6efe4', '#4a3424', '#b98a5c'], deptMat: ['#d8c6aa', .45], pools: .1, plants: 5, extras: [],
   },
   loft: {
     title: 'Лофт', bg: '#2a2a2b', hemi: ['#f3e6d4', '#3a3330', .5], dir: ['#ffd9a8', .5], exp: 1,
@@ -79,7 +79,7 @@ export const INTERIORS = {
     floor: terrazzo('#ece6dc', ['#b9ad98', '#8e8576', '#d8cfc0', '#c27c5a', '#6f7d6a', '#ffffff']), floorM: 3, floorRough: .4,
     wall: '#efe8dd', back: plaster('#2f4a3e'), side: null, ceil: '#f6f1ea', strip: 'brass',
     lights: 'downlight', shelf: '#b8925a', rack: ['#b8925a', .22, 1], unit: ['#2f4a3e', '#284035'], desk: '#2f4a3e', deskTop: '#e9e2d6', table: '#2f4a3e',
-    sign: ['#2f4a3e', '#f3ead9', '#b8925a'], deptMat: null, pools: .09, plants: 4, extras: ['ottoman', 'rug', 'cove'],
+    sign: ['#2f4a3e', '#f3ead9', '#b8925a'], deptMat: null, pools: .09, plants: 4, extras: ['cove'],
     // разметка пола: тёмные каменные дорожки с латунной кромкой между отделами и светлые «ковры» под отделами
     floorPlan: { aisle: '#4f4841', vein: '200,190,175', zone: '#ddd2bd', edge: '#b8925a', aisleW: 1.05 },
   },
