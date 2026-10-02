@@ -13,7 +13,7 @@ import {makeFX} from './fx.js';
 import {INTERIORS,pickInterior} from './shop/interiors.js';
 import {signStyle,drawSign,drawBlade,FONT_LOADS} from './signs.js';
 import {loadFeed,feedIndexReady,feedInfo,winKeys} from './shop/feeds.js';
-import {onlineKind,ONLINE_TEXT} from './shop/online.js';
+import {onlineKind,onlineActions,onlineText,ACTIONS} from './shop/online.js';
 
 export function startApp(D,D2){
 
@@ -927,10 +927,11 @@ function openCard(s){
  $('cMeta').textContent=s.kind==='kiosk'?floorName(s.floor)+' · островок в галерее':floorName(s.floor)+' · около '+Math.max(5,Math.round(s.area/5)*5)+' м²';
  const also=(s.names||[]).slice(1);
  if(s.cat==='wc'){$('cMeta').textContent=floorName(s.floor);$('cWhat').textContent='';}
- $('cInfo').textContent=(ONLINE_TEXT[onlineKind(s)]?ONLINE_TEXT[onlineKind(s)]+' ':'')+(s.cat==='wc'?(/МГН|инвалид/i.test(s.name)?'Здесь туалет для маломобильных посетителей.':'Здесь туалет.'):s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.');
+ $('cInfo').textContent=(onlineText(s)?onlineText(s)+' ':'')+(s.cat==='wc'?(/МГН|инвалид/i.test(s.name)?'Здесь туалет для маломобильных посетителей.':'Здесь туалет.'):s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.');
  const b=$('cBtns');b.innerHTML='';
  if(s.door){const en=document.createElement('button');en.className='btn pri';en.textContent=s.name==='Синема Парк'?'Войти в кинотеатр':'Войти в магазин';en.onclick=()=>{walkToDoor(s);requestLockIfNeeded();};b.appendChild(en);}
- const go=document.createElement('button');go.className=s.door?'btn':'btn pri';go.textContent=s.floor!==curFloor?'Подойти · '+floorName(s.floor):'Подойти';go.onclick=()=>{walkTo(s);requestLockIfNeeded();};b.appendChild(go);
+ if(onlineKind(s)==='act'){const a0=onlineActions(s)[0],ab=document.createElement('a');ab.className='btn pri';ab.target='_blank';ab.rel='noopener';ab.href=siteOf(s)||mapsOf(s);ab.textContent=ACTIONS[a0].btn;ab.title=siteOf(s)?'Сайт '+s.name:'Контакты на Яндекс Картах';b.appendChild(ab);}
+ const go=document.createElement('button');go.className=s.door||onlineKind(s)==='act'?'btn':'btn pri';go.textContent=s.floor!==curFloor?'Подойти · '+floorName(s.floor):'Подойти';go.onclick=()=>{walkTo(s);requestLockIfNeeded();};b.appendChild(go);
  if(mode==='walk'){const t=document.createElement('button');t.className='btn';t.textContent='Показать сверху';t.onclick=()=>showTop(s);b.appendChild(t);}
  if(s.cat!=='tbd'&&s.cat!=='wc'){const a=document.createElement('a');a.className='btn';a.href='https://yandex.ru/maps/15/tula/search/'+encodeURIComponent(s.name+' ТРЦ Макси');a.target='_blank';a.rel='noopener';a.textContent='На Яндекс Картах ↗';b.appendChild(a);}
  const F=FLOORS[s.floor];const p=s.fp?s.fp.clone().addScaledVector(s.fn,1.5):new V3(s.c[0],0,s.c[1]);world.target.position.set(p.x,F.y0+(s.kind==='kiosk'?GLASS_H:F.GH)+1.4,p.z);world.target.userData.base=world.target.position.y;world.target.visible=true;
@@ -1539,14 +1540,14 @@ function renderShopPanel(){const s=PS.s,cat=PS.cat;const el=$('shop');
   w.appendChild(row);body.appendChild(w);}
  else{const grid=document.createElement('div');grid.className='sh-grid';
   const dep=cat[shopDept];const all=dep.items;const shown=Math.min(all.length,shopShown);
-  const cnt=document.createElement('p');cnt.className='sh-note';const fi=feedInfo(s);cnt.textContent=fi?'Товары из выгрузки магазина'+(fi.demo?' — тестовой: товары, цены и ссылки ненастоящие':'')+' · обновлено '+fmtDate(fi.updated)+' · в отделе '+all.length:onlineKind(s)==='info'?'Пример меню. Онлайн-заказа здесь нет — позже появятся настоящее меню и контакты.':'В отделе '+all.length+' товаров'+(s.kind==='kiosk'?'':' · у каждого своё место в зале');body.appendChild(cnt);
+  const cnt=document.createElement('p');cnt.className='sh-note';const fi=feedInfo(s);cnt.textContent=fi?'Товары из выгрузки магазина'+(fi.demo?' — тестовой: товары, цены и ссылки ненастоящие':'')+' · обновлено '+fmtDate(fi.updated)+' · в отделе '+all.length:onlineKind(s)!=='shop'?'Примеры позиций. '+onlineText(s):'В отделе '+all.length+' товаров'+(s.kind==='kiosk'?'':' · у каждого своё место в зале');body.appendChild(cnt);
   all.slice(0,shown).forEach(p=>{const c=document.createElement('button');c.className='sh-card';const img=document.createElement('img');img.src=thumbURL(p);img.alt='';img.loading='lazy';
    const n=document.createElement('span');n.className='sh-cn';n.textContent=p.name;const pr=document.createElement('span');pr.className='sh-cp';pr.textContent=fmtPrice(p.price);
    c.append(img,n,pr);c.onclick=()=>{openProduct(p);};grid.appendChild(c);});body.appendChild(grid);
   if(shown<all.length){const more=document.createElement('button');more.className='btn sh-more';more.textContent='Показать ещё '+Math.min(24,all.length-shown);more.onclick=()=>{shopShown+=24;renderShopPanel();};body.appendChild(more);}}
  const site=siteOf(s);const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';demoLine(s);}
 // подпись внизу панели: откуда товары
-function demoLine(s){const fi=feedInfo(s),k=onlineKind(s);$('shop').querySelector('.sh-demo').textContent=fi?(fi.demo?'Тестовая выгрузка: товары, цены и ссылки ненастоящие.':'Товары из выгрузки магазина, обновлено '+fmtDate(fi.updated)+'.'):k==='info'?'Меню — пример для концепта. Онлайн-заказа здесь нет.':'Каталог — пример для концепта: товары и цены условные.';}
+function demoLine(s){const fi=feedInfo(s),k=onlineKind(s);$('shop').querySelector('.sh-demo').textContent=fi?(fi.demo?'Тестовая выгрузка: товары, цены и ссылки ненастоящие.':'Товары из выгрузки магазина, обновлено '+fmtDate(fi.updated)+'.'):k==='info'?'Меню — пример для концепта. Онлайн-заказа здесь нет.':k==='act'?'Позиции и цены — пример для концепта. Оформление — у самого заведения.':'Каталог — пример для концепта: товары и цены условные.';}
 $('shExit').onclick=()=>closeShopPanel(true);
 $('shMin').onclick=()=>{$('shop').classList.toggle('min');};
 
@@ -1616,7 +1617,9 @@ function renderProduct(p,onMan,size){const s=PS.s,el=$('shop'),fi=p.feed?feedInf
   if(p.pickup){const b=el_('a','btn','Забрать в «Макси» ↗');b.href=p.url||siteOf(s)||mapsOf(s);b.target='_blank';b.rel='noopener';buy.appendChild(b);}
   w.appendChild(buy);
   if(p.pickup)w.appendChild(el_('p','sh-note','«Забрать в «Макси»» — на сайте магазина выбери самовывоз из ТРЦ «Макси», Тула. Бронь и оплату ведёт сам магазин.'));}
- else if(kind!=='shop'){w.appendChild(el_('p','sh-stock',ONLINE_TEXT.info));}
+ else if(kind==='act'){const a0=onlineActions(s)[0],a=el_('a','btn pri',ACTIONS[a0].btn);a.href=siteOf(s)||mapsOf(s);a.target='_blank';a.rel='noopener';buy.appendChild(a);w.appendChild(buy);
+  w.appendChild(el_('p','sh-note',onlineText(s)+(siteOf(s)?' Оформление — на сайте «'+s.name+'».':' Сайта пока нет в нашем списке — ссылка ведёт на контакты на Яндекс Картах.')));}
+ else if(kind!=='shop'){w.appendChild(el_('p','sh-stock',onlineText(s)));}
  else{
   const add=el_('button','btn pri','В корзину');const now=el_('button','btn','Купить сейчас');
   const put=()=>{if(sz&&!chosen){lab.textContent='Выбери размер';lab.classList.add('err');return false;}
@@ -1710,7 +1713,7 @@ async function start(){
 const walkPoints=(f,step)=>{const st=Math.round(step/CELL),o=[];for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);if(!blockedF(f,x,z))o.push([x,z]);}return o;};
 const applyStyle=name=>makeStyler({scene,renderer,hemi,sun,sky:skyMesh,S,MAT,floors:floorMats,slabMat:world.slabMat,roofMat:world.roofMat,railMat:world.railMat,colMat:world.colMat,merged:MERGED,signAtlases,PER,walkPoints,FY,G,lockFog:(n,f)=>{FOGW=[n,f];}})(name);
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
-if(new URLSearchParams(location.search).has('debug'))window.__maxi={loadFeed,catalogOf,onlineKind,get PS(){return PS},renderProduct,get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
+if(new URLSearchParams(location.search).has('debug'))window.__maxi={loadFeed,catalogOf,onlineKind,openCard,setPS:v=>{PS=v;},get PS(){return PS},renderProduct,get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
  get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX,setShopStyle,INTERIORS,decor:()=>[world.decor1,world.decor2],pickAt:(x,y)=>pick(x,y,false)};
 start();
