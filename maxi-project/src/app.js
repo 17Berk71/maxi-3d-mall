@@ -318,6 +318,8 @@ function build(){
     fascia.panel(mid.clone().addScaledVector(n,0.02),n,L,y0+HI-0.55,y0+HI,[0,0,1,1],fasC,s.id);
     fascia.panel(mid.clone().addScaledVector(n,-0.06),n.clone().negate(),L,y0+HI-0.55,y0+HI,[0,0,1,1],fasC,s.id);
     mtx.makeTranslation(a[0],y0+HI/2,a[1]);mull.add(new THREE.BoxGeometry(0.09,HI,0.09),null,null,mtx);
+    // у островка с названием — вывеска на каждой стороне фриза
+    if(s.cat!=='tbd'&&s.uv&&L>=1.2){const sw=Math.min(L*0.86,3.2),sh=Math.min(0.42,sw/7);signs[s.atlas].panel(mid.clone().addScaledVector(n,0.04),n,sw,y0+HI-0.275-sh/2,y0+HI-0.275+sh/2,s.uv,null,s.id);}
     if(!best||L>best.L)best={L,mid,n};}
    // в середине — стол с товаром
    if(s.area>=4){walls.add(new THREE.BoxGeometry(0.9,0.75,0.6),()=>topCol,s.id,mtx.makeTranslation(ctr[0],y0+0.375,ctr[1]));}
@@ -501,7 +503,7 @@ function build(){
    [torso,legs,head,arms,stand].forEach(o=>{o.count=mannequins.length;grp.add(o);});if(torso.instanceColor)torso.instanceColor.needsUpdate=true;}
  }
  // помещения без подписи посреди коридора (со всех сторон проход) — открытые островки в половину высоты
- S.forEach(s=>{if(s.kind!=='store'||s.cat!=='tbd'||s.area>40)return;const P=s.poly;let tot=0,ok=0;
+ S.forEach(s=>{if(s.kind!=='store'||s.cat==='wc'||s.area>(s.cat==='tbd'?40:12))return;const P=s.poly;let tot=0,ok=0;
   for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<1e-6)continue;const tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L;
    for(let u=0.25;u<L;u+=0.5){const px=a[0]+tx*u,pz=a[1]+tz*u;let nx=-tz,nz=tx;if(inPoly(P,px+nx*0.3,pz+nz*0.3)){nx=-nx;nz=-nz;}tot++;if(isFloorF(s.floor,px+nx*0.9,pz+nz*0.9))ok++;}}
   if(tot&&ok/tot>=0.7)s.island=true;});
@@ -911,7 +913,7 @@ function pick(x,y,fromLock){if(ride)return;if(mode==='store'&&SHOP){shopPick(x,y
   if(r.lift){if(fromLock)releaseLock();openLiftPanel(r.lift,true);return;}
   if(r.esc){if(mode==='walk')goEscalator(r.esc);return;}
   if(mode==='top'&&r.s.floor!==curFloor)continue;
-  if(r.stand&&mode==='walk'&&kioskHasGoods(r.s)){closeCard();openKioskPanel(r.s);if(fromLock)releaseLock();return;}
+  if((r.stand||r.s.island)&&mode==='walk'&&kioskHasGoods(r.s)){closeCard();openKioskPanel(r.s);if(fromLock)releaseLock();return;}
   openCard(r.s);hideGoHere();if(fromLock)releaseLock();return;}
  closeCard();
  if(mode==='top')topTap(x,y);}
@@ -922,12 +924,13 @@ function openCard(s){
  $('cCol').style.background=s.colHex;$('cCat').textContent=c.n;$('cName').textContent=s.name;$('cWhat').textContent=s.what||'';
  $('cMeta').textContent=s.kind==='kiosk'?floorName(s.floor)+' · островок в галерее':floorName(s.floor)+' · около '+Math.max(5,Math.round(s.area/5)*5)+' м²';
  const also=(s.names||[]).slice(1);
- $('cInfo').textContent=s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.';
+ if(s.cat==='wc'){$('cMeta').textContent=floorName(s.floor);$('cWhat').textContent='';}
+ $('cInfo').textContent=s.cat==='wc'?(/МГН|инвалид/i.test(s.name)?'Здесь туалет для маломобильных посетителей.':'Здесь туалет.'):s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.';
  const b=$('cBtns');b.innerHTML='';
  if(s.door){const en=document.createElement('button');en.className='btn pri';en.textContent=s.name==='Синема Парк'?'Войти в кинотеатр':'Войти в магазин';en.onclick=()=>{walkToDoor(s);requestLockIfNeeded();};b.appendChild(en);}
  const go=document.createElement('button');go.className=s.door?'btn':'btn pri';go.textContent=s.floor!==curFloor?'Подойти · '+floorName(s.floor):'Подойти';go.onclick=()=>{walkTo(s);requestLockIfNeeded();};b.appendChild(go);
  if(mode==='walk'){const t=document.createElement('button');t.className='btn';t.textContent='Показать сверху';t.onclick=()=>showTop(s);b.appendChild(t);}
- if(s.cat!=='tbd'){const a=document.createElement('a');a.className='btn';a.href='https://yandex.ru/maps/15/tula/search/'+encodeURIComponent(s.name+' ТРЦ Макси');a.target='_blank';a.rel='noopener';a.textContent='На Яндекс Картах ↗';b.appendChild(a);}
+ if(s.cat!=='tbd'&&s.cat!=='wc'){const a=document.createElement('a');a.className='btn';a.href='https://yandex.ru/maps/15/tula/search/'+encodeURIComponent(s.name+' ТРЦ Макси');a.target='_blank';a.rel='noopener';a.textContent='На Яндекс Картах ↗';b.appendChild(a);}
  const F=FLOORS[s.floor];const p=s.fp?s.fp.clone().addScaledVector(s.fn,1.5):new V3(s.c[0],0,s.c[1]);world.target.position.set(p.x,F.y0+(s.kind==='kiosk'?GLASS_H:F.GH)+1.4,p.z);world.target.userData.base=world.target.position.y;world.target.visible=true;
 }
 function closeCard(){$('card').hidden=true;target=null;if(world.target)world.target.visible=false;updateCross();}
@@ -1128,7 +1131,7 @@ function frameBody(now){
  else applyPose(goal);
  world.pmark.position.set(player.x,topY()+1,player.z);world.pmark.rotation.y=player.yaw;world.pmark.scale.setScalar(mode==='top'?Math.max(0.4,(topv.h-topY())/160):1);
  {const pk=mode==='top'?'top'+curFloor:'walk';if(world.people&&mode!=='store'&&(!calm||world.people.placed!==pk))updatePeople(calm?0:dt,now);}
- if(PS&&PS.s.kind==='kiosk'&&!$('shop').hidden&&(mode!=='walk'||curFloor!==PS.s.floor||Math.hypot(player.x-PS.s.p[0],player.z-PS.s.p[1])>8))closeShopPanel(false);
+ if(PS&&(PS.s.kind==='kiosk'||PS.s.island)&&!$('shop').hidden&&(mode!=='walk'||curFloor!==PS.s.floor||Math.hypot(player.x-(PS.s.p||PS.s.c)[0],player.z-(PS.s.p||PS.s.c)[1])>8))closeShopPanel(false);
  updateMallDoors(dt);updateLifts(rawDt);updateEscalators(rawDt);if(mode==='store'){updateShopExit(dt);if(!calm)updateShopPeople(dt,now);}
  if(!calm){world.wheel.rotation.z+=dt*0.04;world.cabins.forEach(c=>{c.rotation.z=-world.wheel.rotation.z;});}
  if(world.target.visible){const b=mode==='top'?topY()+3:(world.target.userData.base||GLASS_H+1.4);world.target.position.y=b+(calm?0:Math.sin(now/300)*0.3);if(!calm)world.target.rotation.y+=dt*1.5;world.target.scale.setScalar(mode==='top'?Math.max(1,(topv.h-topY())/50):1);}
@@ -1511,7 +1514,7 @@ $('shopOut').onclick=()=>exitShop();
 /* ---------- Панель каталога ---------- */
 // откуда берётся каталог: зал магазина (SHOP) или стенд-островок в галерее
 let PS=null,shopShown=24;
-function kioskHasGoods(s){return s.kind==='kiosk'&&s.cat!=='tbd'&&s.cat!=='wc';}
+function kioskHasGoods(s){return (s.kind==='kiosk'||s.island)&&s.cat!=='tbd'&&s.cat!=='wc';}
 function openKioskPanel(s){PS={s,cat:catalogOf(s)};shopDept=0;shopProd=null;shopShown=24;renderShopPanel();openShopPanel();
  showHint('«'+s.name+'» — товары островка. Нажми на товар, чтобы посмотреть его');}
 function renderShopPanel(){const s=PS.s,cat=PS.cat;const el=$('shop');

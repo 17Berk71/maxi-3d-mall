@@ -19,4 +19,5 @@ echo "8/8 картинка вида сверху для сверки";   python3
 cp maxi_data2.json "$HERE/../../src/data/maxi-data.json"
 cp preview.png "$HERE/../../docs/screenshots/layout-top.png"
 python3 esccheck.py
+python3 fillnames.py
 echo "Готово: src/data/maxi-data.json обновлён, превью — docs/screenshots/layout-top.png"
