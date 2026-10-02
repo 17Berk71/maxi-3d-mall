@@ -155,6 +155,7 @@ html.calm *,html.calm *::before,html.calm *::after{transition:none!important;ani
 .sh-pricebox{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:4px}
 .sh-pricebox .sh-price{margin:0;font-size:22px}
 .sh-rate{font-size:12px;font-weight:600;color:var(--muted)}
+.sh-old{font-size:14px;color:var(--muted);margin-right:2px}
 .sh-stock{margin:4px 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
 .sh-lab.err{color:#dc2626}
 .sh-buy{margin:4px 0 12px}.sh-buy .btn{flex:1;justify-content:center}

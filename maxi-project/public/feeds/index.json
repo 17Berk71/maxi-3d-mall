@@ -1,0 +1,79 @@
+{
+ "updated": "2026-10-02",
+ "demo": true,
+ "source": "тестовая выгрузка",
+ "shops": {
+  "Gloria Jeans": {
+   "file": "gloria-jeans.json",
+   "n": 42,
+   "win": [
+    {
+     "pic": "img/143819f0d351.webp",
+     "aspect": 0.7656,
+     "h": 0.8,
+     "color": "#243447"
+    },
+    {
+     "pic": "img/5d3970579781.webp",
+     "aspect": 0.9052,
+     "h": 0.72,
+     "color": "#1e1f22"
+    },
+    {
+     "pic": "img/0959e06900d1.webp",
+     "aspect": 0.4199,
+     "h": 1.02,
+     "color": "#cbb89d"
+    }
+   ]
+  },
+  "Ostin": {
+   "file": "ostin.json",
+   "n": 41,
+   "win": [
+    {
+     "pic": "img/143819f0d351.webp",
+     "aspect": 0.7656,
+     "h": 0.8,
+     "color": "#243447"
+    },
+    {
+     "pic": "img/bd8887011a3b.webp",
+     "aspect": 0.9052,
+     "h": 0.72,
+     "color": "#9ea2a6"
+    },
+    {
+     "pic": "img/0959e06900d1.webp",
+     "aspect": 0.4199,
+     "h": 1.02,
+     "color": "#cbb89d"
+    }
+   ]
+  },
+  "Zolla": {
+   "file": "zolla.json",
+   "n": 42,
+   "win": [
+    {
+     "pic": "img/143819f0d351.webp",
+     "aspect": 0.7656,
+     "h": 0.8,
+     "color": "#243447"
+    },
+    {
+     "pic": "img/5d3970579781.webp",
+     "aspect": 0.9052,
+     "h": 0.72,
+     "color": "#1e1f22"
+    },
+    {
+     "pic": "img/0959e06900d1.webp",
+     "aspect": 0.4199,
+     "h": 1.02,
+     "color": "#cbb89d"
+    }
+   ]
+  }
+ }
+}

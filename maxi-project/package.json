@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "check": "node tools/test/check.mjs",
     "map": "bash tools/pipeline/run.sh",
-    "map2": "bash tools/pipeline/run_f2.sh"
+    "map2": "bash tools/pipeline/run_f2.sh",
+    "feeds": "python3 tools/feeds/import_feed.py",
+    "feeds:demo": "python3 tools/feeds/make_demo.py && python3 tools/feeds/import_feed.py tools/feeds/demo/demo_feed.yml --demo --source \"тестовая выгрузка\""
   },
   "dependencies": {
     "three": "0.128.0"

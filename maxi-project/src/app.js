@@ -12,6 +12,8 @@ import {makeStyler} from './styles.js';
 import {makeFX} from './fx.js';
 import {INTERIORS,pickInterior} from './shop/interiors.js';
 import {signStyle,drawSign,drawBlade,FONT_LOADS} from './signs.js';
+import {loadFeed,feedIndexReady,feedInfo,winKeys} from './shop/feeds.js';
+import {onlineKind,ONLINE_TEXT} from './shop/online.js';
 
 export function startApp(D,D2){
 
@@ -920,12 +922,12 @@ function pick(x,y,fromLock){if(ride)return;if(mode==='store'&&SHOP){shopPick(x,y
 function aimAt(){const hits=visibleHits(innerWidth/2,innerHeight/2);for(const h of hits){const r=hitId(h);if(h.distance>40)return null;if(r)return r;if(h.object.userData.fs&&!r)return null;}return null;}
 function floorName(f){return f===1?'1 этаж':'2 этаж';}
 function openCard(s){
- target=s;$('card').hidden=false;const c=CATS[s.cat];
+ target=s;$('card').hidden=false;const c=CATS[s.cat];loadFeed(s);
  $('cCol').style.background=s.colHex;$('cCat').textContent=c.n;$('cName').textContent=s.name;$('cWhat').textContent=s.what||'';
  $('cMeta').textContent=s.kind==='kiosk'?floorName(s.floor)+' · островок в галерее':floorName(s.floor)+' · около '+Math.max(5,Math.round(s.area/5)*5)+' м²';
  const also=(s.names||[]).slice(1);
  if(s.cat==='wc'){$('cMeta').textContent=floorName(s.floor);$('cWhat').textContent='';}
- $('cInfo').textContent=s.cat==='wc'?(/МГН|инвалид/i.test(s.name)?'Здесь туалет для маломобильных посетителей.':'Здесь туалет.'):s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.';
+ $('cInfo').textContent=(ONLINE_TEXT[onlineKind(s)]?ONLINE_TEXT[onlineKind(s)]+' ':'')+(s.cat==='wc'?(/МГН|инвалид/i.test(s.name)?'Здесь туалет для маломобильных посетителей.':'Здесь туалет.'):s.cat==='tbd'?(s.kind==='kiosk'?'Островок без подписи на картах.':s.floor===2?'На Яндекс Картах у этого помещения нет подписи.':'На Яндекс Картах у этого помещения нет подписи.'):(also.length?'Также здесь: '+also.join(', ')+'. ':'')+'Галерея работает с 10:00 до 21:00, точный режим магазина лучше проверить на картах.');
  const b=$('cBtns');b.innerHTML='';
  if(s.door){const en=document.createElement('button');en.className='btn pri';en.textContent=s.name==='Синема Парк'?'Войти в кинотеатр':'Войти в магазин';en.onclick=()=>{walkToDoor(s);requestLockIfNeeded();};b.appendChild(en);}
  const go=document.createElement('button');go.className=s.door?'btn':'btn pri';go.textContent=s.floor!==curFloor?'Подойти · '+floorName(s.floor):'Подойти';go.onclick=()=>{walkTo(s);requestLockIfNeeded();};b.appendChild(go);
@@ -1173,7 +1175,7 @@ function photoTex(k){if(photoTexCache[k])return photoTexCache[k];const t=new THR
 function photoMat(k){return new THREE.MeshStandardMaterial({map:photoTex(k),alphaTest:0.45,side:THREE.DoubleSide,roughness:.85});}
 function photoGeo(k){const P=PHOTOS[k];return new THREE.PlaneGeometry(P.h*P.aspect,P.h);}
 // какие фото-вещи уместны в магазине: только если в его ассортименте есть такой отдел
-function photoKeysFor(s){if(s._ph)return s._ph;const d=deptsFor(s),o=[];if(d.includes('tshirts'))o.push('tee_black');if(d.includes('jackets'))o.push('puffer_red');if(d.includes('pants'))o.push('trousers_beige');return s._ph=o;}
+function photoKeysFor(s){if(s._ph)return s._ph;const wk=winKeys(s.name);if(wk.length)return s._ph=wk;const d=deptsFor(s),o=[];if(d.includes('tshirts'))o.push('tee_black');if(d.includes('jackets'))o.push('puffer_red');if(d.includes('pants'))o.push('trousers_beige');return s._ph=o;}
 const SLOT={shoe:.36,box:.3,jar:.13,tube:.075,bottle:.12,book:.055,toy:.3,small:.15,phone:.13,laptop:.44,tv:1.25,dumbbell:.42,cup:.13,ticket:.24,football:.26,basketball:.28,appliance:.8,sofa:2.2,bed:1.8,bike:1.2,jacket:.13,tshirt:.1,longsleeve:.11,pants:.1,dress:.12};
 const GARM={jacket:1,pants:1,tshirt:1,longsleeve:1,dress:1};
 
@@ -1456,7 +1458,7 @@ let returnPos=null,doorCooldown=0,shopDept=0,shopProd=null;
 function fadeThen(fn){if(calm){fn();return;}const f=$('fade');f.hidden=false;requestAnimationFrame(()=>{f.style.opacity=1;setTimeout(()=>{fn();requestAnimationFrame(()=>{f.style.opacity=0;setTimeout(()=>{f.hidden=true;},320);});},300);});}
 // бесшовный переход: позиция и направление взгляда переносятся относительно двери
 function enterShop(s,rel){if(mode==='store'||!s.door)return;closeCard();
- const d=s.door;if(SHOP&&SHOP.s!==s)disposeShop();if(!SHOP)SHOP=buildShop(s);PS=SHOP;closeShopPanel(false);
+ const d=s.door;if(SHOP&&(SHOP.s!==s||SHOP.feedV!==!!s._feed))disposeShop();if(!SHOP){SHOP=buildShop(s);SHOP.feedV=!!s._feed;}PS=SHOP;closeShopPanel(false);
  let along=-0.4,lat=0,fa=-1,fl=0;
  if(rel){along=rel.along;lat=rel.lat;const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);fa=fx*d.n.x+fz*d.n.z;fl=fx*d.R.x+fz*d.R.z;}
  returnDoor=s;mode='store';anim=null;
@@ -1487,8 +1489,10 @@ function updateMallDoors(dt){if(!world.doors)return;let changed=false;const px=p
  world.doors.forEach(s=>{const d=s.door;const dx=px-d.c.x,dz=pz-d.c.z;const along=dx*d.n.x+dz*d.n.z,lat=dx*d.R.x+dz*d.R.z;
   const near=mode==='walk'&&!ride&&d.floor===curFloor&&Math.hypot(dx,dz)<5.5&&along>-1;const target=near?1:0;
   if(Math.abs(d.open-target)>0.001){d.open=calm?target:d.open+(target-d.open)*Math.min(1,dt*4);changed=true;}
+  // выгрузку товаров магазина подгружаем заранее, издалека
+  if(d.floor===curFloor&&!s._feedTried&&!s._feedP&&Math.hypot(dx,dz)<14)loadFeed(s);
   // заранее собрать зал, пока подходим
-  if(near&&mode==='walk'&&(!SHOP||SHOP.s!==s)&&Math.hypot(dx,dz)<4.5&&!updateMallDoors.busy){updateMallDoors.busy=true;setTimeout(()=>{if(mode==='walk'){if(SHOP&&SHOP.s!==s)disposeShop();if(!SHOP)SHOP=buildShop(s);}updateMallDoors.busy=false;},0);}
+  if(near&&mode==='walk'&&(!SHOP||SHOP.s!==s||SHOP.feedV!==!!s._feed)&&Math.hypot(dx,dz)<4.5&&!updateMallDoors.busy){updateMallDoors.busy=true;loadFeed(s).then(()=>{if(mode==='walk'){if(SHOP&&(SHOP.s!==s||SHOP.feedV!==!!s._feed))disposeShop();if(!SHOP){SHOP=buildShop(s);SHOP.feedV=!!s._feed;}}updateMallDoors.busy=false;});}
   if(mode==='walk'&&!anim&&!ride&&d.floor===curFloor&&doorCooldown<=0&&d.open>0.5&&along<-0.05&&along>-2&&Math.abs(lat)<d.w/2){enterShop(s,{along,lat});}});
  if(changed)updateDoors();}
 function updateShopExit(dt){if(mode!=='store'||!SHOP)return;const dz=SHOP.D/2-player.z;const near=dz<5&&Math.abs(player.x)<SHOP.dw/2+2;
@@ -1515,7 +1519,7 @@ $('shopOut').onclick=()=>exitShop();
 // откуда берётся каталог: зал магазина (SHOP) или стенд-островок в галерее
 let PS=null,shopShown=24;
 function kioskHasGoods(s){return (s.kind==='kiosk'||s.island)&&s.cat!=='tbd'&&s.cat!=='wc';}
-function openKioskPanel(s){PS={s,cat:catalogOf(s)};shopDept=0;shopProd=null;shopShown=24;renderShopPanel();openShopPanel();
+function openKioskPanel(s){if(!s._feedTried){loadFeed(s).then(()=>openKioskPanel(s));return;}PS={s,cat:catalogOf(s)};shopDept=0;shopProd=null;shopShown=24;renderShopPanel();openShopPanel();
  showHint('«'+s.name+'» — товары островка. Нажми на товар, чтобы посмотреть его');}
 function renderShopPanel(){const s=PS.s,cat=PS.cat;const el=$('shop');
  el.querySelector('.sh-name').textContent=s.name;el.querySelector('.sh-what').textContent=(s.what||'')+' · '+floorName(s.floor);
@@ -1535,12 +1539,14 @@ function renderShopPanel(){const s=PS.s,cat=PS.cat;const el=$('shop');
   w.appendChild(row);body.appendChild(w);}
  else{const grid=document.createElement('div');grid.className='sh-grid';
   const dep=cat[shopDept];const all=dep.items;const shown=Math.min(all.length,shopShown);
-  const cnt=document.createElement('p');cnt.className='sh-note';cnt.textContent='В отделе '+all.length+' товаров'+(s.kind==='kiosk'?'':' · у каждого своё место в зале');body.appendChild(cnt);
+  const cnt=document.createElement('p');cnt.className='sh-note';const fi=feedInfo(s);cnt.textContent=fi?'Товары из выгрузки магазина'+(fi.demo?' — тестовой: товары, цены и ссылки ненастоящие':'')+' · обновлено '+fmtDate(fi.updated)+' · в отделе '+all.length:onlineKind(s)==='info'?'Пример меню. Онлайн-заказа здесь нет — позже появятся настоящее меню и контакты.':'В отделе '+all.length+' товаров'+(s.kind==='kiosk'?'':' · у каждого своё место в зале');body.appendChild(cnt);
   all.slice(0,shown).forEach(p=>{const c=document.createElement('button');c.className='sh-card';const img=document.createElement('img');img.src=thumbURL(p);img.alt='';img.loading='lazy';
    const n=document.createElement('span');n.className='sh-cn';n.textContent=p.name;const pr=document.createElement('span');pr.className='sh-cp';pr.textContent=fmtPrice(p.price);
    c.append(img,n,pr);c.onclick=()=>{openProduct(p);};grid.appendChild(c);});body.appendChild(grid);
   if(shown<all.length){const more=document.createElement('button');more.className='btn sh-more';more.textContent='Показать ещё '+Math.min(24,all.length-shown);more.onclick=()=>{shopShown+=24;renderShopPanel();};body.appendChild(more);}}
- const site=siteOf(s);const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';}
+ const site=siteOf(s);const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';demoLine(s);}
+// подпись внизу панели: откуда товары
+function demoLine(s){const fi=feedInfo(s),k=onlineKind(s);$('shop').querySelector('.sh-demo').textContent=fi?(fi.demo?'Тестовая выгрузка: товары, цены и ссылки ненастоящие.':'Товары из выгрузки магазина, обновлено '+fmtDate(fi.updated)+'.'):k==='info'?'Меню — пример для концепта. Онлайн-заказа здесь нет.':'Каталог — пример для концепта: товары и цены условные.';}
 $('shExit').onclick=()=>closeShopPanel(true);
 $('shMin').onclick=()=>{$('shop').classList.toggle('min');};
 
@@ -1579,7 +1585,7 @@ function viewerShow(p,onMannequin){const V=ensureViewer();while(V.root.children.
  return V.cv;}
 // картинки для карточек каталога: тот же 3D-товар, снимок под углом (кешируются)
 let TH=null;const thumbCache=new Map();
-function thumbURL(p){if(p.photo&&PHOTOS[p.photo])return PHOTOS[p.photo].url;if(thumbCache.has(p.id))return thumbCache.get(p.id);
+function thumbURL(p){if(p.photo&&PHOTOS[p.photo])return PHOTOS[p.photo].url;if(p.pic)return p.pic;if(thumbCache.has(p.id))return thumbCache.get(p.id);
  if(!TH){const cv=document.createElement('canvas');cv.width=240;cv.height=180;const r=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true,preserveDrawingBuffer:true});r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=0.95;r.setSize(240,180,false);r.setClearColor(0xf1efeb,1);
   TH=Object.assign({cv,r,c:new THREE.PerspectiveCamera(28,240/180,0.02,50)},viewerScene());}
  while(TH.root.children.length)TH.root.remove(TH.root.children[0]);const {g,h}=productGroup(p,false);g.rotation.y=0.65;TH.root.add(g);TH.pod.scale.setScalar(Math.max(0.35,h*0.7));TH.sh.scale.setScalar(Math.max(0.3,h*0.6));
@@ -1587,35 +1593,50 @@ function thumbURL(p){if(p.photo&&PHOTOS[p.photo])return PHOTOS[p.photo].url;if(t
  thumbCache.set(p.id,url);return url;}
 function openProduct(p){shopProd=p;shopDept=Math.max(0,PS.cat.findIndex(d=>d.key===p.dept));renderProduct(p,false);openShopPanel();}
 const el_=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e;};
-function renderProduct(p,onMan,size){const s=PS.s,el=$('shop');el.querySelector('.sh-name').textContent=p.name;el.querySelector('.sh-what').textContent=s.name+' · '+(DEPT[p.dept]?DEPT[p.dept].t:'');el.querySelector('.sh-dot').style.background=s.colHex;
+const fmtDate=d=>{if(!d)return'';const m=/^(\d{4})-(\d\d)-(\d\d)/.exec(d);return m?(+m[3])+' '+['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'][+m[2]-1]:d;};
+function renderProduct(p,onMan,size){const s=PS.s,el=$('shop'),fi=p.feed?feedInfo(s):null,kind=onlineKind(s);
+ el.querySelector('.sh-name').textContent=p.name;el.querySelector('.sh-what').textContent=s.name+' · '+(p.deptTitle||(DEPT[p.dept]?DEPT[p.dept].t:''));el.querySelector('.sh-dot').style.background=s.colHex;
  el.querySelector('.sh-tabs').innerHTML='';const body=el.querySelector('.sh-body');body.innerHTML='';body.scrollTop=0;
  const w=el_('div','sh-detail');
- const m=productModel(p);
- if(p.photo){stopViewer();const im=el_('img','pv pv-photo');im.src=PHOTOS[p.photo].url;im.alt=p.name;w.appendChild(im);w.appendChild(el_('p','sh-note','Фото вещи. Пока пример — позже у каждого магазина будут свои фото.'));}
- else{const cv=viewerShow(p,onMan);w.appendChild(cv);w.appendChild(el_('p','sh-note','Потяни картинку, чтобы повернуть товар.'));}
- if(WEARABLE[m]&&!p.photo){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
+ const m=productModel(p);const photo=p.photo&&PHOTOS[p.photo]?PHOTOS[p.photo].url:p.pic;
+ if(photo){stopViewer();const im=el_('img','pv pv-photo');im.src=photo;im.alt=p.name;w.appendChild(im);w.appendChild(el_('p','sh-note',p.feed?'Фото из выгрузки магазина.':'Фото вещи. Пока пример — позже у каждого магазина будут свои фото.'));}
+ else{const cv=viewerShow(p,onMan);w.appendChild(cv);w.appendChild(el_('p','sh-note',p.feed?'Фото в выгрузке нет — показана похожая модель. Потяни, чтобы повернуть.':'Потяни картинку, чтобы повернуть товар.'));}
+ if(WEARABLE[m]&&!photo){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
  const info=describe(p,m);
- const pr=el_('div','sh-pricebox');pr.append(el_('span','sh-price',fmtPrice(p.price)),el_('span','sh-rate','цена условная'));w.appendChild(pr);
- w.appendChild(el_('p','sh-stock','«'+s.name+'», '+floorName(s.floor)+'. Наличие и настоящую цену уточняй в магазине или на его сайте.'));
- let chosen=size||null;const sz=SIZES[m];let lab=null;
- if(sz){lab=el_('p','sh-lab','Размер');w.appendChild(lab);const row=el_('div','sh-sizes');
-  sz.forEach(x=>{const b=el_('button','sh-size'+(x===chosen?' on':''),x);b.onclick=()=>{row.querySelectorAll('.sh-size').forEach(q=>q.classList.remove('on'));b.classList.add('on');chosen=x;lab.textContent='Размер';lab.classList.remove('err');};row.appendChild(b);});w.appendChild(row);}
+ const pr=el_('div','sh-pricebox');pr.append(el_('span','sh-price',fmtPrice(p.price)));if(p.oldPrice&&p.oldPrice>p.price){const o=el_('s','sh-old',fmtPrice(p.oldPrice));pr.appendChild(o);}
+ pr.appendChild(el_('span','sh-rate',fi?(fi.demo?'цена из тестовой выгрузки':'цена на '+fmtDate(fi.updated)):'цена условная'));w.appendChild(pr);
+ w.appendChild(el_('p','sh-stock',fi?'Размеры — те, что есть в выгрузке магазина на '+fmtDate(fi.updated)+'. Есть ли вещь именно в «Макси», видно при заказе на сайте магазина.':'«'+s.name+'», '+floorName(s.floor)+'. Наличие и настоящую цену уточняй в магазине или на его сайте.'));
+ let chosen=size||null;const sz=p.sizes&&p.sizes.length?p.sizes:SIZES[m];let lab=null;
+ if(sz){lab=el_('p','sh-lab',p.feed?'Размеры в наличии':'Размер');w.appendChild(lab);const row=el_('div','sh-sizes');
+  sz.forEach(x=>{const b=el_('button','sh-size'+(x===chosen?' on':''),x);b.onclick=()=>{row.querySelectorAll('.sh-size').forEach(q=>q.classList.remove('on'));b.classList.add('on');chosen=x;lab.textContent=p.feed?'Размеры в наличии':'Размер';lab.classList.remove('err');};row.appendChild(b);});w.appendChild(row);}
  const buy=el_('div','sh-row sh-buy');
- const add=el_('button','btn pri','В корзину');const now=el_('button','btn','Купить сейчас');
- const put=()=>{if(sz&&!chosen){lab.textContent='Выбери размер';lab.classList.add('err');return false;}
-  cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color,model:productModel(p),pid:p.id,photo:p.photo});return true;};
- add.onclick=()=>{if(!put())return;add.textContent='В корзине ✓';add.classList.add('ok');showHint('«'+p.name+'» в корзине. Корзина — кнопка с сумкой вверху справа');setTimeout(()=>{add.textContent='Добавить ещё';add.classList.remove('ok');},1600);};
- now.onclick=()=>{if(!put())return;closeShopPanel(false);openCart(true);};
- buy.append(add,now);w.appendChild(buy);
+ if(p.feed){
+  // покупка и бронь — на сайте магазина: туда ведёт ссылка на товар из выгрузки
+  const a=el_('a','btn pri','Купить на сайте магазина ↗');a.href=p.url||siteOf(s)||mapsOf(s);a.target='_blank';a.rel='noopener';buy.appendChild(a);
+  if(p.pickup){const b=el_('a','btn','Забрать в «Макси» ↗');b.href=p.url||siteOf(s)||mapsOf(s);b.target='_blank';b.rel='noopener';buy.appendChild(b);}
+  w.appendChild(buy);
+  if(p.pickup)w.appendChild(el_('p','sh-note','«Забрать в «Макси»» — на сайте магазина выбери самовывоз из ТРЦ «Макси», Тула. Бронь и оплату ведёт сам магазин.'));}
+ else if(kind!=='shop'){w.appendChild(el_('p','sh-stock',ONLINE_TEXT.info));}
+ else{
+  const add=el_('button','btn pri','В корзину');const now=el_('button','btn','Купить сейчас');
+  const put=()=>{if(sz&&!chosen){lab.textContent='Выбери размер';lab.classList.add('err');return false;}
+   cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color,model:productModel(p),pid:p.id,photo:p.photo});return true;};
+  add.onclick=()=>{if(!put())return;add.textContent='В корзине ✓';add.classList.add('ok');showHint('«'+p.name+'» в корзине. Корзина — кнопка с сумкой вверху справа');setTimeout(()=>{add.textContent='Добавить ещё';add.classList.remove('ok');},1600);};
+  now.onclick=()=>{if(!put())return;closeShopPanel(false);openCart(true);};
+  buy.append(add,now);w.appendChild(buy);}
  // плашка с описанием, как в интернет-магазине
- const plate=el_('div','sh-plate');plate.appendChild(el_('h4',null,'Описание'));plate.appendChild(el_('p',null,info.text));
- plate.appendChild(el_('h4',null,'Характеристики'));const dl=el_('dl');info.specs.forEach(([k,v])=>{dl.append(el_('dt',null,k),el_('dd',null,v));});plate.appendChild(dl);w.appendChild(plate);
- w.appendChild(el_('p','sh-note','Товар, цена и размеры — пример для концепта. Настоящие наличие и цены — на сайте магазина.'));
+ const plate=el_('div','sh-plate');
+ if(p.feed){if(p.desc){plate.appendChild(el_('h4',null,'Описание'));plate.appendChild(el_('p',null,p.desc));}
+  plate.appendChild(el_('h4',null,'Характеристики'));const dl=el_('dl');[['Цвет',p.colorName||'—'],['Размеры',(p.sizes||[]).join(', ')||'—'],['Магазин в «Макси»',s.name+', '+floorName(s.floor)],['Источник',fi&&fi.source||'выгрузка магазина']].forEach(([k,v])=>{dl.append(el_('dt',null,k),el_('dd',null,v));});plate.appendChild(dl);}
+ else{plate.appendChild(el_('h4',null,'Описание'));plate.appendChild(el_('p',null,info.text));
+  plate.appendChild(el_('h4',null,'Характеристики'));const dl=el_('dl');info.specs.forEach(([k,v])=>{dl.append(el_('dt',null,k),el_('dd',null,v));});plate.appendChild(dl);}
+ w.appendChild(plate);
+ w.appendChild(el_('p','sh-note',fi?(fi.demo?'Тестовая выгрузка: товары, цены и ссылки ненастоящие. Так будет выглядеть магазин, подключённый через выгрузку.':'Товары и цены — из выгрузки магазина, обновляются раз в сутки. Точные — на его сайте.'):kind!=='shop'?'Позиции — пример для концепта.':'Товар, цена и размеры — пример для концепта. Настоящие наличие и цены — на сайте магазина.'));
  const row=el_('div','sh-row');
- const a=el_('a','btn');a.target='_blank';a.rel='noopener';const site=siteOf(s);a.href=site||mapsOf(s);a.textContent=site?'Смотреть на сайте ↗':'Магазин на картах ↗';row.appendChild(a);
+ const site=siteOf(s);if(!p.feed){const a=el_('a','btn');a.target='_blank';a.rel='noopener';a.href=site||mapsOf(s);a.textContent=site?'Смотреть на сайте ↗':'Магазин на картах ↗';row.appendChild(a);}
  const back=el_('button','btn','Продолжить прогулку');back.onclick=()=>closeShopPanel(true);row.appendChild(back);
  w.appendChild(row);body.appendChild(w);
- const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';}
+ const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';demoLine(s);}
 
 /* ---------- Корзина и заказ ---------- */
 function updateCartBadge(){const n=cart.count();$('cartN').textContent=n>99?'99+':String(n);$('cartN').hidden=!n;}
@@ -1673,7 +1694,7 @@ function auditMap(){const res={};
  res.columns={kept:world.colsKept,dropped:world.colsDropped};return res;}
 
 async function start(){
- try{await Promise.race([Promise.all(['800 40px Manrope',...FONT_LOADS].map(f=>document.fonts.load(f).catch(()=>{}))),new Promise(r=>setTimeout(r,3000))]);}catch(e){}
+ try{await Promise.race([Promise.all(['800 40px Manrope',...FONT_LOADS].map(f=>document.fonts.load(f).catch(()=>{})).concat([feedIndexReady()])),new Promise(r=>setTimeout(r,3000))]);}catch(e){}
  try{build();}catch(err){$('loading').textContent='Не получилось построить сцену: '+err.message;console.error(err);return;}
  {const w=nearestFree(player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  const qs=new URLSearchParams(location.search);if(qs.has('calm'))calm=qs.get('calm')!=='0';setCalm(calm);
@@ -1689,7 +1710,7 @@ async function start(){
 const walkPoints=(f,step)=>{const st=Math.round(step/CELL),o=[];for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);if(!blockedF(f,x,z))o.push([x,z]);}return o;};
 const applyStyle=name=>makeStyler({scene,renderer,hemi,sun,sky:skyMesh,S,MAT,floors:floorMats,slabMat:world.slabMat,roofMat:world.roofMat,railMat:world.railMat,colMat:world.colMat,merged:MERGED,signAtlases,PER,walkPoints,FY,G,lockFog:(n,f)=>{FOGW=[n,f];}})(name);
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
-if(new URLSearchParams(location.search).has('debug'))window.__maxi={get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
+if(new URLSearchParams(location.search).has('debug'))window.__maxi={loadFeed,catalogOf,onlineKind,get PS(){return PS},renderProduct,get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
  get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX,setShopStyle,INTERIORS,decor:()=>[world.decor1,world.decor2],pickAt:(x,y)=>pick(x,y,false)};
 start();
