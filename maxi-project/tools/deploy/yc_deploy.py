@@ -5,22 +5,29 @@
 как application/octet-stream — браузер тогда не показывает фото или не берёт шрифты.
 
 Подготовка (один раз, см. docs/mvp-launch.md):
-  pip install awscli   (или любой aws cli v2)
+  pip install awscli   (вместе с ним ставится botocore, этого достаточно)
   aws configure        (ключи статического доступа сервисного аккаунта; регион ru-central1)
 Запуск:
   YC_BUCKET=имя-бакета python3 tools/deploy/yc_deploy.py [--dry-run] [--delete]
 """
-import argparse, importlib.util, mimetypes, os, subprocess, sys
+import argparse, mimetypes, os, sys
 from pathlib import Path
 
-# На Windows команда `aws` из pip иногда не запускается («ftype Python.File…»), поэтому, если пакет awscli
-# поставлен в этот же Python, вызываем его как модуль. Иначе — обычная команда aws.
-AWS = [sys.executable, '-m', 'awscli'] if importlib.util.find_spec('awscli') else ['aws']
 ENDPOINT = os.environ.get('YC_ENDPOINT', 'https://storage.yandexcloud.net')
 TYPES = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webp': 'image/webp',
          '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
          '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml'}
+
+def client():
+    """S3-клиент напрямую из библиотеки (botocore ставится вместе с awscli, boto3 тоже подходит) —
+    без запуска команды aws, которая на Windows иногда не стартует. Ключи берутся из `aws configure`."""
+    try:
+        import boto3
+        return boto3.client('s3', endpoint_url=ENDPOINT, region_name='ru-central1')
+    except ImportError:
+        import botocore.session
+        return botocore.session.get_session().create_client('s3', endpoint_url=ENDPOINT, region_name='ru-central1')
 
 def ctype(p):
     return TYPES.get(p.suffix.lower()) or mimetypes.guess_type(p.name)[0] or 'application/octet-stream'
@@ -29,6 +36,8 @@ def cache(rel):
     # хешированные файлы сборки не меняются никогда; страница и выгрузки — всегда проверяются заново
     if rel.startswith('assets/') or rel.startswith('feeds/img/'): return 'public, max-age=31536000, immutable'
     return 'no-cache'
+
+def a_dry(a): return a.dry_run
 
 def main():
     ap = argparse.ArgumentParser()
@@ -45,19 +54,17 @@ def main():
     if total > 900e6: print('ВНИМАНИЕ: больше ~1 ГБ — выйдешь за бесплатный лимит хранилища')
     # сначала всё, кроме index.html, потом страница: посетитель не увидит новую страницу без её файлов
     files.sort(key=lambda p: p.name == 'index.html')
+    c = None if a_dry(a) else client()
     for p in files:
         rel = p.relative_to(root).as_posix()
-        cmd = AWS + ['--endpoint-url', ENDPOINT, 's3', 'cp', str(p), f's3://{bucket}/{rel}', '--content-type', ctype(p),
-               '--cache-control', cache(rel), '--only-show-errors']
         print(('[dry] ' if a.dry_run else '') + f'{rel:50s} {ctype(p):32s} {cache(rel)}')
-        if not a.dry_run: subprocess.run(cmd, check=True)
-    if a.delete and not a.dry_run:
+        if c: c.put_object(Bucket=bucket, Key=rel, Body=p.read_bytes(), ContentType=ctype(p), CacheControl=cache(rel))
+    if a.delete and c:
         have = {p.relative_to(root).as_posix() for p in files}
-        out = subprocess.run(AWS + ['--endpoint-url', ENDPOINT, 's3', 'ls', f's3://{bucket}/', '--recursive'], check=True, capture_output=True, text=True).stdout
-        for line in out.splitlines():
-            key = line.split(None, 3)[-1]
-            if key not in have:
-                print('удаляю', key); subprocess.run(AWS + ['--endpoint-url', ENDPOINT, 's3', 'rm', f's3://{bucket}/{key}', '--only-show-errors'], check=True)
+        for page in c.get_paginator('list_objects_v2').paginate(Bucket=bucket):
+            for o in page.get('Contents', []):
+                if o['Key'] not in have:
+                    print('удаляю', o['Key']); c.delete_object(Bucket=bucket, Key=o['Key'])
     print('готово' if not a.dry_run else 'проверка без загрузки завершена')
 
 if __name__ == '__main__': main()
