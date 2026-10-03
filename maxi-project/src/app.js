@@ -14,6 +14,8 @@ import {INTERIORS,pickInterior} from './shop/interiors.js';
 import {signStyle,drawSign,drawBlade,FONT_LOADS} from './signs.js';
 import {loadFeed,feedIndexReady,feedInfo,winKeys} from './shop/feeds.js';
 import {onlineKind,onlineActions,onlineText,ACTIONS} from './shop/online.js';
+import {PREFS,setPref} from './settings.js';
+import {createFitting} from './shop/fitting.js';
 
 export function startApp(D,D2){
 
@@ -277,11 +279,11 @@ function humanParts(){if(HP)return HP;
  HP={torso:merge([torso]),legs:merge([...leg(-0.09),...leg(0.09)]),arms:merge([...arm(-0.215),...arm(0.215)]),head:merge([head,neck,...hands]),hair:merge([hair]),shoes:merge(shoes)};return HP;}
 function build(){
  const bpoly=D.bld.reduce((a,b)=>b.length>a.length?b:a,D.bld[0]);
- const ground=new THREE.Mesh(new THREE.PlaneGeometry(3000,3000),new THREE.MeshStandardMaterial({color:LIN('#7d8388'),roughness:.95}));ground.rotation.x=-Math.PI/2;ground.position.y=-0.06;scene.add(ground);
+ const ground=new THREE.Mesh((()=>{const cx=(bb.x0+bb.x1)/2,cz=(bb.z0+bb.z1)/2,R=1500;return new THREE.ShapeGeometry(shapeOf([[cx-R,cz-R],[cx+R,cz-R],[cx+R,cz+R],[cx-R,cz+R]],D.bld));})(),new THREE.MeshStandardMaterial({color:LIN('#7d8388'),roughness:.95}));ground.rotation.x=-Math.PI/2;ground.position.y=-0.06;scene.add(ground);
  // пол: полированный мрамор
  const fg=flatShape(bpoly,0.01);
  {const P=fg.attributes.position.array,U=new Float32Array(P.length/3*2);for(let i=0;i<P.length/3;i++){U[i*2]=P[i*3]/4.8;U[i*2+1]=P[i*3+2]/4.8;}fg.setAttribute('uv',new THREE.BufferAttribute(U,2));}
- const floor=new THREE.Mesh(fg,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55}));scene.add(floor);floorMats.push(floor.material);floorMatsF.push([floor.material,1]);
+ const floor=new THREE.Mesh(fg,new THREE.MeshStandardMaterial({map:marble,roughness:.16,metalness:0,envMapIntensity:.55}));floor.renderOrder=-1;scene.add(floor);floorMats.push(floor.material);floorMatsF.push([floor.material,1]);
  // цветные полосы вдоль проёмов (как на фото)
  const band=new Merger();const OR=LIN('#ef7d35'),GRN=LIN('#7ab04f');
  voidPolys.forEach(v=>{for(let i=0;i<v.length;i++){const a=v[i],b=v[(i+1)%v.length];const A=new V3(a[0],0.025,a[1]),B=new V3(b[0],0.025,b[1]);const L=A.distanceTo(B);if(L<0.05)continue;
@@ -413,7 +415,8 @@ function build(){
      // стойки с товаром внутри
      const nearDoor=isDoor&&u0<du1+1.2&&u1>du0-1.2;
      const ph=photoKeysFor(s);
-     if(!nearDoor&&(s.cat==='fashion'||s.cat==='sport'||s.cat==='kids')&&depth>1.6&&pw>2.2){const Rm=new V3(n.z,0,-n.x);[-0.25,0.25].forEach((f,mi)=>{if(pw<3.5&&mi)return;const tops=ph.filter(q=>q!=='trousers_beige'),pc=tops.length?PHOTOS[tops[(mi+k)%tops.length]].color:null;mannequins.push({x:c.x-n.x*0.9+Rm.x*f*pw,z:c.z-n.z*0.9+Rm.z*f*pw,y:y0,a:Math.atan2(n.x,n.z),col:LIN(pc||WEAR_COLS[(s.id*3+mi*5+k)%WEAR_COLS.length])});});}
+     if(false&&!nearDoor&&(s.cat==='fashion'||s.cat==='sport'||s.cat==='kids')&&depth>1.6&&pw>2.2){// манекены в витринах убраны: окрашенная фигура не показывала вещь
+const Rm=new V3(n.z,0,-n.x);[-0.25,0.25].forEach((f,mi)=>{if(pw<3.5&&mi)return;const tops=ph.filter(q=>q!=='trousers_beige'),pc=tops.length?PHOTOS[tops[(mi+k)%tops.length]].color:null;mannequins.push({x:c.x-n.x*0.9+Rm.x*f*pw,z:c.z-n.z*0.9+Rm.z*f*pw,y:y0,a:Math.atan2(n.x,n.z),col:LIN(pc||WEAR_COLS[(s.id*3+mi*5+k)%WEAR_COLS.length])});});}
      // магазины одежды: в витрине висят настоящие вещи (фото) на вешале, а не условные коробки
      if(!nearDoor&&ph.length&&depth>2.2&&pw>2.4)winPhotos.push({x:c.x-n.x*depth*0.5,z:c.z-n.z*depth*0.5,y:y0,a:Math.atan2(n.x,n.z),R:new V3(n.z,0,-n.x),w:Math.min(2.2,pw*0.55),keys:ph,id:s.id});
      else if(!nearDoor&&s.cat!=='tbd'&&depth>2.2&&pw>2.4)fixtures.push({x:c.x-n.x*depth*0.45,z:c.z-n.z*depth*0.45,y:y0,a:Math.atan2(n.x,n.z),w:Math.min(1.6,pw*0.35),col:LIN(['#b9a489','#8f7a62','#d9d4cc','#6f6a64'][(s.id+k)%4]),cat:s.cat});
@@ -803,7 +806,7 @@ const eS=D.ents.find(e=>e.n===2)||D.ents[0];
 const player={x:eS.p[0]-eS.d[0]*6,z:eS.p[1]-eS.d[1]*6,yaw:Math.atan2(eS.d[0],eS.d[1]),pitch:0.02,vx:0,vz:0};
 const topv={x:0,z:0,h:300};
 let mode='walk',anim=null,filter=null,target=null,ride=null;
-const keys={};let joyV={x:0,y:0};const EYE=1.65;
+const keys={};let joyV={x:0,y:0,run:0};const EYE=1.65;
 // режим без анимации: из настроек системы или по кнопке; выбор запоминается
 let calm=matchMedia('(prefers-reduced-motion: reduce)').matches;
 try{const v=localStorage.getItem('maxi-calm');if(v!==null)calm=v==='1';}catch(e){}
@@ -853,7 +856,7 @@ function releaseLock(){if(document.pointerLockElement)document.exitPointerLock()
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;if(locked){lockErrors=0;lockFailed=false;hideHint();}updateCross();});
 document.addEventListener('pointerlockerror',lockError);
 function isFP(){return mode==='walk'||mode==='store';}
-function panelsClosed(){return $('card').hidden&&$('shop').hidden&&$('lift').hidden&&$('cartBox').hidden;}
+function panelsClosed(){return $('card').hidden&&$('shop').hidden&&$('lift').hidden&&$('cartBox').hidden&&$('bigmap').hidden&&$('info').hidden&&!fitOpen();}
 function updateCross(){$('cross').hidden=!(locked&&isFP());$('aim').hidden=!(locked&&isFP());$('lockTip').hidden=!(!coarse&&!locked&&isFP()&&panelsClosed()&&!ride);}
 canvas.addEventListener('pointerdown',e=>{
  if(ride&&ride.kind!=='esc')return;
@@ -869,9 +872,9 @@ canvas.addEventListener('pointermove',e=>{const p=ptrs.get(e.pointerId);if(!p)re
  if(downInfo)downInfo.moved+=Math.abs(dx)+Math.abs(dy);
  if(ptrs.size===2&&mode==='top'){const a=[...ptrs.values()];const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(pinch0>0)topv.h=clampH(topv.h*pinch0/d);pinch0=d;return;}
  if(anim||(ride&&ride.kind!=='esc'))return;
- if(isFP()){const k=coarse?0.006:0.0045;player.yaw-=dx*k;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-dy*k));hideHint();}
+ if(isFP()){const k=(coarse?0.0105:0.0045)*PREFS.sens;player.yaw-=dx*k;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-dy*k));hideHint();}
  else{const sc=2*(topv.h-topY())*Math.tan(THREE.MathUtils.degToRad(cam.fov/2))/innerHeight;topv.x-=dx*sc;topv.z-=dy*sc;topv.x=Math.max(bb.x0-60,Math.min(bb.x1+60,topv.x));topv.z=Math.max(bb.z0-60,Math.min(bb.z1+80,topv.z));hideGoHere();}});
-const SENS=0.0021;let lookDX=0,lookDY=0;
+const SENS_BASE=0.0021;let lookDX=0,lookDY=0;
 document.addEventListener('mousemove',e=>{
  if(e.target===canvas){mouse.in=true;mouse.x=e.clientX;mouse.y=e.clientY;}
  if(coarse||!isFP()||anim||(ride&&ride.kind!=='esc'))return;
@@ -884,18 +887,21 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();if(ride)return;if(mode===
 function clampH(h){return Math.max(topY()+12,Math.min(1100,h));}
 
 const joy=$('joy'),knob=$('knob');let joyId=null;
-function joyAt(e){const r=joy.getBoundingClientRect();let x=(e.clientX-r.left-r.width/2)/(r.width/2),y=(e.clientY-r.top-r.height/2)/(r.height/2);const l=Math.hypot(x,y);if(l>1){x/=l;y/=l;}joyV={x,y};knob.style.transform=`translate(${x*36}px,${y*36}px)`;}
+// джойстик: внутри круга — шаг, палец за краем круга — бег (плавно, до скорости Shift на компьютере)
+function joyAt(e){const r=joy.getBoundingClientRect(),R=r.width/2;let x=(e.clientX-r.left-R)/R,y=(e.clientY-r.top-R)/R;const l=Math.hypot(x,y);
+ const run=Math.max(0,Math.min(1,(l-1.02)/0.45));if(l>1){x/=l;y/=l;}joyV={x,y,run};const kr=R*0.58+run*R*0.3;knob.style.transform=`translate(${x*kr}px,${y*kr}px)`;joy.classList.toggle('run',run>0.05);
+ if(run>0.05&&!joyAt.told){joyAt.told=true;try{localStorage.setItem('maxi-runtip','1');}catch(_){}}}
 joy.addEventListener('pointerdown',e=>{joyId=e.pointerId;joy.setPointerCapture(e.pointerId);joyAt(e);hideHint();});
 joy.addEventListener('pointermove',e=>{if(e.pointerId===joyId)joyAt(e);});
-const joyEnd=e=>{if(e.pointerId!==joyId)return;joyId=null;joyV={x:0,y:0};knob.style.transform='';};
+const joyEnd=e=>{if(e.pointerId!==joyId)return;joyId=null;joyV={x:0,y:0,run:0};knob.style.transform='';joy.classList.remove('run');};
 joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);
 
 addEventListener('keydown',e=>{
  if(ride&&e.target.tagName!=='INPUT'&&(e.code==='KeyW'||e.code==='ArrowUp'||e.code==='ShiftLeft'||e.code==='ShiftRight'))keys[e.code]=true;// на эскалаторе: зажал W — бежишь по ленте
  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT'){if(e.key==='Escape'){closeSearch();closeCart();}if(e.key==='Enter'&&e.target.id==='q'){const f=$('results').querySelector('li[data-id]');if(f)f.click();}return;}
  if(e.key==='/'){e.preventDefault();openSearch();return;}
- if(e.key==='Escape'){if(!$('cartBox').hidden){closeCart();return;}if(!$('lift').hidden){hideLiftPanel(false);return;}if(!locked)closeCard();$('info').hidden=true;hideGoHere();if(!$('shop').hidden&&!locked)closeShopPanel(false);return;}
- if(ride)return;
+ if(e.key==='Escape'){if(!$('bigmap').hidden){closeBigMap();return;}if(!$('cartBox').hidden){closeCart();return;}if(!$('lift').hidden){hideLiftPanel(false);return;}if(!locked)closeCard();$('info').hidden=true;hideGoHere();if(!$('shop').hidden&&!locked)closeShopPanel(false);return;}
+ if(ride||!$('bigmap').hidden||fitOpen())return;
  if(e.key==='Enter'&&mode==='store'){shopPick(innerWidth/2,innerHeight/2);return;}
  if(e.key==='Enter'&&target&&mode==='walk'){if(target.door)walkToDoor(target);else walkTo(target);return;}
  if(e.code==='KeyV'){if(mode!=='store')setMode(mode==='walk'?'top':'walk');return;}
@@ -915,7 +921,7 @@ function pick(x,y,fromLock){if(ride)return;if(mode==='store'&&SHOP){shopPick(x,y
   if(r.lift){if(fromLock)releaseLock();openLiftPanel(r.lift,true);return;}
   if(r.esc){if(mode==='walk')goEscalator(r.esc);return;}
   if(mode==='top'&&r.s.floor!==curFloor)continue;
-  if((r.stand||r.s.island)&&mode==='walk'&&kioskHasGoods(r.s)){closeCard();openKioskPanel(r.s);if(fromLock)releaseLock();return;}
+  if((r.stand||r.s.island)&&mode==='walk'&&kioskHasGoods(r.s)){if(h.distance>7){showHint('Подойди к островку «'+r.s.name+'», чтобы посмотреть товары');return;}closeCard();openKioskPanel(r.s);if(fromLock)releaseLock();return;}
   openCard(r.s);hideGoHere();if(fromLock)releaseLock();return;}
  closeCard();
  if(mode==='top')topTap(x,y);}
@@ -985,7 +991,13 @@ function renderResults(q){q=q.trim().toLowerCase();const ul=$('results');ul.inne
  if(!list.length){const li=document.createElement('li');li.style.cursor='default';li.style.color='var(--muted)';li.textContent='В ТРЦ такого не нашлось';ul.appendChild(li);return;}
  list.slice(0,100).forEach(s=>{const li=document.createElement('li');li.dataset.id=s.id;const i=document.createElement('i');i.style.background=s.colHex;const bt=document.createElement('b');bt.textContent=s.name;const sm=document.createElement('small');sm.textContent=(s.what||CATS[s.cat].n)+' · '+floorName(s.floor);li.append(i,bt,sm);
   li.onclick=()=>{closeSearch();if(mode==='top')showTop(s);else walkTo(s);};ul.appendChild(li);});}
-$('bInfo').onclick=()=>{$('info').hidden=false;releaseLock();};$('infoOk').onclick=()=>{$('info').hidden=true;};
+$('bInfo').onclick=()=>{$('info').hidden=false;releaseLock();syncSettings();};$('infoOk').onclick=()=>{$('info').hidden=true;};$('infoX').onclick=()=>{$('info').hidden=true;};
+/* ---------- Настройки: чувствительность, графика ---------- */
+const GFX_NOTE={auto:coarse?'Качество подбирается само. На телефоне пол без живого отражения — так плавнее':'Качество подбирается само по скорости кадров',best:coarse?'Чётче картинка, свечение ламп. Отражение пола — облегчённое':'Полное отражение пола, сглаживание. Нужна хорошая видеокарта',fast:'Без тяжёлых эффектов — для слабых устройств и ноутбуков от батареи'};
+function syncSettings(){const r=$('sensR');r.value=PREFS.sens;$('sensV').textContent=PREFS.sens<0.8?'ниже обычного':PREFS.sens>1.25?'выше обычного':'обычная';
+ [...$('gfxSeg').children].forEach(b=>{const on=b.dataset.v===PREFS.gfx;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);});$('gfxNote').textContent=GFX_NOTE[PREFS.gfx];}
+$('sensR').addEventListener('input',e=>{setPref('sens',+e.target.value);syncSettings();});
+$('gfxSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;setPref('gfx',b.dataset.v);FX.setMode(PREFS.gfx);syncSettings();});
 $('info').addEventListener('pointerdown',e=>{if(e.target.id==='info')$('info').hidden=true;});
 $('bWalk').onclick=()=>setMode('walk');$('bTop').onclick=()=>setMode('top');
 $('bF1').onclick=()=>goFloor(1);$('bF2').onclick=()=>goFloor(2);
@@ -1055,7 +1067,7 @@ function updateEscRide(dt){const r=ride,e=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;r
  if(lookDX||lookDY){player.yaw-=lookDX*SENS;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-lookDY*SENS));lookDX=lookDY=0;}
  if(r.phase===0){const k=Math.min(1,r.t/0.3),q=e(k);player.x=r.x0+(r.a.x-r.x0)*q;player.z=r.z0+(r.a.z-r.z0)*q;
   let da=((r.yaw-r.yaw0+Math.PI*3)%(Math.PI*2))-Math.PI;player.yaw=r.yaw0+da*q;r.y=yA+0.05;if(k>=1){r.phase=1;r.t=0;}}
- else if(r.phase===1){const fwd=keys.KeyW||keys.ArrowUp||joyV.y<-0.3,rate=fwd?((keys.ShiftLeft||keys.ShiftRight)?6:3.6):1;r.k=(r.k||0)+dt*rate/7.5;const k=Math.min(1,r.k);// лента едет сама; идёшь вперёд — бежишь по ней быстрее
+ else if(r.phase===1){const fwd=keys.KeyW||keys.ArrowUp||joyV.y<-0.3,rate=fwd?((keys.ShiftLeft||keys.ShiftRight||joyV.run>0.5)?6:3.6):1;r.k=(r.k||0)+dt*rate/7.5;const k=Math.min(1,r.k);// лента едет сама; идёшь вперёд — бежишь по ней быстрее
   const q=k<0.08?k*k/0.16:k>0.92?1-(1-k)*(1-k)/0.16:k-0.04;player.x=r.a.x+(r.b.x-r.a.x)*q;player.z=r.a.z+(r.b.z-r.a.z)*q;r.y=yA+(yB-yA)*q+0.25;
   if(k>=1){r.phase=2;r.t=0;curFloor=r.to;updateFloorUI();setVis();drawMiniBase();}}
  else{const k=Math.min(1,r.t/0.3),q=e(k);player.x=r.b.x+(r.off.x-r.b.x)*q;player.z=r.b.z+(r.off.z-r.b.z)*q;r.y=yB+0.25*(1-q);
@@ -1093,9 +1105,63 @@ function drawMini(){if(!miniBase)return;const w=mini.width,h=mini.height;mg.clea
  if(target&&target.floor===curFloor){const p=X(target.c[0],target.c[1]);mg.strokeStyle='#0e7490';mg.lineWidth=2*dp;mg.beginPath();mg.arc(p[0],p[1],6*dp,0,7);mg.stroke();}
  const [px,pz]=X(player.x,player.z),fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),L=8*dp;
  mg.fillStyle='#e11d48';mg.beginPath();mg.moveTo(px+fx*L,pz+fz*L);mg.lineTo(px-fz*L*.55-fx*L*.4,pz+fx*L*.55-fz*L*.4);mg.lineTo(px+fz*L*.55-fx*L*.4,pz-fx*L*.55-fz*L*.4);mg.closePath();mg.fill();}
-mini.addEventListener('click',e=>{if(ride)return;const r=mini.getBoundingClientRect(),d=mini.width/r.width;const x=((e.clientX-r.left)*d-miniT.ox)/miniT.s,z=((e.clientY-r.top)*d-miniT.oz)/miniT.s;
- if(mode==='top'){topv.x=x;topv.z=z;topv.h=clampH(Math.min(topv.h,topY()+160));hideGoHere();return;}
- const w=nearestFree(x,z,60);if(!w)return;moveTo(curFloor,w[0],w[1],player.yaw,player.pitch);});
+mini.addEventListener('click',()=>{if(ride)return;openBigMap();});
+
+/* ---------- Большая карта: нажал на мини-карту — карта на весь экран; выбрать магазин или место и перейти ---------- */
+const BM={f:1,s:1,ox:0,oz:0,sel:null,ptrs:new Map(),pinch:0,down:null};const bmC=$('bmC'),bg=bmC.getContext('2d');
+function openBigMap(){if(locked)releaseLock();closeCard();BM.f=curFloor;BM.sel=null;$('bigmap').hidden=false;$('bmSel').hidden=true;$('bmHint').hidden=false;bmSize();bmFit();if(coarse&&mode!=='store')bmCenterOn(player.x,player.z,BM.s*2.4);bmDraw();updateBMFloors();}
+function closeBigMap(){$('bigmap').hidden=true;BM.ptrs.clear();}
+function bmSize(){const r=bmC.getBoundingClientRect(),d=Math.min(devicePixelRatio,2);bmC.width=Math.max(1,Math.round(r.width*d));bmC.height=Math.max(1,Math.round(r.height*d));}
+// вписать здание и показать игрока ближе к центру
+function bmFit(){const r=bmC.getBoundingClientRect(),pad=24,top=70,bot=40;const s=Math.min((r.width-2*pad)/(bb.x1-bb.x0),(r.height-top-bot)/(bb.z1-bb.z0));BM.s=s;BM.ox=(r.width-(bb.x1-bb.x0)*s)/2-bb.x0*s;BM.oz=top+(r.height-top-bot-(bb.z1-bb.z0)*s)/2-bb.z0*s;}
+function bmCenterOn(x,z,minS){const r=bmC.getBoundingClientRect();if(minS)BM.s=Math.max(BM.s,minS);BM.ox=r.width/2-x*BM.s;BM.oz=r.height/2-z*BM.s;}
+const bmW=(cx,cy)=>[(cx-BM.ox)/BM.s,(cy-BM.oz)/BM.s];
+function updateBMFloors(){document.querySelectorAll('.bm-floors button').forEach(b=>b.classList.toggle('on',+b.dataset.f===BM.f));}
+function bmDraw(){const d=Math.min(devicePixelRatio,2),w=bmC.width,h=bmC.height;const dark=matchMedia('(prefers-color-scheme: dark)').matches&&document.documentElement.dataset.theme!=='light';
+ bg.setTransform(1,0,0,1,0,0);bg.fillStyle=dark?'#0e1419':'#e9eef2';bg.fillRect(0,0,w,h);bg.setTransform(d*BM.s,0,0,d*BM.s,d*BM.ox,d*BM.oz);
+ const poly=(pts,fill,stroke)=>{bg.beginPath();pts.forEach((p,i)=>i?bg.lineTo(p[0],p[1]):bg.moveTo(p[0],p[1]));bg.closePath();if(fill){bg.fillStyle=fill;bg.fill();}if(stroke){bg.strokeStyle=stroke;bg.lineWidth=1.2/BM.s;bg.stroke();}};
+ const f=BM.f;D.bld.forEach(b=>poly(b,f===2?(dark?'#2a3138':'#cfccc6'):(dark?'#3a434b':'#f4f2ee')));
+ if(f===2){D2.bld.forEach(b=>poly(b,dark?'#3a434b':'#f4f2ee'));voidPolys.forEach(v=>poly(v,dark?'#1d3a4a':'#cfe6f1'));}
+ const list=S.filter(st=>st.floor===f);
+ list.forEach(st=>{if(st.kind==='store')poly(st.poly,(filter&&st.cat!==filter)?'#dde1e5':st.colHex,BM.sel&&BM.sel.s===st?'#0f172a':'rgba(255,255,255,.65)');});
+ list.forEach(st=>{if(st.kind!=='kiosk')return;bg.fillStyle=st.colHex;bg.beginPath();bg.arc(st.c[0],st.c[1],Math.max(0.9,1.1),0,7);bg.fill();});
+ (world.lifts||[]).forEach(L=>{bg.fillStyle='#0e7490';bg.fillRect(L.c.x-1.4,L.c.z-1.4,2.8,2.8);});
+ D2.esc.forEach(e=>{bg.save();bg.translate(e.p[0],e.p[1]);bg.rotate(e.a);bg.fillStyle='#475569';bg.fillRect(-3.5,-0.9,7,1.8);bg.restore();});
+ // подписи: только те, что помещаются в помещение при текущем масштабе
+ bg.setTransform(d,0,0,d,0,0);bg.textAlign='center';bg.textBaseline='middle';
+ list.forEach(st=>{if(st.cat==='tbd'||st.cat==='wc')return;let x0=1e9,x1=-1e9;if(st.kind==='store')st.poly.forEach(p=>{x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);});else{x0=st.c[0]-2;x1=st.c[0]+2;}
+  const wpx=(x1-x0)*BM.s;const fs=Math.max(10,Math.min(15,wpx/7));bg.font=`700 ${fs}px Manrope, system-ui, sans-serif`;const tw=bg.measureText(st.name).width;
+  if(st.kind==='store'&&tw>wpx*0.95)return;if(st.kind==='kiosk'&&BM.s<5)return;const lp=st.lp||st.c;const cx=lp[0]*BM.s+BM.ox,cy=lp[1]*BM.s+BM.oz+(st.kind==='kiosk'?12:0);
+  bg.lineWidth=3;bg.strokeStyle='rgba(255,255,255,.85)';bg.strokeText(st.name,cx,cy);bg.fillStyle='#14202b';bg.fillText(st.name,cx,cy);});
+ // выбранное место
+ if(BM.sel&&BM.sel.pt){const [x,z]=BM.sel.pt,cx=x*BM.s+BM.ox,cy=z*BM.s+BM.oz;bg.fillStyle='#0e7490';bg.beginPath();bg.arc(cx,cy-14,9,Math.PI,0);bg.lineTo(cx,cy);bg.closePath();bg.fill();bg.fillStyle='#fff';bg.beginPath();bg.arc(cx,cy-14,3.5,0,7);bg.fill();}
+ // игрок
+ if(f===curFloor&&mode!=='store'){const px=player.x*BM.s+BM.ox,pz=player.z*BM.s+BM.oz,fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),L=13;
+  bg.fillStyle='rgba(225,29,72,.18)';bg.beginPath();bg.arc(px,pz,18,0,7);bg.fill();bg.fillStyle='#e11d48';bg.strokeStyle='#fff';bg.lineWidth=2;bg.beginPath();bg.moveTo(px+fx*L,pz+fz*L);bg.lineTo(px-fz*L*.6-fx*L*.5,pz+fx*L*.6-fz*L*.5);bg.lineTo(px+fz*L*.6-fx*L*.5,pz-fx*L*.6-fz*L*.5);bg.closePath();bg.fill();bg.stroke();}}
+function bmSelect(cx,cy){const [x,z]=bmW(cx,cy),f=BM.f;$('bmHint').hidden=true;
+ let st=S.find(o=>o.floor===f&&o.kind==='kiosk'&&Math.hypot(o.c[0]-x,o.c[1]-z)<Math.max(2,10/BM.s));
+ if(!st)st=S.find(o=>o.floor===f&&o.kind==='store'&&inPoly(o.poly,x,z));
+ const b=$('bmBtns');b.innerHTML='';const btn=(t,pri,fn)=>{const e=document.createElement('button');e.className='btn'+(pri?' pri':'');e.textContent=t;e.onclick=fn;b.appendChild(e);};
+ if(st&&st.cat!=='tbd'){const lp=st.lp||st.c;BM.sel={s:st,pt:[lp[0],lp[1]]};$('bmDot').style.background=st.colHex;$('bmName').textContent=st.name;$('bmWhat').textContent=(st.what||CATS[st.cat].n)+' · '+floorName(st.floor);
+  if(st.door)btn(st.cat==='wc'?'Подойти':'Подойти к входу',true,()=>{closeBigMap();walkToDoor(st);requestLockIfNeeded();});else btn('Подойти',true,()=>{closeBigMap();walkTo(st);requestLockIfNeeded();});
+  if(st.cat!=='wc')btn('Карточка',false,()=>{closeBigMap();openCard(st);});}
+ else{const w=nearestFree(x,z,10,f);if(!w||!isFloorF(f,w[0],w[1])){BM.sel=null;$('bmSel').hidden=true;bmDraw();return;}
+  BM.sel={pt:[w[0],w[1]]};$('bmDot').style.background='#0e7490';$('bmName').textContent=st?'Помещение без подписи':'Проход';$('bmWhat').textContent=floorName(f);
+  btn(f===curFloor?'Перейти сюда':'Перейти сюда · '+floorName(f),true,()=>{closeBigMap();if(mode==='store')exitShop();const yaw=Math.atan2(player.x-w[0],player.z-w[1]);moveTo(f,w[0],w[1],f===curFloor&&Math.hypot(player.x-w[0],player.z-w[1])>1?yaw:player.yaw,0);requestLockIfNeeded();});}
+ $('bmSel').hidden=false;bmDraw();}
+bmC.addEventListener('pointerdown',e=>{bmC.setPointerCapture(e.pointerId);BM.ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});if(BM.ptrs.size===1)BM.down={x:e.clientX,y:e.clientY,moved:0};else{BM.down=null;const a=[...BM.ptrs.values()];BM.pinch=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);}bmC.classList.add('drag');});
+bmC.addEventListener('pointermove',e=>{const p=BM.ptrs.get(e.pointerId);if(!p)return;const r=bmC.getBoundingClientRect();
+ if(BM.ptrs.size===2){p.x=e.clientX;p.y=e.clientY;const a=[...BM.ptrs.values()];const dd=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),mx=(a[0].x+a[1].x)/2-r.left,my=(a[0].y+a[1].y)/2-r.top;if(BM.pinch>0)bmZoom(dd/BM.pinch,mx,my);BM.pinch=dd;return;}
+ const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;BM.ox+=dx;BM.oz+=dy;if(BM.down)BM.down.moved+=Math.abs(dx)+Math.abs(dy);bmDraw();});
+const bmUp=e=>{if(!BM.ptrs.has(e.pointerId))return;BM.ptrs.delete(e.pointerId);if(!BM.ptrs.size)bmC.classList.remove('drag');
+ if(BM.down&&BM.down.moved<8&&e.type==='pointerup'){const r=bmC.getBoundingClientRect();bmSelect(e.clientX-r.left,e.clientY-r.top);}if(!BM.ptrs.size)BM.down=null;};
+bmC.addEventListener('pointerup',bmUp);bmC.addEventListener('pointercancel',bmUp);
+function bmZoom(k,cx,cy){const s0=BM.s,s1=Math.max(1.2,Math.min(40,s0*k));const [x,z]=[(cx-BM.ox)/s0,(cy-BM.oz)/s0];BM.s=s1;BM.ox=cx-x*s1;BM.oz=cy-z*s1;bmDraw();}
+bmC.addEventListener('wheel',e=>{e.preventDefault();const r=bmC.getBoundingClientRect();bmZoom(Math.exp(-e.deltaY*0.0015),e.clientX-r.left,e.clientY-r.top);},{passive:false});
+document.querySelectorAll('.bm-floors button').forEach(b=>b.onclick=()=>{BM.f=+b.dataset.f;BM.sel=null;$('bmSel').hidden=true;updateBMFloors();bmDraw();});
+$('bmX').onclick=()=>{closeBigMap();requestLockIfNeeded();};
+$('bmMe').onclick=()=>{BM.f=curFloor;updateBMFloors();if(mode!=='store')bmCenterOn(player.x,player.z,6);bmDraw();};
+addEventListener('resize',()=>{if(!$('bigmap').hidden){bmSize();bmDraw();}});
 
 function showHint(t){const h=$('hint');h.textContent=t;h.style.opacity=1;clearTimeout(showHint.t);showHint.t=setTimeout(hideHint,9000);}
 function hideHint(){$('hint').style.opacity=0;}
@@ -1112,7 +1178,7 @@ function frameBody(now){
   let f=0,r=0,turn=0;
   // обзор мышью: захваченный курсор — плавно, по смещению мыши
   if(lookDX||lookDY){const kx=calm?1:Math.min(1,dt*30);const mx=lookDX*kx,my=lookDY*kx;lookDX-=mx;lookDY-=my;if(Math.abs(lookDX)<0.05)lookDX=0;if(Math.abs(lookDY)<0.05)lookDY=0;
-   player.yaw-=mx*SENS;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-my*SENS));}
+   player.yaw-=mx*SENS_BASE*PREFS.sens;player.pitch=Math.max(-1.2,Math.min(1.2,player.pitch-my*SENS_BASE*PREFS.sens));}
   // запасной режим, если браузер не даёт скрыть курсор: поворот по положению мыши относительно центра
   if(lockFailed&&mouse.in&&!coarse&&!ptrs.size&&panelsClosed()){const ox=(mouse.x/innerWidth-0.5)*2,oy=(mouse.y/innerHeight-0.5)*2;const dz=0.18;
    const ax=Math.abs(ox)>dz?(Math.abs(ox)-dz)/(1-dz)*Math.sign(ox):0;turn-=ax*Math.abs(ax)*1.4;
@@ -1121,7 +1187,7 @@ function frameBody(now){
   if(keys.ArrowLeft||keys.KeyQ)turn+=1;if(keys.ArrowRight||keys.KeyE)turn-=1;
   f+=-joyV.y;r+=joyV.x;player.yaw+=turn*1.9*dt;
   // плавный разгон и торможение (без анимации — сразу)
-  const maxV=(keys.ShiftLeft||keys.ShiftRight?16:7)*(coarse?1.25:1);const l=Math.hypot(f,r);let tx=0,tz=0;
+  const runK=(keys.ShiftLeft||keys.ShiftRight)?1:(joyV.run||0);const maxV=(7+9*runK)*(coarse?1.1:1);const l=Math.hypot(f,r);let tx=0,tz=0;
   if(l>0.05){const k=Math.min(1,l)/l;f*=k;r*=k;const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw),rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);tx=(fx*f+rx*r)*maxV;tz=(fz*f+rz*r)*maxV;hideHint();}
   const acc=calm?1:Math.min(1,dt*(l>0.05?7:10));player.vx+=(tx-player.vx)*acc;player.vz+=(tz-player.vz)*acc;
   if(Math.abs(player.vx)+Math.abs(player.vz)>0.01){const ox=player.x,oz=player.z;tryMove(player.vx*dt,player.vz*dt);if(Math.abs(player.x-ox)<1e-4)player.vx*=0.5;if(Math.abs(player.z-oz)<1e-4)player.vz*=0.5;}
@@ -1139,7 +1205,8 @@ function frameBody(now){
  if(!calm){world.wheel.rotation.z+=dt*0.04;world.cabins.forEach(c=>{c.rotation.z=-world.wheel.rotation.z;});}
  if(world.target.visible){const b=mode==='top'?topY()+3:(world.target.userData.base||GLASS_H+1.4);world.target.position.y=b+(calm?0:Math.sin(now/300)*0.3);if(!calm)world.target.rotation.y+=dt*1.5;world.target.scale.setScalar(mode==='top'?Math.max(1,(topv.h-topY())/50):1);}
  if(locked&&isFP()&&now-(frame.aimAt||0)>120){frame.aimAt=now;const el=$('aim');let txt='';if(mode==='store'&&SHOP){txt=shopAimText();}else{const t=aimAt();txt=!t?'':t.esc?(curFloor===1?'Эскалатор на 2 этаж · нажми или встань на ленту':'Эскалатор на 1 этаж · нажми или встань на ленту'):t.lift?'Лифт · нажми, чтобы выбрать этаж':(t.s.cat==='tbd'?t.s.name:t.s.name+(t.s.door?' · нажми или зайди в дверь':kioskHasGoods(t.s)?' · нажми, чтобы посмотреть товары':' · нажми, чтобы открыть'));}if(el.textContent!==txt)el.textContent=txt;el.style.opacity=txt?1:0;}
- {const sc_=mode==='store'&&SHOP?SHOP.scene:scene;if(FX.active)FX.render(sc_,cam,curFloor,FY[curFloor]);else renderer.render(sc_,cam);}
+ if(world.mirror)world.mirror.visible=!!world.mirrorOn&&curFloor===1&&mode==='walk';
+ if(!fitOpen()){const sc_=mode==='store'&&SHOP?SHOP.scene:scene;if(FX.active)FX.render(sc_,cam,curFloor,FY[curFloor],mode==='walk'&&!ride);else renderer.render(sc_,cam);}
  if(now-miniAt>80){drawMini();miniAt=now;}
 }
 const _q=new THREE.Quaternion(),_s=new V3(),_p=new V3(),_Y=new V3(0,1,0);
@@ -1240,8 +1307,6 @@ function buildShop(s){
  const es=new THREE.Mesh(new THREE.PlaneGeometry(2.2,0.48),new THREE.MeshBasicMaterial({map:exitT,toneMapped:false,side:THREE.DoubleSide}));es.position.y=3.15;exitDoor.add(es);
  exitDoor.position.set(0,0,D/2-0.02);sc.add(exitDoor);es.userData.exit=true;pick.push(es);
  const matE=new THREE.Mesh(new THREE.PlaneGeometry(DWs,1.4),new THREE.MeshStandardMaterial({color:LIN('#2c2f33'),roughness:.95}));matE.rotation.x=-Math.PI/2;matE.position.set(0,0.01,D/2-0.8);sc.add(matE);
- // корзины у входа
- {const bm=new THREE.MeshStandardMaterial({color:brand,roughness:.5});for(let k=0;k<5;k++){const b=new THREE.Mesh(B(0.45,0.22,0.32,0,0.11+k*0.09,0),bm);b.position.set(-DWs/2-1.2,0,D/2-1.2);sc.add(b);}colliders.push([-DWs/2-1.5,-DWs/2-0.9,D/2-1.4,D/2-1.0]);}
  // касса у входа
  if(s.cat!=='food'){const desk=new THREE.Mesh(B(3,1.05,0.8,0,0.525,0),new THREE.MeshStandardMaterial({color:SX?LIN(ST.desk):brand,roughness:.4}));desk.position.set(W/2-4,0,D/2-3.2);sc.add(desk);colliders.push([W/2-5.6,W/2-2.4,D/2-3.7,D/2-2.7]);
   const top=new THREE.Mesh(B(3.1,0.05,0.9,0,1.07,0),SX?new THREE.MeshStandardMaterial({color:LIN(ST.deskTop),roughness:.35}):MAT.white);top.position.copy(desk.position);sc.add(top);}
@@ -1339,19 +1404,9 @@ function buildShop(s){
   const q=new THREE.Quaternion();hangers.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);mtx.compose(new V3(o.x,o.y,o.z),q,new V3(1,1,1));him.setMatrixAt(i,mtx);});sc.add(him);
   const tg=B(0.07,0.035,0.004,0,-0.01,0);const tim=new THREE.InstancedMesh(tg,new THREE.MeshBasicMaterial({color:LIN('#ffffff')}),Math.max(1,tags.length));
   tags.forEach((o,i)=>{q.setFromAxisAngle(new V3(0,1,0),o.ry);const fx=Math.sin(o.ry)*0.2,fz=Math.cos(o.ry)*0.2;mtx.compose(new V3(o.x+fx,o.y,o.z+fz),q,new V3(1,1,1));tim.setMatrixAt(i,mtx);});sc.add(tim);}
- // манекены у отделов одежды и примерочные
- {const parts=humanParts();const white=new THREE.MeshStandardMaterial({color:LIN('#f1efeb'),roughness:.3});const mq=[];
-  zones.forEach(z=>{if(z.dep.lay==='racks'){const it=z.dep.items;[[z.cx-z.w/2+0.5,z.cz+z.d/2-0.5],[z.cx+z.w/2-0.5,z.cz+z.d/2-0.5]].forEach(([x,zz],k)=>{if(!shopBlockedRaw(colliders,W,D,x,zz,0)){mq.push({x,z:zz,c:LIN(it[k%it.length].color),p:it[k%it.length]});colliders.push([x-0.3,x+0.3,zz-0.3,zz+0.3]);}});}});
-  if(mq.length){const tor=new THREE.InstancedMesh(parts.torso,new THREE.MeshStandardMaterial({roughness:.7}),mq.length),lg=new THREE.InstancedMesh(parts.legs,new THREE.MeshStandardMaterial({color:LIN('#2c3440'),roughness:.8}),mq.length),ar=new THREE.InstancedMesh(parts.arms,white,mq.length),hd=new THREE.InstancedMesh(parts.head,white,mq.length),st=new THREE.InstancedMesh(Cy(0.25,0.25,0.03,0,0.015,0,16),MAT.darkMetal,mq.length);
-   mq.forEach((m,i)=>{mtx.makeTranslation(m.x,0,m.z);[tor,lg,ar,hd,st].forEach(o=>o.setMatrixAt(i,mtx));tor.setColorAt(i,m.c);});tor.instanceColor.needsUpdate=true;tor.userData.prods=mq.map(m=>m.p);[tor,lg,ar,hd,st].forEach(o=>sc.add(o));pick.push(tor);}
-  if(zones.some(z=>z.dep.lay==='racks')){const cm=new THREE.MeshStandardMaterial({color:brand,roughness:.9,side:THREE.DoubleSide}),pm=new THREE.MeshStandardMaterial({color:LIN('#f2f0ec'),roughness:.6});
-   const n=3,cw=1.3,x0f=-W/2+0.3,zf=-D/2+0.3;for(let k=0;k<n;k++){const cx=x0f+0.1,cz=zf+2.2+k*cw;
-    const wall=new THREE.Mesh(B(1.4,2.3,0.05,0.7,1.15,-cw/2),pm);wall.position.set(cx,0,cz);sc.add(wall);
-    const cur=new THREE.Mesh(new THREE.PlaneGeometry(cw-0.1,2.0),cm);cur.rotation.y=Math.PI/2;cur.position.set(cx+1.4,1.15,cz);sc.add(cur);
-    colliders.push([cx,cx+1.45,cz-cw/2,cz+cw/2]);}
-   const last=new THREE.Mesh(B(1.4,2.3,0.05,0.7,1.15,0),pm);last.position.set(x0f+0.1,0,zf+2.2+n*cw-cw/2);sc.add(last);
-   const ft=canvasTex(512,112,(g,w,h)=>{g.fillStyle='#1f2226';rr(g,2,2,w-4,h-4,14);g.fill();g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';g.font='800 44px Manrope, sans-serif';g.fillText('Примерочные',w/2,h/2);});
-   const fs=new THREE.Mesh(new THREE.PlaneGeometry(1.8,0.4),new THREE.MeshBasicMaterial({map:ft,toneMapped:false,side:THREE.DoubleSide}));fs.rotation.y=Math.PI/2;fs.position.set(x0f+1.5,2.6,zf+2.2+cw);sc.add(fs);}}
+ // примерочная (в зале одежды манекенов нет: окрашенная фигура вместо одетой вещи только путала)
+ let fit=null;{
+  if(zones.some(z=>z.dep.lay==='racks'||z.dep.items.some(p=>FIT.isWearable(p))))fit=buildFittingBooth(sc,s,W,D,brand,brandHex,colliders,pick);}
  // инстансы товаров
  const M=models();const byModel={};
  Object.entries(inst).forEach(([model,arr])=>{
@@ -1371,7 +1426,55 @@ function buildShop(s){
    ms[0].setColorAt(i,LIN(cl[i%cl.length]));ms[2].setColorAt(i,LIN(cl[i%cl.length]));ms[1].setColorAt(i,LIN('#2c3440'));ms[3].setColorAt(i,LIN(sk[i%sk.length]));}
   ms.forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true;sc.add(m);});
   SHOP_PEOPLE={list:ppl,meshes:ms,r};}
- return{s,scene:sc,colliders,pick,zones,W,D,cat,dw:DWs,leaves:[lv1,lv2],doorOpen:0};}
+ return{s,scene:sc,colliders,pick,zones,W,D,cat,dw:DWs,leaves:[lv1,lv2],doorOpen:0,fit};}
+// Примерочная в зале: заметная кабина в левом переднем углу (видна сразу от входа), открытой стороной к залу.
+// Светящаяся арка, световой короб «Примерочная» на две стороны, шторка, зеркало внутри, пятно света на полу.
+// Зашёл внутрь или нажал на неё — открывается примерочная с фигурой (src/shop/fitting.js).
+function buildFittingBooth(sc,s,W,D,brand,brandHex,colliders,pick){
+ const cx=-W/2+1.55,cz=D/2-4.3,hw=1.35,hd=1.25,H=2.55,g=new THREE.Group();g.position.set(cx,0,cz);sc.add(g);
+ const wall=new THREE.MeshStandardMaterial({color:brand.clone().lerp(LIN('#ffffff'),0.12),roughness:.7});
+ const inner=new THREE.MeshStandardMaterial({color:LIN('#efe7dc'),roughness:.85});
+ const led=new THREE.MeshBasicMaterial({color:new THREE.Color(2.4,2.1,1.7),toneMapped:false});
+ const box=(w,h,d,x,y,z,m)=>{const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);g.add(o);return o;};
+ // боковые стены (снаружи — цвет магазина, внутри — светлые) и крыша
+ [-1,1].forEach(k=>{box(2*hw,H,0.08,0,H/2,k*hd,wall);box(2*hw-0.1,H-0.1,0.01,0,H/2,k*(hd-0.05),inner);});
+ box(0.08,H,2*hd,-hw,H/2,0,inner);box(2*hw+0.1,0.1,2*hd+0.1,0,H+0.05,0,wall);
+ // светящаяся арка по проёму
+ [-1,1].forEach(k=>box(0.06,H,0.06,hw,H/2,k*(hd-0.02),led));box(0.06,0.06,2*hd,hw,H-0.02,0,led);
+ // световой короб: на крыше лицом в зал и на стене лицом ко входу
+ const signT=canvasTex(1024,200,(c,w,h)=>{c.fillStyle='#16181b';rr(c,0,0,w,h,36);c.fill();c.fillStyle=brandHex;c.fillRect(0,h-16,w,16);
+  c.strokeStyle='#fff';c.lineWidth=12;c.lineCap='round';c.lineJoin='round';c.beginPath();c.moveTo(120,62);c.quadraticCurveTo(120,40,142,40);c.quadraticCurveTo(162,40,162,60);c.quadraticCurveTo(162,76,142,86);c.lineTo(62,140);c.lineTo(222,140);c.closePath();c.stroke();
+  c.fillStyle='#fff';c.textAlign='left';c.textBaseline='middle';c.font='800 92px Manrope, sans-serif';c.fillText('Примерочная',270,96);});
+ const signM=new THREE.MeshBasicMaterial({map:signT,toneMapped:false});
+ const s1=new THREE.Mesh(new THREE.PlaneGeometry(2.5,0.49),signM);s1.position.set(hw+0.06,H+0.42,0);s1.rotation.y=Math.PI/2;g.add(s1);
+ const s2=new THREE.Mesh(new THREE.PlaneGeometry(2.5,0.49),signM);s2.position.set(0,H+0.42,hd+0.06);g.add(s2);
+ box(0.08,0.55,2.6,hw+0.01,H+0.42,0,MAT.darkMetal);box(2.6,0.55,0.08,0,H+0.42,hd+0.01,MAT.darkMetal);
+ // шторка, собранная у одной стороны проёма
+ {const cg=new THREE.PlaneGeometry(0.7,2.3,20,1);const P=cg.attributes.position;for(let i=0;i<P.count;i++)P.setZ(i,Math.sin(P.getX(i)*30)*0.05);cg.computeVertexNormals();
+  const cu=new THREE.Mesh(cg,new THREE.MeshStandardMaterial({color:brand.clone().multiplyScalar(0.6),roughness:.95,side:THREE.DoubleSide}));cu.rotation.y=Math.PI/2;cu.position.set(hw-0.1,1.2,-hd+0.42);g.add(cu);
+  box(0.03,0.03,2*hd,hw-0.1,2.38,0,MAT.darkMetal);}
+ // зеркало с подсветкой, крючок, коврик
+ const mir=new THREE.Mesh(new THREE.PlaneGeometry(0.85,1.9),new THREE.MeshStandardMaterial({color:LIN('#d5dde2'),roughness:.03,metalness:1}));mir.position.set(-hw+0.06,1.15,0);mir.rotation.y=Math.PI/2;g.add(mir);
+ [-1,1].forEach(k=>box(0.02,1.95,0.025,-hw+0.06,1.15,k*0.45,led));
+ const rug=new THREE.Mesh(new THREE.CircleGeometry(0.7,40),new THREE.MeshStandardMaterial({color:LIN('#d9cdbd'),roughness:.95}));rug.rotation.x=-Math.PI/2;rug.position.set(-0.1,0.012,0);g.add(rug);
+ // пятно света на полу перед проёмом
+ const glowT=canvasTex(256,256,(c,w,h)=>{const gr=c.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);gr.addColorStop(0,'rgba(255,236,200,.55)');gr.addColorStop(1,'rgba(255,236,200,0)');c.fillStyle=gr;c.fillRect(0,0,w,h);});
+ const glow=new THREE.Mesh(new THREE.PlaneGeometry(3.6,3.6),new THREE.MeshBasicMaterial({map:glowT,transparent:true,depthWrite:false,toneMapped:false}));glow.rotation.x=-Math.PI/2;glow.position.set(hw+0.9,0.014,0);g.add(glow);
+ const lamp=new THREE.PointLight(LIN('#ffe3bd'),6,6,2);lamp.position.set(0,2.2,0);g.add(lamp);
+ // невидимая коробка для нажатия
+ const hit=new THREE.Mesh(new THREE.BoxGeometry(2*hw+0.3,H+1,2*hd+0.3),new THREE.MeshBasicMaterial({visible:false}));hit.position.set(0,(H+1)/2,0);hit.userData.fit=true;g.add(hit);pick.push(hit);
+ colliders.push([cx-hw-0.1,cx+hw+0.05,cz+hd-0.06,cz+hd+0.06],[cx-hw-0.1,cx+hw+0.05,cz-hd-0.06,cz-hd+0.06],[cx-hw-0.1,cx-hw+0.06,cz-hd,cz+hd]);
+ return{cx,cz,x0:cx-hw+0.15,x1:cx+hw-0.25,z0:cz-hd+0.15,z1:cz+hd-0.15,out:{x:cx+hw+1.6,z:cz}};}
+// вход в кабину ногами: стоишь внутри — открывается примерочная; после выхода нужно выйти из кабины
+let fitArmed=true;
+function updateFittingBooth(){if(mode!=='store'||!SHOP||!SHOP.fit||fitOpen()||anim)return;const f=SHOP.fit,inside=player.x>f.x0&&player.x<f.x1&&player.z>f.z0&&player.z<f.z1;
+ if(!inside){fitArmed=true;return;}if(fitArmed){fitArmed=false;openFitting();}}
+const FIT=createFitting({fmtPrice,thumb:p=>thumbURL(p),siteOf,coarse,catalogOf,
+ onOpen:()=>{releaseLock();updateCross();},
+ onClose:()=>{if(mode==='store'&&SHOP&&SHOP.fit){const f=SHOP.fit,inside=player.x>f.x0-0.3&&player.x<f.x1+0.3&&player.z>f.z0-0.3&&player.z<f.z1+0.3;if(inside){player.x=f.out.x;player.z=f.out.z;player.yaw=-Math.PI/2;player.pitch=-0.05;player.vx=player.vz=0;applyPose(walkPose());}fitArmed=false;}requestLockIfNeeded();}});
+function fitOpen(){return FIT.isOpen;}
+function openFitting(){if(fitOpen())return;if(!$('shop').hidden)closeShopPanel(false);closeCard();releaseLock();FIT.open(mode==='store'&&SHOP?SHOP.s:(PS&&PS.s)||null);}
+FIT.mountBodyControls($('bodyPrefs'));
 let SHOP_PEOPLE=null;
 // светильники зала по стилю; возвращает точки под светом (для световых пятен)
 let poolTex=null;
@@ -1496,17 +1599,20 @@ function updateMallDoors(dt){if(!world.doors)return;let changed=false;const px=p
   if(near&&mode==='walk'&&(!SHOP||SHOP.s!==s||SHOP.feedV!==!!s._feed)&&Math.hypot(dx,dz)<4.5&&!updateMallDoors.busy){updateMallDoors.busy=true;loadFeed(s).then(()=>{if(mode==='walk'){if(SHOP&&(SHOP.s!==s||SHOP.feedV!==!!s._feed))disposeShop();if(!SHOP){SHOP=buildShop(s);SHOP.feedV=!!s._feed;}}updateMallDoors.busy=false;});}
   if(mode==='walk'&&!anim&&!ride&&d.floor===curFloor&&doorCooldown<=0&&d.open>0.5&&along<-0.05&&along>-2&&Math.abs(lat)<d.w/2){enterShop(s,{along,lat});}});
  if(changed)updateDoors();}
-function updateShopExit(dt){if(mode!=='store'||!SHOP)return;const dz=SHOP.D/2-player.z;const near=dz<5&&Math.abs(player.x)<SHOP.dw/2+2;
+function updateShopExit(dt){if(mode!=='store'||!SHOP)return;updateFittingBooth();const dz=SHOP.D/2-player.z;const near=dz<5&&Math.abs(player.x)<SHOP.dw/2+2;
  const t=near?1:0;if(Math.abs(SHOP.doorOpen-t)>0.001){SHOP.doorOpen=calm?t:SHOP.doorOpen+(t-SHOP.doorOpen)*Math.min(1,(dt||0.016)*4);updateShopDoor();}
  if(!anim&&player.z>SHOP.D/2+0.05&&Math.abs(player.x)<SHOP.dw/2)exitShop({along:player.z-SHOP.D/2,lat:player.x});}
 
 /* ---------- Выбор в зале ---------- */
 function shopHit(x,y){ray.setFromCamera(new THREE.Vector2(x/innerWidth*2-1,-(y/innerHeight)*2+1),cam);const hits=ray.intersectObjects(SHOP.pick,false);
- for(const h of hits){const o=h.object;if(o.userData.exit)return{exit:true,dist:h.distance};if(o.userData.dept!=null)return{dept:o.userData.dept,dist:h.distance};
+ for(const h of hits){const o=h.object;if(o.userData.exit)return{exit:true,dist:h.distance};if(o.userData.fit)return{fit:true,dist:h.distance};if(o.userData.dept!=null)return{dept:o.userData.dept,dist:h.distance};
   if(o.userData.prods&&h.instanceId!=null)return{prod:o.userData.prods[h.instanceId],dist:h.distance};if(o.userData.prod)return{prod:o.userData.prod,dist:h.distance};}return null;}
-function shopPick(x,y){const h=shopHit(x,y);if(!h)return;if(h.exit){exitShop();return;}
- if(h.prod&&h.dist<14)openProduct(h.prod);}
-function shopAimText(){const h=shopHit(innerWidth/2,innerHeight/2);if(!h||h.dist>12)return'';if(h.exit)return'Выход в галерею · нажми';if(h.dept!=null)return'Отдел «'+SHOP.cat[h.dept].title+'»';if(h.prod)return h.prod.name+' · '+fmtPrice(h.prod.price);return'';}
+// товар можно взять только вблизи, как в настоящем магазине; издалека — подсказка подойти
+const REACH=3.2,REACH_TOUCH=4.2;const reach=()=>coarse?REACH_TOUCH:REACH;
+function shopPick(x,y){const h=shopHit(x,y);if(!h)return;if(h.exit){if(h.dist<6)exitShop();else showHint('Подойди к двери, чтобы выйти');return;}
+ if(h.fit){if(h.dist<reach()+1)openFitting();else showHint('Подойди к примерочной');return;}
+ if(h.prod){if(h.dist<reach())openProduct(h.prod);else showHint('Подойди ближе, чтобы посмотреть товар');}}
+function shopAimText(){const h=shopHit(innerWidth/2,innerHeight/2);if(!h||h.dist>12)return'';if(h.exit)return h.dist<6?'Выход в галерею · нажми':'Выход в галерею';if(h.fit)return h.dist<reach()+1?'Примерочная · нажми, чтобы войти':'Примерочная';if(h.dept!=null)return'Отдел «'+SHOP.cat[h.dept].title+'»';if(h.prod)return h.dist<reach()?h.prod.name+' · '+fmtPrice(h.prod.price):'Подойди ближе';return'';}
 function goToDept(i){const z=SHOP.zones[i];if(!z)return;let tx=z.cx,tz=z.cz+z.d/2+0.8;for(let k=0;k<20&&shopBlocked(tx,tz);k++)tz+=0.4;
  player.x=tx;player.z=Math.min(tz,SHOP.D/2-1.2);player.yaw=0;player.pitch=-0.12;anim={t:0,from:{p:cam.position.clone(),q:cam.quaternion.clone()},m:'walk'};}
 
@@ -1627,6 +1733,10 @@ function renderProduct(p,onMan,size){const s=PS.s,el=$('shop'),fi=p.feed?feedInf
   add.onclick=()=>{if(!put())return;add.textContent='В корзине ✓';add.classList.add('ok');showHint('«'+p.name+'» в корзине. Корзина — кнопка с сумкой вверху справа');setTimeout(()=>{add.textContent='Добавить ещё';add.classList.remove('ok');},1600);};
   now.onclick=()=>{if(!put())return;closeShopPanel(false);openCart(true);};
   buy.append(add,now);w.appendChild(buy);}
+ // примерочная: вещь можно взять и примерить вместе с вещами из других магазинов
+ if(FIT.isWearable(p)){const fr=el_('div','sh-row sh-fit');const fb=el_('button','btn');const sync=()=>{const on=FIT.has(p,s);fb.textContent=on?'В примерочной ✓ · открыть':'В примерочную';fb.classList.toggle('ok',on);};sync();
+  fb.onclick=()=>{if(!FIT.has(p,s)){FIT.add(p,s,true);sync();showHint('«'+p.name+'» — в примерочной ('+FIT.count()+' вещ.). '+(mode==='store'&&SHOP&&SHOP.fit?'Кабина — в левом углу у входа':'Примерить можно в любом магазине одежды'));}else openFitting();};
+  fr.appendChild(fb);w.appendChild(fr);}
  // плашка с описанием, как в интернет-магазине
  const plate=el_('div','sh-plate');
  if(p.feed){if(p.desc){plate.appendChild(el_('h4',null,'Описание'));plate.appendChild(el_('p',null,p.desc));}
@@ -1702,20 +1812,31 @@ async function start(){
  {const w=nearestFree(player.x,player.z);if(w){player.x=w[0];player.z=w[1];}}
  const qs=new URLSearchParams(location.search);if(qs.has('calm'))calm=qs.get('calm')!=='0';setCalm(calm);
  applyStyle(qs.get('style')||'coolG');
- FX.patchFloors(floorMatsF);FX.init();
- if(qs.get('fx')==='0')FX.setTier(0);else if(qs.has('q'))FX.setTier(+qs.get('q'));
+ FX.patchFloors(floorMatsF);buildFloorMirror();FX.init();
+ if(qs.get('fx')==='0')FX.setTier(0);else if(qs.has('q'))FX.setTier(+qs.get('q'));else if(PREFS.gfx!=='auto')FX.setMode(PREFS.gfx);
  buildChips();updateFloorUI();sizeMini();updateJoy();setVis();updateCross();applyPose(walkPose());
  $('loading').hidden=true;
- showHint(coarse?'Джойстик — идти, проведи по экрану — осмотреться. Нажми на витрину.':'Ты у входа 2. Кликни по сцене — курсор скроется, и обзор пойдёт за мышью · WASD — идти · Esc — вернуть курсор');
+ showHint(coarse?'Джойстик — идти, палец за краем круга — бежать. Проведи по экрану — осмотреться.':'Ты у входа 2. Кликни по сцене — курсор скроется, и обзор пойдёт за мышью · WASD — идти · Esc — вернуть курсор');
  requestAnimationFrame(frame);
 }
+// Поддельное отражение пола 1 этажа: зеркальная копия витрин, перекрытия и светильников под полом (те же
+// геометрия и материалы, без второго прохода рендера), пол становится чуть прозрачным. Под копией — подложка
+// цвета пола, чтобы сквозь пол не было видно неба. Включает fx.js, когда живого отражения нет (телефон, «Быстрее»).
+function buildFloorMirror(){const grp=new THREE.Group();grp.scale.y=-1;grp.visible=false;let n=0;
+ ['stores','slab','roof'].forEach(name=>{const src=world.groups[name];if(!src)return;src.updateMatrixWorld(true);src.traverse(o=>{if(!o.isMesh||!o.visible||o.material.visible===false)return;let p=o.parent;while(p){if(!p.visible)return;p=p.parent;}
+  let m;if(o.isInstancedMesh){m=new THREE.InstancedMesh(o.geometry,o.material,o.count);m.instanceMatrix=o.instanceMatrix;if(o.instanceColor)m.instanceColor=o.instanceColor;}else m=new THREE.Mesh(o.geometry,o.material);
+  m.matrixAutoUpdate=false;m.matrix.copy(o.matrixWorld);m.renderOrder=-5;grp.add(m);n++;});});
+ const base=new THREE.Mesh(new THREE.PlaneGeometry(bb.x1-bb.x0+200,bb.z1-bb.z0+200),new THREE.MeshBasicMaterial({color:LIN('#cdbfa8'),fog:true}));base.rotation.x=Math.PI/2;base.position.set((bb.x0+bb.x1)/2,12,(bb.z0+bb.z1)/2);base.renderOrder=-6;grp.add(base);
+ scene.add(grp);world.mirror=grp;world.mirrorN=n;
+ // в снимок окружения для блеска пола не попадают люди, сама зеркальная копия и подписи вида сверху — так дешевле
+ FX.set({onMirror:on=>{world.mirrorOn=on;},mirrorGate:()=>curFloor===1&&mode==='walk',probeHide:[world.groups.people,grp,world.groups.spots,world.groups.toplabels1,world.groups.toplabels2]});}
 // пробные стили оформления: ?style=warm|game|night
 const walkPoints=(f,step)=>{const st=Math.round(step/CELL),o=[];for(let j=2;j<GH;j+=st)for(let i=2;i<GW;i+=st){if(!GRIDS[f][j*GW+i])continue;const [x,z]=fromPx(i,j);if(!blockedF(f,x,z))o.push([x,z]);}return o;};
 const applyStyle=name=>makeStyler({scene,renderer,hemi,sun,sky:skyMesh,S,MAT,floors:floorMats,slabMat:world.slabMat,roofMat:world.roofMat,railMat:world.railMat,colMat:world.colMat,merged:MERGED,signAtlases,PER,walkPoints,FY,G,lockFog:(n,f)=>{FOGW=[n,f];}})(name);
 // Отладочный доступ для тестов и Claude Code: открой страницу с ?debug
 if(new URLSearchParams(location.search).has('debug'))window.__maxi={loadFeed,catalogOf,onlineKind,openCard,setPS:v=>{PS=v;},get PS(){return PS},renderProduct,get mode(){return mode},player,S,keys,world,get SHOP(){return SHOP},cam,renderer,scene,
  enterShop,exitShop,openProduct,walkToDoor,walkTo,setMode,blocked,isWalk,get locked(){return locked},get loaded(){return $('loading').hidden},
- get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX,setShopStyle,INTERIORS,decor:()=>[world.decor1,world.decor2],pickAt:(x,y)=>pick(x,y,false)};
+ get floor(){return curFloor},get anim(){return anim},startEsc,goEscalator,escEntry,get escs(){return world.escs},auditMap,setFloor,goFloor,startRide,get ride(){return ride},get lifts(){return world.lifts},cart,openCart,setCalm,get calm(){return calm},topTap,get topv(){return topv},openLiftPanel,showTop,setStyle:applyStyle,FX,setShopStyle,INTERIORS,decor:()=>[world.decor1,world.decor2],pickAt:(x,y)=>pick(x,y,false),FIT,openFitting,openBigMap,PREFS};
 start();
 
 }

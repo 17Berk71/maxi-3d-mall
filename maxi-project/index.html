@@ -65,9 +65,43 @@
   </div>
 </div>
 
+<div id="fitting" hidden role="dialog" aria-label="Примерочная">
+  <div class="fit-stage">
+    <canvas id="fitC" aria-label="Фигура в примерочной: проведи, чтобы повернуть"></canvas>
+    <div class="fit-views" id="fitViews"><button class="btn" data-v="all">Целиком</button><button class="btn" data-v="top">Верх</button><button class="btn" data-v="bottom">Низ</button><button class="btn" data-v="turn">Повернуть</button></div>
+  </div>
+  <aside class="fit-panel panel" id="fitPanel">
+    <div class="fit-head"><b id="fitShop">Примерочная</b><button class="btn" id="fitX">Выйти</button></div>
+    <div class="fit-tabs" id="fitTabs" role="tablist"><button data-t="items" role="tab">Вещи</button><button data-t="body" role="tab">Фигура</button><button data-t="looks" role="tab">Образы</button></div>
+    <div class="fit-body-s" id="fitBody"></div>
+    <p class="sh-demo">Примерка приблизительная: вещи показаны простыми формами в цвете вещи. Посадку и размер сверяй на сайте магазина.</p>
+  </aside>
+</div>
+<div id="bigmap" hidden role="dialog" aria-label="Карта">
+  <div class="bm-top panel">
+    <b>Карта</b>
+    <div class="seg bm-floors" role="group" aria-label="Этаж на карте"><button data-f="1">1 этаж</button><button data-f="2">2 этаж</button></div>
+    <button class="icon-s" id="bmMe" title="Где я" aria-label="Показать, где я">◎</button>
+    <button class="icon-s" id="bmX" aria-label="Закрыть карту">×</button>
+  </div>
+  <canvas id="bmC"></canvas>
+  <div class="bm-hint" id="bmHint">Нажми на магазин или на проход, куда хочешь перейти. Двигай карту пальцем или мышью, приближай двумя пальцами или колёсиком</div>
+  <div class="bm-sel panel" id="bmSel" hidden><div class="bm-sel-t"><i id="bmDot"></i><div><b id="bmName"></b><small id="bmWhat"></small></div></div><div class="row" id="bmBtns"></div></div>
+</div>
 <div class="overlay" id="info" hidden>
   <div class="sheet panel">
+    <button class="x" id="infoX" aria-label="Закрыть">×</button>
+    <h3>Настройки</h3>
+    <div class="set">
+      <label class="set-h" for="sensR"><b>Чувствительность обзора</b><small id="sensV"></small></label>
+      <input type="range" id="sensR" min="0.4" max="2.5" step="0.05" aria-describedby="sensV">
+    </div>
+    <div class="set">
+      <div class="set-h"><b>Графика</b><small id="gfxNote"></small></div>
+      <div class="seg3" id="gfxSeg" role="radiogroup" aria-label="Качество графики"><button data-v="auto" role="radio">Авто</button><button data-v="best" role="radio">Лучше</button><button data-v="fast" role="radio">Быстрее</button></div>
+    </div>
     <label class="switch"><input type="checkbox" id="calmT"><span class="sw"></span><span><b>Без анимации</b><small>Без плавных перелётов, движения людей и вращения. Переходы — сразу</small></span></label>
+    <details class="set body-set"><summary><b>Фигура для примерочной</b><small>Рост и обхваты — по ним подбирается фигура в примерочной</small></summary><div id="bodyPrefs"></div></details>
     <h3>Как устроен этот концепт</h3>
     <p><b>Планировка</b> собрана из снимков Яндекс Карт обоих этажей: помещения разбиты так же, как на картах, коридоры и островки повторяют настоящие. Северные части самых больших помещений, которых нет на снимках, достроены по официальной схеме ТРЦ. Масштаб по линейке карт, так что расстояния близки к настоящим.</p>
     <p><b>Вид сверху</b> показывает каждое помещение своим цветом, оттенок зависит от категории. Серые помещения — без подписи на картах.</p>

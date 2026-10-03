@@ -17,6 +17,7 @@ const check = (ok, what) => { if (!ok) fails.push(what); console.log((ok ? '  �
 
 async function open(viewport, extra = {}, query = '') {
   const page = await browser.newPage(Object.assign({viewport, ignoreHTTPSErrors: true}, extra));
+  page.setDefaultTimeout(120000); // в облаке без видеокарты кадр рисуется секундами
   const tag = viewport.width + '×' + viewport.height;
   page.on('pageerror', e => errors.push(tag + ': ' + e.message));
   // шрифт с Google Fonts может не загрузиться без интернета — это не ошибка приложения, есть запасной шрифт
@@ -29,14 +30,14 @@ async function open(viewport, extra = {}, query = '') {
   return page;
 }
 // скриншот после того, как камера долетела
-const shot = async (page, name) => { await page.waitForFunction(() => !window.__maxi.anim, null, {timeout: 30000}).catch(() => {}); await page.waitForTimeout(200); await page.screenshot({path: OUT + name + '.png'}); };
+const shot = async (page, name) => { await page.waitForFunction(() => !window.__maxi.anim, null, {timeout: 90000}).catch(() => {}); await page.waitForTimeout(200); await page.screenshot({path: OUT + name + '.png'}); };
 // встать перед дверью магазина (на его этаже) и шагнуть в проём
 async function enter(page, name) {
   await page.evaluate(n => { const T = window.__maxi, s = T.S.find(x => x.name === n); T.walkToDoor(s); }, name);
-  await page.waitForFunction(() => !window.__maxi.anim, null, {timeout: 30000});
+  await page.waitForFunction(() => !window.__maxi.anim, null, {timeout: 90000});
   await page.waitForTimeout(1600);
   await page.evaluate(n => { const T = window.__maxi, d = T.S.find(x => x.name === n).door; T.player.x = d.c.x - d.n.x * 0.3; T.player.z = d.c.z - d.n.z * 0.3; }, name);
-  await page.waitForFunction(() => window.__maxi.mode === 'store', null, {timeout: 20000});
+  await page.waitForFunction(() => window.__maxi.mode === 'store', null, {timeout: 90000});
   await page.waitForTimeout(1200);
 }
 
@@ -70,16 +71,17 @@ await page.waitForTimeout(1500);
 check(await page.isVisible('#lift'), 'панель лифта у дверей');
 await shot(page, '06-lift-panel');
 await page.click('#liftB1');
-await page.waitForFunction(() => window.__maxi.ride && window.__maxi.ride.phase === 2, null, {timeout: 20000});
+// без видеокарты кадр длится дольше фазы движения кабины — ждём «едет или уже приехал»
+await page.waitForFunction(() => (window.__maxi.ride && window.__maxi.ride.phase >= 2) || window.__maxi.floor === 1, null, {timeout: 60000});
 await page.waitForTimeout(700);
 await shot(page, '07-lift-ride');
-await page.waitForFunction(() => !window.__maxi.ride, null, {timeout: 30000});
+await page.waitForFunction(() => !window.__maxi.ride, null, {timeout: 90000});
 check(await page.evaluate(() => window.__maxi.floor === 1), 'лифт привёз на первый этаж');
 await shot(page, '08-lift-arrived');
 
 // эскалатор: встать на ленту на первом этаже — приехать на второй
 await page.evaluate(() => { const T = window.__maxi; T.setFloor(1); T.goEscalator(T.escs[0]); });
-await page.waitForFunction(() => window.__maxi.ride && window.__maxi.ride.kind === 'esc' && window.__maxi.ride.phase === 1, null, {timeout: 30000});
+await page.waitForFunction(() => window.__maxi.ride && window.__maxi.ride.kind === 'esc' && window.__maxi.ride.phase === 1, null, {timeout: 90000});
 await page.waitForTimeout(2500);
 await page.screenshot({path: OUT + '08b-escalator-ride.png'});
 await page.waitForFunction(() => !window.__maxi.ride, null, {timeout: 40000});
@@ -94,7 +96,8 @@ console.log('  узкие места: 1 этаж — ' + audit[1].narrow + ', 2 
 // Спортмастер: товар, манекен, корзина
 await enter(page, 'Спортмастер Pro');
 await shot(page, '09-shop-sportmaster');
-await page.evaluate(() => window.__maxi.openProduct(window.__maxi.SHOP.cat[1].items[0]));
+// вещь без фото (у вещей с фото вместо 3D — фото, вкладки «На манекене» нет)
+await page.evaluate(() => { const W = ['jacket', 'pants', 'tshirt', 'longsleeve', 'dress', 'shoe'], p = window.__maxi.SHOP.cat.flatMap(d => d.items).find(p => !p.photo && W.includes(p.model)); window.__maxi.openProduct(p); });
 await page.waitForTimeout(1200);
 await page.click('#shop .sh-seg .sh-tab:nth-child(2)'); await page.waitForTimeout(800);
 await page.click('#shop .sh-buy .btn.pri');
@@ -103,9 +106,26 @@ await page.click('#shop .sh-size:nth-child(3)');
 await page.click('#shop .sh-buy .btn.pri');
 check(await page.evaluate(() => window.__maxi.cart.count() === 1), 'товар в корзине');
 await shot(page, '10-product-mannequin');
+// примерочная: вещь в примерочную, кабина в зале, окно с фигурой
+await page.click('#shop .sh-fit .btn'); await page.waitForTimeout(300);
+check(await page.evaluate(() => window.__maxi.FIT.count() >= 1 && window.__maxi.FIT.worn.length >= 1), 'вещь взята в примерочную и надета');
+check(await page.evaluate(() => !!(window.__maxi.SHOP.fit)), 'в зале магазина одежды есть кабина примерочной');
+await page.evaluate(() => window.__maxi.openFitting()); await page.waitForTimeout(2500);
+check(await page.isVisible('#fitting'), 'окно примерочной открылось');
+await page.screenshot({path: OUT + '10b-fitting.png'});
+await page.click('#fitTabs [data-t="body"]'); await page.waitForTimeout(600);
+check(await page.evaluate(() => document.querySelectorAll('#fitBody input[type=range]').length >= 5), 'ползунки фигуры');
+await page.click('#fitX'); await page.waitForTimeout(500);
+check(await page.isHidden('#fitting'), 'примерочная закрылась');
 await page.evaluate(() => window.__maxi.exitShop());
 await page.waitForFunction(() => window.__maxi.mode === 'walk', null, {timeout: 10000});
 await shot(page, '11-back-to-gallery');
+// большая карта: нажатие на мини-карту
+// клик через DOM: Playwright в облаке без видеокарты не успевает проверить точку нажатия по холсту
+await page.evaluate(() => document.getElementById('mini').click()); await page.waitForTimeout(800);
+check(await page.isVisible('#bigmap'), 'большая карта открылась');
+await page.screenshot({path: OUT + '11b-bigmap.png'});
+await page.click('#bmX'); await page.waitForTimeout(300);
 
 // второй этаж: кинотеатр и фуд-корт
 await enter(page, 'Синема Парк');
