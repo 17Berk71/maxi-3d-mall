@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "deploy": "npm run build && python3 tools/deploy/yc_deploy.py",
+    "deploy:dry": "python3 tools/deploy/yc_deploy.py --dry-run",
     "check": "node tools/test/check.mjs",
     "map": "bash tools/pipeline/run.sh",
     "map2": "bash tools/pipeline/run_f2.sh",
@@ -15,6 +17,11 @@
     "feeds:demo": "python3 tools/feeds/make_demo.py && python3 tools/feeds/import_feed.py tools/feeds/demo/demo_feed.yml --demo --source \"тестовая выгрузка\""
   },
   "dependencies": {
+    "@fontsource/manrope": "^5.1.0",
+    "@fontsource/nunito": "^5.1.0",
+    "@fontsource/oswald": "^5.1.0",
+    "@fontsource/pacifico": "^5.1.0",
+    "@fontsource/playfair-display": "^5.1.0",
     "three": "0.128.0"
   },
   "devDependencies": {

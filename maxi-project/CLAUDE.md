@@ -14,7 +14,7 @@
 
 - Three.js **закреплён на 0.128.0**. Код использует `renderer.outputEncoding = THREE.sRGBEncoding`, `texture.encoding`, `physicallyCorrectLights`, `InstancedMesh.setColorAt`. Переход на новую версию требует замен: `outputColorSpace`/`colorSpace`, `THREE.SRGBColorSpace`, убрать `physicallyCorrectLights`, пересмотреть интенсивность света, `LIN()` → `Color.convertSRGBToLinear` уже не нужен при `ColorManagement`. Делать это отдельной задачей и сверять скриншоты «до/после».
 - Цвета материалов и вершин задаются через `LIN('#hex')` (перевод sRGB → линейный). Текстуры с canvas — через `canvasTex()`, у них стоит sRGB.
-- Шрифт Manrope с Google Fonts. Canvas-тексты ждут `document.fonts.load` перед сборкой сцены.
+- Шрифты (Manrope, Nunito, Oswald, Pacifico, Playfair Display) — пакеты `@fontsource/*`, подключены в `src/fonts.js`, лежат внутри сборки. Canvas-тексты ждут `document.fonts.load` перед сборкой сцены.
 
 ## Архитектура (`src/app.js`, функция `startApp(D, D2)`)
 
@@ -135,7 +135,7 @@
 
 ## Айдентика магазинов (вывески) и проход под эскалаторами
 - `src/signs.js`: `BRANDS` — приблизительные цвета известных сетей (без логотипов, сверять), `signStyle(s,catHue)` — цвета/шрифт/форма вывески, `drawSign` (ячейка 512×64), `drawBlade` (консоль 256×128, `bladeAtlases`, `s.buv`). Сборщику нужен `src/signs.js` перед `app.js`.
-- Шрифт по типу: украшения, красота, «бутиковая» одежда — Playfair Display; спорт, техника, молодёжная одежда — Oswald (заглавные); детские и подарки — Nunito; кофейни/выпечка — Pacifico; остальное — Manrope. Шрифты с Google Fonts (`index.html`), ждём их в `start()` (`FONT_LOADS`). В песочнице Google Fonts недоступны — тестовые скрипты подменяют их локальными (Lora, DejaVu Sans Condensed, Liberation Sans).
+- Шрифт по типу: украшения, красота, «бутиковая» одежда — Playfair Display; спорт, техника, молодёжная одежда — Oswald (заглавные); детские и подарки — Nunito; кофейни/выпечка — Pacifico; остальное — Manrope. Шрифты из `src/fonts.js` (@fontsource), ждём их в `start()` (`FONT_LOADS`). В песочнице Google Fonts недоступны — тестовые скрипты подменяют их локальными (Lora, DejaVu Sans Condensed, Liberation Sans).
 - Форма: `letters` — буквы без плашки на панели фасада в цвете магазина (`LETTER_TONES`), `box` — световой короб, `band` — плашка. У островков `letters` → `box`.
 - На фасаде (`brandM` в `fronts`, не перекрашивается стилями): панель под буквами, полоса цвета бренда под фризом, коврик у двери, консольная табличка поперёк коридора у дальнего от двери края витрины (если витрина ≥3.2 м). Материал вывесок прозрачный (`alphaTest`); у `brandM` нет `polygonOffset`, иначе он перекрывает буквы.
 - Эскалатор на 1 этаже закрывает только низкую часть у нижней площадки (там, где до низа ленты <2.2 м); дальше под лентой можно пройти. Стекло-ограждение в узких щелях — тоже только у низкой части.
@@ -152,3 +152,8 @@
 - Фронт: `src/shop/feeds.js` — `feedIndexReady()` (ждём при старте, вместе со шрифтами, не дольше 3 с), `loadFeed(s)` (при подходе ближе 14 м, при открытии карточки и островка), `feedCatalog(s,DEPT)` — отделы с `itemAt(i)` по кругу. Фото с вырезанным фоном регистрируются в `PHOTOS` как `feed:<id>` и висят на вешалах тем же кодом, что и демо-фото. Зал пересобирается, если выгрузка пришла после сборки (`SHOP.feedV`).
 - Карточка товара из выгрузки: фото, цена (зачёркнутая старая), размеры из выгрузки, «Купить на сайте магазина ↗» (ссылка из выгрузки) и «Забрать в «Макси» ↗», если в выгрузке есть самовывоз; корзины нет. Подпись внизу панели (`demoLine`) говорит, откуда товары.
 - Сборщику нужны `src/shop/feeds.js` и `src/shop/online.js` перед `catalog.js`. При публикации страницы папку `public/feeds` выкладывать рядом как `feeds/...`. Без неё всё работает на демо-каталоге.
+
+## Запуск MVP (октябрь 2026)
+- Сборка самодостаточна: Three и шрифты внутри `dist/`, `base: './'` (работает в подпапке). `public/` → `404.html`, `robots.txt` (запрет, на MVP), `feeds/`. В `index.html` `noindex`, оговорки в «О проекте», контакт правообладателей из `VITE_CONTACT` (`.env.example`).
+- `npm run deploy` (`tools/deploy/yc_deploy.py`): загрузка `dist/` в Яндекс Object Storage через aws cli с явными Content-Type и Cache-Control; `YC_BUCKET=имя`; `--dry-run`, `--delete`. Подробно — `docs/mvp-launch.md` (бесплатный адрес, что платить и когда, чеклист).
+- Сборка для артефакта (`bundle.mjs` в scratchpad) шрифты берёт с Google Fonts и Three с cdnjs: в артефакте иначе нельзя. Ссылку на Google Fonts бандлер задаёт сам, а не берёт из `index.html`.
