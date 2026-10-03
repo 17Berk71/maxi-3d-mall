@@ -10,9 +10,12 @@
 Запуск:
   YC_BUCKET=имя-бакета python3 tools/deploy/yc_deploy.py [--dry-run] [--delete]
 """
-import argparse, mimetypes, os, subprocess, sys
+import argparse, importlib.util, mimetypes, os, subprocess, sys
 from pathlib import Path
 
+# На Windows команда `aws` из pip иногда не запускается («ftype Python.File…»), поэтому, если пакет awscli
+# поставлен в этот же Python, вызываем его как модуль. Иначе — обычная команда aws.
+AWS = [sys.executable, '-m', 'awscli'] if importlib.util.find_spec('awscli') else ['aws']
 ENDPOINT = os.environ.get('YC_ENDPOINT', 'https://storage.yandexcloud.net')
 TYPES = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
          '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webp': 'image/webp',
@@ -44,17 +47,17 @@ def main():
     files.sort(key=lambda p: p.name == 'index.html')
     for p in files:
         rel = p.relative_to(root).as_posix()
-        cmd = ['aws', '--endpoint-url', ENDPOINT, 's3', 'cp', str(p), f's3://{bucket}/{rel}', '--content-type', ctype(p),
+        cmd = AWS + ['--endpoint-url', ENDPOINT, 's3', 'cp', str(p), f's3://{bucket}/{rel}', '--content-type', ctype(p),
                '--cache-control', cache(rel), '--only-show-errors']
         print(('[dry] ' if a.dry_run else '') + f'{rel:50s} {ctype(p):32s} {cache(rel)}')
         if not a.dry_run: subprocess.run(cmd, check=True)
     if a.delete and not a.dry_run:
         have = {p.relative_to(root).as_posix() for p in files}
-        out = subprocess.run(['aws', '--endpoint-url', ENDPOINT, 's3', 'ls', f's3://{bucket}/', '--recursive'], check=True, capture_output=True, text=True).stdout
+        out = subprocess.run(AWS + ['--endpoint-url', ENDPOINT, 's3', 'ls', f's3://{bucket}/', '--recursive'], check=True, capture_output=True, text=True).stdout
         for line in out.splitlines():
             key = line.split(None, 3)[-1]
             if key not in have:
-                print('удаляю', key); subprocess.run(['aws', '--endpoint-url', ENDPOINT, 's3', 'rm', f's3://{bucket}/{key}', '--only-show-errors'], check=True)
+                print('удаляю', key); subprocess.run(AWS + ['--endpoint-url', ENDPOINT, 's3', 'rm', f's3://{bucket}/{key}', '--only-show-errors'], check=True)
     print('готово' if not a.dry_run else 'проверка без загрузки завершена')
 
 if __name__ == '__main__': main()
