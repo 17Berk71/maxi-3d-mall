@@ -180,17 +180,73 @@ def top_parts(im, m, kind):
         cw2 = [central_run(m[y], cx) for y in range(sleeve_end + int(L * .03), sleeve_end + int(L * .16))]
         cw2 = [r[1] - r[0] for r in cw2 if r]
         if cw2: body_w = max(body_w, float(np.percentile(cw2, 75))); hw = body_w / 2
-    spans = lambda y: (int(cx - hw), int(cx + hw))
+    # силуэт корпуса: ширина по строкам ниже проймы (у футболок рукав отдельно — корпус виден честно)
+    arm = sleeve_end if sleeve_end else top + int(L * .3)
+    rowspan = {}
+    if sleeve_end:
+        for y in range(arm, bot + 1):
+            r = central_run(m[y], cx)
+            if r and (r[1] - r[0]) > body_w * .55: rowspan[y] = r
+        ys_ = sorted(rowspan)
+        if ys_:
+            # края по высоте: медиана (выбросы — пятна стены у низа), потом сглаживание; ширина не дальше ±12% от средней
+            ls = np.array([rowspan[y][0] for y in ys_], np.float32); rs = np.array([rowspan[y][1] for y in ys_], np.float32)
+            k = max(5, int(L * .09)) | 1
+            ls = cv2.medianBlur(ls.reshape(-1, 1), 5).ravel() if k > 5 else ls
+            from scipy.ndimage import median_filter
+            ls = median_filter(ls, k, mode='nearest'); rs = median_filter(rs, k, mode='nearest')
+            mw = float(np.median(rs - ls)); c = (ls + rs) / 2; wd = np.clip(rs - ls, mw * .88, mw * 1.12)
+            c = median_filter(c, k, mode='nearest')
+            k2 = max(3, int(L * .04)) | 1
+            c = cv2.blur(c.reshape(-1, 1), (1, k2)).ravel(); wd = cv2.blur(wd.reshape(-1, 1).astype(np.float32), (1, k2)).ravel()
+            rowspan = {y: (int(a - b / 2), int(a + b / 2)) for y, a, b in zip(ys_, c, wd)}
+    def spans(y):
+        if y in rowspan: return rowspan[y]
+        if rowspan and y > max(rowspan): return rowspan[max(rowspan)]
+        if rowspan: return rowspan[min(rowspan)]          # выше проймы — та же ширина, что у проймы (без ступеньки)
+        return (int(cx - hw), int(cx + hw))
     tex, tm = rect_rows(im, m, top, bot, spans, TEX_W, TEX_H)
+    # форма вещи для примерочной (всё в долях длины L): пройма, ширина корпуса по высоте, рукав
+    tw = []
+    for t in np.linspace(0, 1, 16):
+        y = int(arm + (bot - 2 - arm) * t)
+        a, b = spans(y); tw.append(round((b - a) / L, 4))
+    shape = dict(arm=round((arm - top) / L, 3), tw=tw, merged=not bool(sleeve_end))
+    if sleeve_end:
+        sl = []
+        for sd in (-1, 1):
+            edge = int(cx + sd * hw)
+            xs = range(edge + sd * 3, (w if sd > 0 else -1), sd)
+            cols = []
+            for x in xs:
+                col = np.where(m[top:arm + int(L * .1), x])[0]
+                if len(col) < 3: break
+                cols.append((x, col[0] + top, col[-1] + top))
+            if len(cols) < 5: continue
+            out = abs(cols[-1][0] - edge)
+            tail = cols[-max(2, len(cols) // 7):]
+            open_ = float(np.median([c[2] - c[1] for c in tail]))
+            ah = cols[0][2] - cols[0][1]
+            # длина рукава по оси: от плечевой точки до середины края рукава
+            x1, ymid = cols[-1][0], (tail[-1][1] + tail[-1][2]) / 2
+            ln = float(np.hypot(x1 - edge, ymid - cols[0][1]))
+            sl.append((out, open_, ah, ln, (ymid - cols[0][1]) / max(1, abs(x1 - edge))))
+        if sl:
+            sl = np.median(np.array(sl), 0)
+            shape.update(sl_out=round(sl[0] / L, 3), sl_open=round(sl[1] / L, 3), sl_ah=round(sl[2] / L, 3), sl_len=round(sl[3] / L, 3), sl_slope=round(float(sl[4]), 3))
     # рукав: ткань с бока корпуса (там обычно нет принта), без фона; у рукава на фото слишком мало чистых пикселей
     side = tex[int(TEX_H * .35):int(TEX_H * .75), int(TEX_W * .04):int(TEX_W * .2)]
     sleeve = cv2.resize(np.hstack([side, side[:, ::-1]]), (256, 256), interpolation=cv2.INTER_LINEAR)
-    meta = dict(len_w=L / body_w, sleeve=round(min(1.0, sleeve_len), 3), full_w=full_w / body_w,
+    shape['full'] = round(full_w / L, 3)
+    meta = dict(len_w=L / body_w, sleeve=round(min(1.0, sleeve_len), 3), full_w=full_w / body_w, shape=shape,
                 color=tuple(int(c) for c in np.median(im[m > 0].reshape(-1, 3), 0)[::-1]))
-    return tex, sleeve, meta, dict(top=top, bot=bot, cx=cx, hw=hw)
+    return tex, sleeve, meta, dict(top=top, bot=bot, cx=cx, hw=hw, arm=arm, spans=spans)
 
 
-def bottom_parts(im, m, kind):
+PERSP = 0.3            # вещь на полу снята сверху наискосок: низ кадра ближе к камере и крупнее (≈30% на всю вещь)
+
+
+def bottom_parts(im, m, kind, flat=False):
     h, w = m.shape
     wid = m.sum(1)
     big = np.where(wid > wid.max() * .25)[0]
@@ -231,7 +287,23 @@ def bottom_parts(im, m, kind):
     hem_w = np.mean([leg_span(-1)(bot - 3)[1] - leg_span(-1)(bot - 3)[0], leg_span(1)(bot - 3)[1] - leg_span(1)(bot - 3)[0]])
     knee = crotch + int((bot - crotch) * .45)
     knee_w = np.mean([leg_span(-1)(knee)[1] - leg_span(-1)(knee)[0], leg_span(1)(knee)[1] - leg_span(1)(knee)[0]])
-    meta = dict(len_w=L / hip_w, crotch=round(cs, 3), hem=round(hem_w / hip_w, 3), knee=round(knee_w / hip_w, 3),
+    # форма для примерочной (в долях ширины пояса): лёжа штанины расходятся «домиком» —
+    # длину и ширину штанины меряем вдоль её оси, а не по вертикали кадра
+    ww = float(np.median(wid[top:top + max(3, int(L * .03))]))
+    pk = (lambda y: 1 / (1 + PERSP * (y - top) / L)) if flat else (lambda y: 1.0)
+    hipw = [round(float(np.median(wid[int(top + (crotch - top) * t) - 1:int(top + (crotch - top) * t) + 2])) * pk(top + (crotch - top) * t) / ww, 4) for t in np.linspace(.02, .98, 8)]
+    legs = []
+    for sd in (-1, 1):
+        f = leg_span(sd); ys_ = np.arange(crotch + 2, bot - 1)
+        sp = np.array([f(y) for y in ys_], float); c = (sp[:, 0] + sp[:, 1]) / 2; wdt = sp[:, 1] - sp[:, 0]
+        k_ = np.polyfit(ys_ - crotch, c, 1)[0]; cosa = 1 / np.sqrt(1 + k_ * k_)
+        prof = [float(np.median(wdt[max(0, int(len(wdt) * t) - 2):int(len(wdt) * t) + 3])) * cosa * pk(crotch + (bot - crotch) * t) / ww for t in np.linspace(0, .99, 14)]
+        lk = float(np.mean([pk(y) ** 1.5 for y in range(crotch, bot)]))
+        legs.append(dict(len=(bot - crotch) / cosa * lk / ww, w=prof, ang=float(np.degrees(np.arctan(k_)))))
+    rk = float(np.mean([pk(y) ** 1.5 for y in range(top, crotch)]))
+    shape = dict(rise=round((crotch - top) * rk / ww, 3), hip=hipw, leg_len=round(float(np.mean([l['len'] for l in legs])), 3),
+                 leg=[round(float(v), 4) for v in np.mean([l['w'] for l in legs], 0)], leg_ang=[round(l['ang'], 1) for l in legs])
+    meta = dict(len_w=L / hip_w, crotch=round(cs, 3), hem=round(hem_w / hip_w, 3), knee=round(knee_w / hip_w, 3), shape=shape,
                 color=tuple(int(c) for c in np.median(im[m > 0].reshape(-1, 3), 0)[::-1]))
     return tex, None, meta, dict(top=top, bot=bot, cx=cx, crotch=crotch)
 
@@ -241,12 +313,33 @@ def overlay(im, m, info, kind):
     o[m == 0] = (o[m == 0] * .25).astype(np.uint8)
     cv2.line(o, (0, info['top']), (o.shape[1], info['top']), (0, 255, 255), 3)
     cv2.line(o, (0, info['bot']), (o.shape[1], info['bot']), (0, 255, 255), 3)
-    if 'hw' in info:
+    if 'spans' in info:
+        for y in range(info['top'], info['bot'], 3):
+            a, b = info['spans'](y)
+            cv2.circle(o, (int(a), y), 2, (255, 0, 255), -1); cv2.circle(o, (int(b), y), 2, (255, 0, 255), -1)
+        cv2.line(o, (0, info['arm']), (o.shape[1], info['arm']), (0, 160, 255), 2)
+    elif 'hw' in info:
         for x in (info['cx'] - info['hw'], info['cx'] + info['hw']):
             cv2.line(o, (int(x), info['top']), (int(x), info['bot']), (255, 0, 255), 3)
     if 'crotch' in info:
         cv2.line(o, (0, info['crotch']), (o.shape[1], info['crotch']), (255, 0, 255), 3)
     return o
+
+
+WALL_REF = np.array([140., 148., 140.])   # стена в комнате на фото «на человеке» (RGB): к ней приводим яркость и цвет фото вещей
+
+
+def wall_gain(im):
+    """Фото на вешалке: стена по краям кадра → множители по каналам, чтобы стена совпала с эталоном (выдержка и баланс белого)."""
+    h, w = im.shape[:2]
+    band = np.concatenate([im[int(h * .35):int(h * .65), :int(w * .04)].reshape(-1, 3), im[int(h * .35):int(h * .65), -int(w * .04):].reshape(-1, 3)])
+    wall = np.median(band, 0)[::-1].astype(float)
+    g = WALL_REF / np.maximum(wall, 1)
+    return np.clip(g, 0.45, 1.6)
+
+
+def apply_gain(img, g):
+    return np.clip(img.astype(np.float32) * g[::-1].reshape(1, 1, 3), 0, 255).astype(np.uint8)
 
 
 def build(it):
@@ -257,7 +350,11 @@ def build(it):
         im = load(it[side])
         m, flat = segment(im)
         part = top_parts if it['kind'] in TOPS else bottom_parts
-        tex, sleeve, mm, info = part(im, m, it['kind'])
+        tex, sleeve, mm, info = part(im, m, it['kind'], flat) if part is bottom_parts else part(im, m, it['kind'])
+        if not flat:
+            g = wall_gain(im); tex = apply_gain(tex, g)
+            if sleeve is not None: sleeve = apply_gain(sleeve, g)
+            mm['color'] = tuple(int(c) for c in np.clip(np.array(mm['color']) * g, 0, 255))
         cv2.imwrite(os.path.join(od, side + '.webp'), tex, [cv2.IMWRITE_WEBP_QUALITY, 88])
         if sleeve is not None and side == 'front': cv2.imwrite(os.path.join(od, 'sleeve.webp'), sleeve, [cv2.IMWRITE_WEBP_QUALITY, 85])
         meta[side] = dict((k, (round(v, 3) if isinstance(v, float) else v)) for k, v in mm.items())
@@ -270,6 +367,10 @@ def build(it):
     # мерки — из фото спереди (сзади — запасной вариант)
     f = meta['front']
     meta['fit'] = dict((k, f[k]) for k in f if k in ('len_w', 'sleeve', 'crotch', 'hem', 'knee', 'full_w'))
+    meta['shape'] = f.pop('shape'); meta['back'].pop('shape', None)
+    meta['shape']['hang'] = not f.get('flat')
+    for k in ('elastic', 'crop', 'cm', 'fitname'):
+        if it.get(k): meta['shape'][k] = it[k]
     # вещь на вешалке тянется вниз и сужается: у футболки Zolla на вешалке длина/ширина 1.82, она же лёжа — 1.31.
     # Поправка 0.72 для всех верхних вещей, снятых на вешалке (лёжа — без поправки)
     if it['kind'] in TOPS and not f.get('flat'): meta['fit']['len_w'] = round(meta['fit']['len_w'] * HANG_K, 3)
@@ -288,5 +389,6 @@ if __name__ == '__main__':
             mt = build(it); idx.append(mt); print('ok', it['id'], mt['fit'])
         except Exception as e:
             import traceback; traceback.print_exc(); print('FAIL', it['id'], e)
-    if not want:
-        json.dump(idx, open(os.path.join(OUT, 'index.json'), 'w'), ensure_ascii=False, indent=1)
+    # индекс — по всем собранным вещям (и при сборке части)
+    idx = [json.load(open(os.path.join(OUT, it['id'], 'meta.json'))) for it in ITEMS if os.path.exists(os.path.join(OUT, it['id'], 'meta.json'))]
+    json.dump(idx, open(os.path.join(OUT, 'index.json'), 'w'), ensure_ascii=False, indent=1)

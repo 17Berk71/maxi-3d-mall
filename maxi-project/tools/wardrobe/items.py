@@ -3,7 +3,9 @@
 front/back — каталожные фото (на вешалке или лёжа); worn — фото на человеке (для сравнения и состояний).
 """
 ITEMS = [
-    # id, название, тип (как в classify), фото спереди, фото сзади, фото на человеке, состояния
+    # id, название, тип (как в classify), фото спереди, фото сзади, фото на человеке, состояния.
+    # Посадка: elastic — пояс на резинке (лёжа он собран), crop — укороченная вещь,
+    # cm — мерки с бирки или сантиметром, если есть: {'len': длина по спинке, 'chest': ширина в груди лёжа, 'waist': пояс лёжа, 'outseam': длина брюк по боку}
     dict(id='zolla-tee', name='Футболка базовая Zolla', kind='tee', front='d6cbc787', back='debeed5c', flat='60a8f89b', worn=['299304a0', '96542ff8']),
     dict(id='qs-tee', name='Футболка оверсайз «Quiet Supremacy»', kind='tee', front='6af4c56f', back='26fd3eb4', worn=['2330cb00', '10ecb09e']),
     dict(id='suede-tee', name='Футболка замшевая с кантом', kind='tee', front='09b4dfde', back='ed7df16c', worn=['871d9e5b', 'a5e4b13e']),
@@ -17,10 +19,10 @@ ITEMS = [
          states=[('closed', 'Застёгнута'), ('open', 'Расстёгнута'), ('hood', 'Капюшон')], worn_states={'open': 'a99ee68f', 'hood': '2fd62240'}),
     dict(id='patch-zip', name='Зипка пэчворк', kind='hoodie', zip=True, front='b2c8342a', back='a75c1160', worn=['b2e57225', 'be05d4b3'],
          states=[('closed', 'Застёгнута'), ('open', 'Расстёгнута'), ('hood', 'Капюшон')], worn_states={'open': '9e374bcc', 'hood': 'f5c93b4f'}),
-    dict(id='blazer', name='Пиджак укороченный', kind='jacket', front='bc8f4254', back='723787be', worn=['44137c8e', 'f5b54112'],
+    dict(id='blazer', name='Пиджак укороченный', kind='jacket', crop=True, front='bc8f4254', back='723787be', worn=['44137c8e', 'f5b54112'],
          states=[('open', 'Нараспашку'), ('closed', 'Застёгнут')]),
     dict(id='barrel-jeans', name='Джинсы широкие «бочка»', kind='jeans', front='9e18a85c', back='3df4cd22', worn=['28155c96', '02244c91']),
-    dict(id='brown-pants', name='Брюки на резинке', kind='pants', front='3ee4d24c', back='65e4e52b', worn=['fdf4f8dd', 'f5b54112x']),
-    dict(id='nike-pants', name='Штаны нейлоновые Nike', kind='pants', front='a6435039', back='40f40230', worn=['afdd9abd', '8bb621b4']),
+    dict(id='brown-pants', name='Брюки на резинке', kind='pants', elastic=True, front='3ee4d24c', back='65e4e52b', worn=['fdf4f8dd', 'f5b54112x']),
+    dict(id='nike-pants', name='Штаны нейлоновые Nike', kind='pants', elastic=True, front='a6435039', back='40f40230', worn=['afdd9abd', '8bb621b4']),
     dict(id='cream-shorts', name='Шорты джинсовые', kind='shorts', front='e7268e0b', back='c8f49e61', worn=['a7529a3a', '9e360828']),
 ]

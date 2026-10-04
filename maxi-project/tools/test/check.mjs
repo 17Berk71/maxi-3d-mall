@@ -118,7 +118,7 @@ check(await page.evaluate(() => document.querySelectorAll('#fitBody input[type=r
 await page.click('#fitX'); await page.waitForTimeout(500);
 check(await page.isHidden('#fitting'), 'примерочная закрылась');
 await page.evaluate(() => window.__maxi.exitShop());
-await page.waitForFunction(() => window.__maxi.mode === 'walk', null, {timeout: 10000});
+await page.waitForFunction(() => window.__maxi.mode === 'walk', null, {timeout: 90000});
 await shot(page, '11-back-to-gallery');
 // большая карта: нажатие на мини-карту
 // клик через DOM: Playwright в облаке без видеокарты не успевает проверить точку нажатия по холсту

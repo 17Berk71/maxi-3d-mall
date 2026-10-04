@@ -91,7 +91,7 @@ function limb(prof, L, segs) {
 }
 function armPose(d, side) {
   const y = 0.8 * d.H, x = side * d.chest * d.shX * 0.86;
-  return {pos: new THREE.Vector3(x, y, 0), rot: side * 0.16, L: 0.335 * d.H};
+  return {pos: new THREE.Vector3(x, y, 0), rot: side * (d.armA || 0.16), L: 0.335 * d.H};
 }
 
 // ---------- фактуры ткани (серые, цвет даёт материал) ----------
@@ -116,8 +116,8 @@ function fabricMat(item, kind, rep) {
 }
 
 // ---------- тело ----------
-function buildBody(b, skinMat) {
-  const d = bodyDims(b), g = new THREE.Group(), H = d.H;
+function buildBody(b, skinMat, d0) {
+  const d = d0 || bodyDims(b), g = new THREE.Group(), H = d.H;
   const yProf = []; for (let yf = 0.465; yf <= 0.8521; yf += 0.0129) yProf.push([yf * H, torsoR(d, yf)]);
   g.add(new THREE.Mesh(loft(yProf, 40, y => sx(d, y / H), y => sz(d, y / H)), skinMat));
   // шея и голова (манекен без лица)
@@ -220,125 +220,307 @@ function photoMat(url, color) {
   const t = photoTex(url);
   // светотень уже есть на самом фото: часть цвета светится сама (emissive), часть даёт свет кабины — форма видна, цвет не уходит
   if (!t) return new THREE.MeshStandardMaterial({color: LIN(color || '#888'), roughness: 0.86, side: THREE.DoubleSide});
-  return new THREE.MeshStandardMaterial({map: t, color: new THREE.Color(0.72, 0.72, 0.72), emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.42, roughness: 0.9, metalness: 0, side: THREE.DoubleSide});
+  // без тональной кривой: цвет фото не уходит в розовый/серый; свет кабины лишь чуть оттеняет складки
+  const m = new THREE.MeshStandardMaterial({map: t, color: new THREE.Color(0.3, 0.3, 0.3), emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.78, roughness: 0.9, metalness: 0, side: THREE.DoubleSide});
+  m.toneMapped = false; return m;
 }
 // UV половины лофта. Вещь на фото лежит или висит плоско, ширина на фото — половина обхвата,
 // поэтому u растёт по дуге (линейно по углу): перед — от правого бока (−90°) к левому (+90°),
 // спина — на фото сзади видна зеркально (слева на фото — левый бок человека, +x)
 const uFront = ph => 0.5 + Math.max(-Math.PI / 2, Math.min(Math.PI / 2, ph)) / Math.PI;
 const uBack = ph => { const ps = ph > 0 ? ph - Math.PI : ph + Math.PI; return 0.5 + Math.max(-Math.PI / 2, Math.min(Math.PI / 2, ps)) / Math.PI; };
-function halfUV(geo, front, fx, fz, vOf) {
-  const P = geo.attributes.position, uv = geo.attributes.uv;
-  for (let i = 0; i < P.count; i++) {
-    const x = P.getX(i), y = P.getY(i), z = P.getZ(i), ph = Math.atan2(x / fx(y), z / fz(y));
-    uv.setXY(i, front ? uFront(ph) : uBack(ph), 1 - Math.max(0, Math.min(1, vOf(y))));
-  }
-  uv.needsUpdate = true;
+// ---------- посадка вещи по её собственному силуэту ----------
+// Вещь — не «кожа» фигуры. С фото берётся силуэт: ширина корпуса по высоте, длина, рукав; у брюк — ширина штанины
+// вдоль её оси. Сечение вещи — эллипс с периметром = 2 × ширина лёжа (вещь лёжа — две половины обхвата).
+// Тело только ограничивает снизу: вещь не может быть уже тела и нижних слоёв. Где ткани больше, чем тела, она
+// висит: прямо от плеч и груди, складками; у широких брюк — трубой до пола, лишняя длина собирается внизу.
+const ellP = (a, b) => Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+function solve(f, lo, hi, target) { for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (f(m) < target) lo = m; else hi = m; } return (lo + hi) / 2; }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+function interp(arr, t) { t = clamp(t, 0, 1) * (arr.length - 1); const i = Math.min(arr.length - 2, Math.floor(t)), f = t - i; return arr[i] + (arr[i + 1] - arr[i]) * f; }
+// сечение тела на высоте yf: полуширина a и полуглубина b (как у фигуры), с плечевым «шаром»
+function bodyAB(d, yf) {
+  let r = yf < 0.53 ? Math.max(torsoR(d, Math.max(0.47, yf)), d.hips * (yf < 0.5 ? 0.99 : 0.97)) : torsoR(d, yf);
+  let a = r * (sx(d, Math.max(0.6, yf)) * 0.98 + 0.02), b = r * (sz(d, yf) + (yf < 0.6 ? 0.04 : 0));
+  const dy = (yf - 0.8) * d.H / (d.chest * 0.42);
+  if (Math.abs(dy) < 1) { const k = Math.sqrt(1 - dy * dy); a = Math.max(a, d.chest * d.shX * 0.98 * k); b = Math.max(b, d.chest * 0.72 * k); }
+  if (yf < 0.47) { a = Math.max(a, d.legX + d.thigh); b = Math.max(b, d.thigh); }
+  return {a, b};
 }
-// корпус из двух половин (перед и спина), перед можно разрезать по центру (расстёгнутая молния)
-function photoTorso(d, y0, y1, off, matF, matB, g, opt) {
-  opt = opt || {};
-  const H = d.H, prof = [], fx = y => sx(d, Math.max(0.6, y / H)) * 0.98 + 0.02, fz = y => sz(d, y / H) + (y / H < 0.6 ? 0.04 : 0);
-  for (let yf = y0; yf <= y1 + 1e-6; yf += 0.012) {
-    let r = (yf < 0.53 ? Math.max(torsoR(d, Math.max(0.47, yf)), d.hips * (yf < 0.5 ? 0.99 : 0.97)) : torsoR(d, yf)) + off;
-    if (opt.blouse && yf > 0.55 && yf < 0.66) r += opt.blouse * Math.sin((yf - 0.55) / 0.11 * Math.PI);
-    if (opt.flare && yf < 0.6) r += opt.flare * (0.6 - yf) / 0.6 * 2.2;
-    if (yf > 0.83) r = Math.max(r, d.neck + off * 0.8);
-    prof.push([yf * H, layer(yf, r, fx(yf * H), fz(yf * H))]);
-  }
-  const vOf = opt.vOf || (y => (y1 * H - y) / ((y1 - y0) * H));
-  const gap = opt.gap || 0;
-  const pieces = gap ? [[-Math.PI / 2, Math.PI / 2 - gap, matF, true], [gap, Math.PI / 2 - gap, matF, true]] : [[-Math.PI / 2, Math.PI, matF, true]];
-  pieces.push([Math.PI / 2, Math.PI, matB, false]);
-  pieces.forEach(([p0, pl, mat, front]) => {
-    const geo = loft(prof, 24, fx, fz, p0, pl); halfUV(geo, front, fx, fz, vOf);
-    const m = new THREE.Mesh(geo, mat); m.userData.role = front ? 'front' : 'back'; g.add(m);
+// рука: ось от плечевого сустава под углом armA, радиус по длине
+const armJ = d => ({x: d.chest * d.shX * 0.86, y: 0.8 * d.H, L: 0.335 * d.H, th: d.armA || 0.16});
+const armRad = (d, t) => (t < 0.12 ? 0.052 : t < 0.47 ? 0.046 - (t - 0.12) * 0.034 : 0.035 - (t - 0.47) * 0.018) * d.k * d.s;
+function armInner(d, y) {
+  const j = armJ(d), dy = j.y - y; if (dy < 0.05 || dy > j.L * Math.cos(j.th) + 0.08) return 9;
+  return j.x + dy * Math.tan(j.th) - armRad(d, dy / (j.L * Math.cos(j.th))) / Math.cos(j.th) - 0.004;
+}
+// подобрать эллипс по периметру: сначала пропорция ρ, потом ограничения (тело, нижние слои, руки)
+function fitAB(P, amin, bmin, amax, rho) {
+  let a = solve(x => ellP(x, x * rho), 0.01, 1.2, P), b = a * rho;
+  if (a > amax) { a = Math.max(amax, amin); b = solve(x => ellP(a, x), 0.005, 1.2, P); }
+  if (b < bmin) { b = bmin; a = Math.max(amin, Math.min(amax, solve(x => ellP(x, b), 0.005, 1.2, P))); }
+  if (a < amin) { a = amin; b = Math.max(bmin, solve(x => ellP(a, x), 0.005, 1.2, P)); }
+  return [a, Math.max(b, bmin)];
+}
+// слои: ширина/глубина надетых ниже вещей по высоте (1% роста)
+function layerAB(yf, a, b, gap) {
+  if (UNDER) { const u = uget(UNDER, yf), uz = uget(UNDERZ, yf), g = gap == null ? 0.008 : gap; if (u) a = Math.max(a, u + g); if (uz) b = Math.max(b, uz + g); const i = ui(yf); PEND[i] = Math.max(PEND[i] || 0, a); PENDZ[i] = Math.max(PENDZ[i] || 0, b); }
+  return [a, b];
+}
+function noteAB(yf, a, b) { if (!UNDER) return; const i = ui(yf); PEND[i] = Math.max(PEND[i] || 0, a); PENDZ[i] = Math.max(PENDZ[i] || 0, b); }
+// складки: смещение по нормали, амплитуда A (м); узор свой у каждой вещи (seed)
+function foldAt(phi, y, A, seed) {
+  if (A <= 0) return 0;
+  return A * (0.5 * Math.sin(7 * phi + seed + 1.7 * Math.sin(y * 7 + seed)) + 0.32 * Math.sin(12 * phi + seed * 2.3 + y * 11) + 0.18 * Math.sin(19 * phi + y * 23 + seed * 0.7));
+}
+// поверхность из колец {y, a, b, f(складки), cx}: φ от φ0 на длину φL; uvf(φ, кольцо, доля по φ) → [u, v]
+function ringMesh(rings, phi0, phiL, segs, uvf, seed, gapf) {
+  const n = rings.length, cols = segs + 1, pos = new Float32Array(n * cols * 3), uv = new Float32Array(n * cols * 2), idx = [];
+  rings.forEach((r, i) => {
+    for (let j = 0; j < cols; j++) {
+      const t = j / segs; let p0 = phi0, pl = phiL;
+      if (gapf) { const g = gapf(r); if (phi0 < 0) pl = phiL - g; else { p0 = phi0 + g; pl = phiL - g; } }
+      const phi = p0 + pl * t, f = foldAt(phi, r.y, r.f || 0, seed) * (r.fk ? r.fk(phi) : 1);
+      const x = (r.cx || 0) + (r.a + f) * Math.sin(phi), z = (r.b + f) * Math.cos(phi);
+      let y = r.y; if (r.dy) y += r.dy(phi);
+      const k = (i * cols + j); pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = z;
+      const [u, v] = uvf(phi, r, t); uv[k * 2] = u; uv[k * 2 + 1] = 1 - clamp(v, 0, 1);
+    }
   });
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < segs; j++) { const a = i * cols + j, b = a + 1, c = a + cols, e = c + 1; idx.push(a, b, c, b, e, c); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  return g;
 }
-// рукава с текстурой рукава (вокруг руки — зеркально), плечо — шар с той же тканью
-function photoSleeves(d, len, off0, mat, g, cuff) {
-  const off = Math.min(off0, 0.012 + off0 * 0.45);
-  [-1, 1].forEach(side => {
-    const a = armPose(d, side), r = t => (t < 0.12 ? 0.052 : t < 0.47 ? 0.046 - (t - 0.12) * 0.034 : 0.035 - (t - 0.47) * 0.018) * d.k * d.s + off;
-    const prof = [[-0.07, r(0) * 0.3], [-0.035, r(0) * 0.85]]; for (let t = 0; t <= len + 1e-6; t += 0.05) prof.push([t, r(t)]);
-    if (cuff && len > 0.9) prof.push([len, r(len) * 0.92]);
-    const geo = limb(prof, a.L), P = geo.attributes.position, uv = geo.attributes.uv;
-    for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), ph = Math.atan2(x, z); uv.setXY(i, 0.5 + 0.5 * Math.sin(ph) * side, 1 - Math.max(0, Math.min(1, -y / (len * a.L)))); }
-    uv.needsUpdate = true;
-    const m = new THREE.Mesh(geo, mat); m.position.copy(a.pos); m.rotation.z = a.rot; g.add(m);
+// труба вдоль оси (рукав): от S0 по направлению D, профиль rad(s) (s — метры от S0), складки
+function tubeMesh(S0, D, len, rad, segs, rings, uvf, foldf, side, cap) {
+  cap = cap || 0.035;
+  const e1 = new THREE.Vector3(-D.y, D.x, 0).normalize().multiplyScalar(side || 1), e2 = new THREE.Vector3(0, 0, 1);
+  const cols = segs + 1, pos = new Float32Array(rings * cols * 3), uv = new Float32Array(rings * cols * 2), idx = [];
+  for (let i = 0; i < rings; i++) {
+    const s = -cap + (len + cap) * i / (rings - 1), C = S0.clone().addScaledVector(D, s), r = rad(s);
+    for (let j = 0; j < cols; j++) {
+      const ps = j / segs * Math.PI * 2, f = foldf ? foldf(ps, s) : 0, rr = r + f;
+      const P = C.clone().addScaledVector(e1, Math.cos(ps) * rr).addScaledVector(e2, Math.sin(ps) * rr), k = i * cols + j;
+      pos[k * 3] = P.x; pos[k * 3 + 1] = P.y; pos[k * 3 + 2] = P.z;
+      const [u, v] = uvf(ps, s); uv[k * 2] = u; uv[k * 2 + 1] = 1 - clamp(v, 0, 1);
+    }
+  }
+  for (let i = 0; i < rings - 1; i++) for (let j = 0; j < segs; j++) { const a = i * cols + j, b = a + 1, c = a + cols, e = c + 1; idx.push(a, c, b, b, c, e); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  // нормали наружу: если вышло внутрь — перевернуть треугольники
+  const N = g.attributes.normal, mid = Math.floor(rings / 2) * cols, Pm = new THREE.Vector3().fromBufferAttribute(g.attributes.position, mid), Cm = S0.clone().addScaledVector(D, -cap + (len + cap) * Math.floor(rings / 2) / (rings - 1));
+  if (new THREE.Vector3().fromBufferAttribute(N, mid).dot(Pm.sub(Cm)) < 0) { const I = g.index.array; for (let q = 0; q < I.length; q += 3) { const t = I[q + 1]; I[q + 1] = I[q + 2]; I[q + 2] = t; } g.index.needsUpdate = true; g.computeVertexNormals(); }
+  return g;
+}
+// изнанка: та же поверхность, тёмная, видна в проёмах (низ, рукава, расстёгнутый перед)
+function addShell(g, geo, mat, inner, role) {
+  const m = new THREE.Mesh(geo, mat); if (role) m.userData.role = role; g.add(m);
+  if (inner) { const mi = new THREE.Mesh(geo, inner); g.add(mi); }
+  return m;
+}
+
+// длина вещи по спинке (м), если мерок нет: типичная для своего размера, чуть зависит от роста
+const LEN0 = {tee: 0.71, sweater: 0.68, hoodie: 0.68, jacket: 0.68, shirt: 0.76};
+function cleanTail(arr) {
+  const a = arr.slice(), med = a.slice(2, -3).sort((x, y) => x - y)[Math.floor((a.length - 5) / 2)] || a[0];
+  for (let i = a.length - 1; i > a.length - 5; i--) if (a[i] < med * 0.86) a[i] = Math.max(a[i], (a[i - 1] || med) * 0.97);
+  for (let i = a.length - 3; i < a.length; i++) a[i] = Math.max(a[i], a[i - 1] * 0.975);   // низ вещи прямой, не «собран»
+  return a;
+}
+// параметры верха на этой фигуре
+function topSpec(item, d) {
+  const sh = item.shape || {}, cm = sh.cm || {}, k = item.kind, H = d.H;
+  const L = cm.len ? cm.len / 100 : (LEN0[k] || 0.7) * (sh.crop ? 0.84 : 1) * Math.pow(H / 1.8, 0.6);
+  // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
+  const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
+  // рукава висят вдоль корпуса и закрывают боковые швы: корпус ≈ 85% общей ширины (у пиджака плечи жёсткие — 92%)
+  let Fs = sh.merged && sh.full ? new Array(16).fill(sh.full * (k === 'jacket' ? 0.92 : 0.85) / hk * L) : cleanTail(sh.tw || [0.62]).map(v => v / hk * L);
+  if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); }
+  const yHPS = 0.848 * H, yHem = yHPS - L, yN = 0.858 * H;
+  const bc = bodyAB(d, 0.72), Fbody = ellP(bc.a, bc.b) / 2;
+  const loose = clamp((Fs[1] - Fbody) / (0.24 * Fbody), 0, 1.5);
+  const yArm = Math.min(yHPS - (0.25 + 0.07 * loose) * L, 0.758 * H);
+  const F = y => y >= yArm ? Fs[0] * 0.6 + Fs[1] * 0.4 : interp(Fs, (yArm - y) / (yArm - yHem));
+  const ease = (EASE[k] || 0.014) * 0.6 + 0.006;
+  // плечевая точка: у свободной вещи плечо «спущено» — шов ниже по руке
+  const Sx = d.chest * d.shX * 0.98, aFree = solve(x => ellP(x, x * 0.6), 0.01, 1.2, 2 * F(yArm - 0.03));
+  const xS = Math.max(Sx * 0.92 + ease, aFree * 0.98);
+  const ySh = xS < Sx ? 0.8 * H + d.chest * 0.42 * Math.sqrt(1 - (xS / Sx) ** 2) + ease : 0.8 * H - (xS - Sx) * 1.1 + ease;
+  return {L, Fs, F, yHPS, yHem, yN, yArm, loose, ease, xS, ySh: Math.max(ySh, yArm + 0.05), aFree, hk};
+}
+function bottomSpec(item, d) {
+  const sh = item.shape || {}, cm = sh.cm || {}, k = item.kind, H = d.H;
+  const yW = 0.595 * H, bw = bodyAB(d, 0.595), Fw = ellP(bw.a, bw.b) / 2;
+  // масштаб: пояс садится на талию (на резинке лёжа собран ~в 1.2 раза); у длинных брюк ещё и длина «до пола» — берём среднее
+  const kW = (cm.waist ? cm.waist / 100 : (Fw + 0.012) / (sh.elastic ? 1.1 : 1));
+  const tot = (sh.rise || 0.75) + (sh.leg_len || 1.6), full = k !== 'shorts' && !/укороч|кюлот|капри/i.test(item.name || '');
+  const kk = cm.outseam ? cm.outseam / 100 / tot : kW;
+  // длинные брюки шьют «до пола»: если по фото вышли короче щиколотки — дотянуть
+  const T = full && !cm.outseam ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
+  const yC = 0.47 * H - 0.015;                                  // шаг: по фото лёжа не виден (штанины лежат вплотную), берём по фигуре
+  let legLen = T - (yW - yC), yHem = yC - legLen, stack = 0;
+  if (yHem < 0.012) { stack = 0.012 - yHem; yHem = 0.012; legLen = yC - yHem; }
+  let lw = (sh.leg || [0.6]).slice(); if (lw.length > 2 && lw[lw.length - 1] < lw[lw.length - 2] * 0.8) lw[lw.length - 1] = lw[lw.length - 2] * 0.96;
+  lw = lw.map(v => v * kk);
+  return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T};
+}
+// насколько вещь раздвигает руки (широкая вещь — руки лежат на ней, а не протыкают)
+function armSpread(items, d) {
+  let th = 0.13; const j = armJ({...d, armA: 0.13});
+  items.forEach(it => {
+    if (!it.tex || !it.shape) return;
+    const tops = ['tee', 'sweater', 'hoodie', 'jacket', 'shirt'].includes(it.kind);
+    const ys = tops ? [0.7, 0.64, 0.58] : [0.55, 0.5];
+    let sp = null; if (tops) sp = topSpec(it, d); else sp = bottomSpec(it, d);
+    ys.forEach(yf => {
+      const y = yf * d.H; let a;
+      if (tops) { if (y < sp.yHem) return; a = solve(x => ellP(x, x * 0.66), 0.01, 1.2, 2 * sp.F(y)); }
+      else { const bw = bodyAB(d, yf); a = bw.a + 0.02; }
+      const dy = j.y - y, need = a + armRad(d, dy / j.L) * 1.0 + 0.004;
+      th = Math.max(th, Math.atan((need - j.x) / dy));
+    });
   });
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 14), mat);
-  cap.scale.set(d.chest * d.shX * 0.97 + off * 0.7, d.chest * 0.42 + off * 0.7, d.chest * 0.7 + off * 0.7); cap.position.y = 0.8 * d.H; g.add(cap);
+  return clamp(th, 0.13, 0.22);
 }
-// плоская ширина (половина обхвата) сечения корпуса на высоте yf — с ней сравниваются пропорции фото
-function flatW(d, yf, off) { const r = torsoR(d, yf) + off, a = r * (sx(d, Math.max(0.6, yf)) * 0.98 + 0.02), b = r * (sz(d, yf) + (yf < 0.6 ? 0.04 : 0)); return Math.PI * (a + b) / 2; }
 
 function photoGarment(item, d) {
-  const g = new THREE.Group(), H = d.H, T = item.tex, f = item.fit || {}, k = item.kind, st = item.state || '';
-  const off = EASE[k] || 0.014, base = item.color || '#888';
+  const g = new THREE.Group(), H = d.H, T = item.tex, k = item.kind, st = item.state || '', base = item.color || '#888';
   const mF = photoMat(T.front, base), mB = photoMat(T.back || T.front, base), mS = T.sleeve ? photoMat(T.sleeve, base) : photoMat(null, base);
+  [mF, mB, mS].forEach(m => { m.side = THREE.FrontSide; });
+  const inner = new THREE.MeshStandardMaterial({color: LIN(base).multiplyScalar(0.45), roughness: 0.95, side: THREE.BackSide});
   const metal = new THREE.MeshStandardMaterial({color: LIN('#c9ccd0'), roughness: 0.3, metalness: 0.9});
+  const seed = [...(item.id || 'x')].reduce((s, c) => s + c.charCodeAt(0), 0) % 17 * 0.37;
   if (['tee', 'sweater', 'hoodie', 'jacket', 'shirt'].includes(k)) {
-    const top = 0.862, W = flatW(d, 0.7, off);
-    let hem = top - (f.len_w || 1.6) * W / H;
-    hem = Math.max(0.41, Math.min(0.62, hem));
-    const tucked = st === 'tucked';
-    if (tucked) hem = Math.max(hem, 0.555);
-    const gap = st === 'open' ? (k === 'jacket' ? 0.42 : 0.2) : 0;
-    photoTorso(d, hem, top, off, mF, mB, g, {gap, blouse: tucked ? 0.012 : 0});
-    const long = k !== 'tee';
-    const sl = long ? 1 : Math.max(0.22, Math.min(0.75, (f.sleeve || 0.45) * (top - hem) * H / (0.335 * H) * 0.95));
-    photoSleeves(d, sl, off, mS, g, long);
-    if (item.zip && st !== 'open') frontLine(d, hem + 0.01, 0.85, off, 0.0035, metal, g);
+    const sp = topSpec(item, d), {ease} = sp, long = k !== 'tee';
+    let yHem = sp.yHem; const tucked = st === 'tucked';
+    const band = (k === 'sweater' || k === 'hoodie') && !tucked ? 0.055 : 0;
+    if (tucked) yHem = Math.max(yHem, 0.585 * H);
+    const rings = [];
+    // корпус: от низа до проймы — по ширине с фото
+    const rho = k === 'jacket' ? 0.66 : 0.6;
+    const ySt = []; for (let y = yHem; y < sp.yArm; y += 0.012) ySt.push(y); ySt.push(sp.yArm);
+    ySt.forEach(y => {
+      const yf = y / H, bd = bodyAB(d, yf); let P = 2 * sp.F(y);
+      let [a, b] = fitAB(P, bd.a + ease, bd.b + ease, Math.max(bd.a + ease, armInner(d, y)), rho);
+      if (band && y < yHem + band) { const t = 1 - (y - yHem) / band, aa = bd.a + ease + 0.012, bb = bd.b + ease + 0.012; a = lerp(a, Math.max(aa, Math.min(a, aa + 0.02)), smooth(t * 1.6) * 0.75); b = lerp(b, Math.max(bb, Math.min(b, bb + 0.02)), smooth(t * 1.6) * 0.75); }
+      if (tucked) { const t = clamp((0.64 * H - y) / (0.64 * H - yHem), 0, 1); a = lerp(a, bd.a + ease, smooth(t)); b = lerp(b, bd.b + ease, smooth(t)); if (y < 0.635 * H && y > 0.6 * H) { a += 0.012; b += 0.01; } }
+      [a, b] = layerAB(yf, a, b, tucked && y < 0.6 * H ? 0.002 : 0.008);
+      const loose = Math.max(0, a - bd.a - ease) * 0.35 + Math.max(0, b - bd.b - ease) * 0.3;
+      const f = clamp(loose, 0, 0.016) * smooth((sp.yArm - y) / 0.1) * (band && y < yHem + band ? 0.4 : 1) + 0.0015;
+      rings.push({y, a, b, f});
+    });
+    // ткань не делает «ступенек»: если внизу её что-то распирает (широкие брюки), выше она расходится плавно, как трапеция
+    for (let i = 1; i < rings.length; i++) { const r = rings[i], q = rings[i - 1], dy = r.y - q.y; r.a = Math.max(r.a, q.a - dy * 0.9); r.b = Math.max(r.b, q.b - dy * 0.9); }
+    // кокетка: от проймы до плечевой точки, потом плечо к горловине
+    const last = rings[rings.length - 1], rnx = d.neck * 1.32 + 0.012, rnz = d.neck * 1.18 + 0.012;
+    const yoke = 6; for (let i = 1; i <= yoke; i++) { const t = i / yoke, y = lerp(sp.yArm, sp.ySh, t), yf = y / H, bd = bodyAB(d, yf);
+      let a = Math.max(lerp(last.a, sp.xS, smooth(t)), bd.a + ease), b = Math.max(lerp(last.b, last.b * 0.9, t), bd.b + ease); [a, b] = layerAB(yf, a, b); rings.push({y, a, b, f: 0.0015}); }
+    const cap = 12; for (let i = 1; i <= cap; i++) { const t = i / cap, y = lerp(sp.ySh, sp.yN, t), yf = y / H, bd = bodyAB(d, yf);
+      const nb = yf > 0.84 ? {a: d.neck + ease, b: d.neck + ease} : bd;
+      let a = Math.max(lerp(sp.xS, rnx, Math.pow(t, 0.85)), nb.a + ease * 0.7), b = Math.max(lerp(rings[rings.length - 1].b, rnz, Math.pow(t, 1.4)), nb.b + ease * 0.7);
+      if (t === 1) { a = Math.max(rnx, a); b = Math.max(rnz, b); }
+      [a, b] = layerAB(yf, a, b, 0.004); rings.push({y, a, b, f: 0}); }
+    // горловина спереди ниже
+    const yTop = sp.yN, nDrop = (item.collar ? 0.012 : 0.032) * d.s;
+    rings.forEach(r => { if (r.y > yTop - 0.04) { const w = (r.y - (yTop - 0.04)) / 0.04; r.dy = phi => -nDrop * w * Math.pow(Math.max(0, Math.cos(phi)), 2); } });
+    const vOf = y => (yTop - y) / (yTop - yHem) * 0.985;
+    const open = st === 'open', gapf = open ? (r => (k === 'jacket' ? 0.3 : 0.3) + (k === 'jacket' ? 0.3 : 0.3) * (1 - smooth((r.y - yHem) / (yTop - yHem)))) : null;
+    const uvF = (phi, r, t) => [open ? (phi < 0 ? t * 0.5 : 0.5 + t * 0.5) : uFront(phi), vOf(r.y)];
+    const uvB = (phi, r, t) => [t, vOf(r.y)];
+    if (open) { addShell(g, ringMesh(rings, -Math.PI / 2, Math.PI / 2, 22, uvF, seed, gapf), mF, inner, 'front'); addShell(g, ringMesh(rings, 0, Math.PI / 2, 22, uvF, seed, gapf), mF, inner, 'front'); }
+    else addShell(g, ringMesh(rings, -Math.PI / 2, Math.PI, 44, uvF, seed), mF, inner, 'front');
+    addShell(g, ringMesh(rings, Math.PI / 2, Math.PI, 44, uvB, seed + 3), mB, inner, 'back');
+    // рукава
+    const j = armJ(d), armDepth = sp.yHPS - sp.yArm;
+    const drop = Math.max(0, sp.xS - d.chest * d.shX * 0.92);
+    // рукав у проймы: обхват ≈ 2 × глубина проймы; не уже руки
+    const r0 = Math.max(armRad(d, 0) + 0.007, armDepth * 0.9 / Math.PI);
+    const sl = item.shape && item.shape.sl_len ? item.shape.sl_len * sp.L * 0.78 : 0.24;
+    const Ls = long ? j.L + 0.035 + drop * 0.5 : clamp(sl + drop, 0.12, 0.42);
+    const r1 = long ? (k === 'jacket' ? 0.056 : 0.043) * d.s : Math.max(r0 * 0.86, armRad(d, Ls / j.L) + 0.014);
+    [-1, 1].forEach(side => {
+      const D = new THREE.Vector3(Math.sin(j.th) * side, -Math.cos(j.th), 0);
+      const out = new THREE.Vector3(Math.cos(j.th) * side, Math.sin(j.th), 0), S0 = new THREE.Vector3(j.x * side, j.y, 0).addScaledVector(D, r0 * 0.4).addScaledVector(out, Math.max(0, r0 - armRad(d, 0) - ease) * 0.45 + drop * 0.25);
+      // верх рукава — округлый (как плечо), уходит под кокетку
+      const rad = s => s < 0 ? r0 * Math.sqrt(Math.max(0.04, 1 - (s / (r0 * 0.95)) ** 2)) :
+        long ? Math.max(armRad(d, s / j.L) + 0.01, lerp(r0, r1 * 1.25, smooth(s / (Ls * 0.9))) - (s > Ls - 0.05 ? (s - (Ls - 0.05)) / 0.05 * r1 * 0.25 : 0)) : lerp(r0, r1, s / Ls);
+      const looseS = Math.max(0, r0 - armRad(d, 0) - ease);
+      const foldf = (ps, s) => s < 0 ? 0 : (long ? 0.004 * smooth((s - Ls * 0.6) / (Ls * 0.4)) * Math.sin(s * 95 + ps * 2 + seed) : 0) + looseS * 0.18 * Math.sin(ps * 5 + seed + s * 6) * smooth(s / 0.08);
+      const geo = tubeMesh(S0, D, Ls, rad, 28, 30, (ps, s) => [Math.abs(((ps / Math.PI + (side > 0 ? 0 : 1)) % 2) - 1), Math.max(0, s) / Ls], foldf, side, r0 * 0.95);
+      addShell(g, geo, mS, inner);
+    });
+    if (item.zip && !open) {
+      const pts = rings.filter(r => r.y < yTop - 0.03).map(r => new THREE.Vector3(0, r.y, r.b + 0.003));
+      if (pts.length > 2) g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.0035, 6, false), metal));
+    }
     if (k === 'hoodie' || item.hood) {
+      const hs = Math.max(0.13 * d.s, rnx * 1.6);
       if (st === 'hood') {
-        // капюшон надет: оболочка вокруг головы, лицо открыто
-        const hood = new THREE.Mesh(new THREE.SphereGeometry(0.128 * d.s, 28, 18, Math.PI * 0.86, Math.PI * 1.28, 0.0, Math.PI * 0.74), mS);
+        const hood = new THREE.Mesh(new THREE.SphereGeometry(hs, 28, 18, Math.PI * 0.86, Math.PI * 1.28, 0.0, Math.PI * 0.74), mS);
         hood.position.set(0, 0.928 * H, -0.006 * d.s); hood.scale.set(1.0, 1.18, 1.08); g.add(hood);
+        const hi = new THREE.Mesh(hood.geometry, inner); hi.position.copy(hood.position); hi.scale.copy(hood.scale); g.add(hi);
       } else {
-        const hood = new THREE.Mesh(new THREE.SphereGeometry(0.13 * d.s, 24, 16, Math.PI * 0.15, Math.PI * 1.7, 0.2, Math.PI * 0.62), mS);
-        hood.position.set(0, 0.845 * H, -0.075 * d.s); hood.rotation.y = Math.PI; hood.scale.set(1.0, 0.48, 0.62); g.add(hood);
+        // капюшон снят: валик вокруг шеи сзади и полотно, лежащее на спине
+        const plain = new THREE.MeshStandardMaterial({color: LIN(base), roughness: 0.9});
+        const roll = new THREE.Mesh(new THREE.TorusGeometry(1, 0.3, 10, 24, Math.PI * 1.1), plain);
+        roll.rotation.set(Math.PI / 2, 0, Math.PI * 0.95); roll.scale.set(rnx + 0.02, rnz + 0.03, 0.1); roll.position.set(0, yTop - 0.006, -0.004); g.add(roll);
+        const yb = yTop - 0.13 * d.s, rb = rings.reduce((m, r) => Math.abs(r.y - yb) < Math.abs(m.y - yb) ? r : m, rings[0]);
+        const pan = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), plain);
+        pan.rotation.x = -Math.PI / 2 + 0.1; pan.scale.set(rnx * 1.35, 0.022, hs * 0.72); pan.position.set(0, yTop - hs * 0.68, -rb.b - 0.002); g.add(pan);
       }
     }
     if (item.collar || k === 'jacket') {
-      const col = new THREE.Mesh(new THREE.TorusGeometry(d.neck + off * 0.9, 0.016, 8, 24), mS); col.rotation.x = Math.PI / 2; col.position.y = 0.864 * H; col.scale.set(1.15, 1.05, 1); g.add(col);
+      const col = new THREE.Mesh(new THREE.TorusGeometry(1, 0.016 / rnx, 8, 28), mS); col.rotation.x = Math.PI / 2; col.position.y = yTop + 0.004; col.scale.set(rnx + 0.004, rnz + 0.004, rnx); g.add(col);
     }
   } else {
-    // низ: пояс → шаг → низ штанины; разметка v по фото (где шаг на фото — там шаг на фигуре)
-    const waist = 0.6, crotchY = 0.47, Wh = flatW(d, 0.53, off);
-    let hemY = waist - (f.len_w || 1.8) * Wh / H;
-    hemY = Math.max(k === 'shorts' ? 0.25 : 0.03, Math.min(k === 'shorts' ? 0.4 : 0.3, hemY));
-    // длинные брюки по фото лёжа выходят короче: широкий крой на фото шире, чем пояс на фигуре.
-    // Пока брюки (не укороченные по названию) — до щиколотки; длину возьмём из размерной сетки, когда она будет в выгрузке
-    if (k !== 'shorts' && !/укороч|кюлот|капри/i.test(item.name || '')) hemY = Math.min(hemY, 0.06);
-    const cv = Math.max(0.15, Math.min(0.75, f.crotch || 0.42));
-    const vOf = y => { const yf = y / H; return yf >= crotchY ? (waist - yf) / (waist - crotchY) * cv : cv + (crotchY - yf) / (crotchY - hemY) * (1 - cv); };
-    photoTorso(d, crotchY - 0.005, waist, off, mF, mB, g, {vOf});
-    // штанины: ширина у шага, у колена и внизу — из фото (плоская ширина штанины = π·r)
-    const legFlat = r => r / Math.PI;
-    const rC = Math.max(d.thigh + off, legFlat(Wh * 0.5)), rK = Math.max(0.05 * d.k + off, legFlat(Wh * (f.knee || 0.45))), rH = Math.max(0.036 + off, legFlat(Wh * Math.max(f.hem || 0.3, 0.26)));
+    // низ: пояс → бёдра → две штанины-трубы по ширине с фото, лишняя длина — гармошкой у пола
+    const sp = bottomSpec(item, d), cv = clamp((item.fit && item.fit.crotch) || 0.42, 0.15, 0.75), ease = 0.008;
+    const vHip = y => (sp.yW - y) / (sp.yW - sp.yC) * cv;
+    const vLeg = y => cv + (sp.yC - y) / (sp.yC - sp.yHem) * (1 - cv);
+    // штанины
+    const legR = t => sp.lw.length ? interp(sp.lw, t) / Math.PI : 0.07;     // t: 0 — у шага, 1 — низ
+    const bodyLeg = y => { const yf = y / H, tab = [[0.04, 0.034], [0.07, 0.038], [0.15, 0.058 * d.k], [0.24, 0.05 * d.k], [0.28, 0.053 * d.k], [0.38, d.thigh * 0.88], [0.47, d.thigh], [0.5, d.thigh * 0.98]];
+      for (let i = 1; i < tab.length; i++) if (yf <= tab[i][0]) { const t = (yf - tab[i - 1][0]) / (tab[i][0] - tab[i - 1][0]); return (tab[i - 1][1] + (tab[i][1] - tab[i - 1][1]) * t) * (yf > 0.3 ? 1 : d.s); } return d.thigh; };
+    // штанины висят от бёдер и касаются друг друга у шага; книзу чуть расходятся
+    const rTop = Math.max(legR(0), d.thigh + ease), hipA = bodyAB(d, 0.5).a + ease + 0.004;
+    const xcTop = Math.max(d.legX, Math.min(rTop * 0.96 + 0.004, hipA - rTop));
+    const stackH = sp.stack ? Math.min(0.22, 0.05 + sp.stack * 1.6) : 0;
     [-1, 1].forEach(side => {
-      const body = y => { const tab = [[0.04, 0.034], [0.07, 0.038], [0.15, 0.058 * d.k], [0.24, 0.05 * d.k], [0.28, 0.053 * d.k], [0.38, d.thigh * 0.88], [0.47, d.thigh], [0.5, d.thigh * 0.98]];
-        for (let i = 1; i < tab.length; i++) if (y <= tab[i][0]) { const t = (y - tab[i - 1][0]) / (tab[i][0] - tab[i - 1][0]); return (tab[i - 1][1] + (tab[i][1] - tab[i - 1][1]) * t) * (y > 0.3 ? 1 : d.s); } return d.thigh; };
-      const kneeY = (crotchY + hemY) / 2, prof = [];
-      for (let yf = hemY; yf <= crotchY + 0.03 + 1e-6; yf += 0.015) {
-        const t = yf < kneeY ? (yf - hemY) / (kneeY - hemY) : (yf - kneeY) / (crotchY - kneeY);
-        const r = yf < kneeY ? rH + (rK - rH) * (t * t * (3 - 2 * t)) : rK + (rC - rK) * (t * t * (3 - 2 * t));
-        prof.push([yf * H, Math.max(r, body(yf) + off)]);
+      const rings = [];
+      for (let y = sp.yHem; y <= sp.yC + 0.06 + 1e-6; y += 0.012) {
+        const t = clamp((sp.yC - y) / sp.legLen, 0, 1);
+        let r = Math.max(legR(t), bodyLeg(y) + ease);
+        if (y > sp.yC) r = Math.max(r, rTop);
+        let st_ = 0;
+        if (stackH && y < sp.yHem + stackH) { st_ = smooth(1 - (y - sp.yHem) / stackH); r += 0.008 * st_; }
+        const xc = side * (Math.max(d.legX, Math.min(xcTop, r * 0.96 + 0.004)) + 0.03 * smooth(t));
+        const loose = Math.max(0, r - bodyLeg(y) - ease);
+        const ripple = st_ ? 0.006 * st_ * Math.sin(y * 120 + seed) : 0;
+        rings.push({y, a: r + ripple, b: r + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
+        noteAB(y / H, Math.abs(xc) + r, r * 1.3);
       }
-      const one = () => 1;
-      // перед штанины: на фото левая штанина (side −1) — левая половина нижней части текстуры
-      [[-Math.PI / 2, Math.PI, mF, true], [Math.PI / 2, Math.PI, mB, false]].forEach(([p0, pl, mat, front]) => {
-        const geo = loft(prof, 20, one, one, p0, pl), P = geo.attributes.position, uv = geo.attributes.uv;
-        for (let i = 0; i < P.count; i++) {
-          const x = P.getX(i), y = P.getY(i), z = P.getZ(i), ph = Math.atan2(x, z), u = front ? uFront(ph) : uBack(ph);
-          const leftHalf = front ? side < 0 : side > 0;              // на фото сзади штанины меняются местами
-          uv.setXY(i, (leftHalf ? 0 : 0.5) + u * 0.5, 1 - Math.min(1, vOf(y)));
-        }
-        uv.needsUpdate = true;
-        const m = new THREE.Mesh(geo, mat); m.position.x = side * d.legX; g.add(m);
+      const leftHalf = f => (f ? side < 0 : side > 0);
+      [[-Math.PI / 2, mF, true], [Math.PI / 2, mB, false]].forEach(([p0, mat, front]) => {
+        const geo = ringMesh(rings, p0, Math.PI, 26, (phi, r, t) => [(leftHalf(front) ? 0 : 0.5) + t * 0.5, vLeg(Math.min(r.y, sp.yC))], seed + side);
+        addShell(g, geo, mat, inner, front ? 'front' : 'back');
       });
     });
+    // бёдра: от пояса (по фигуре + припуск) вниз к ширине двух штанин
+    const rings = [], bw = bodyAB(d, sp.yW / H);
+    const [aW, bW] = fitAB(2 * Math.max(sp.ww, ellP(bw.a, bw.b) / 2 + ease), bw.a + ease, bw.b + ease, 9, bw.b / bw.a);
+    const aBot = Math.max(hipA, xcTop + rTop), bBot = Math.max(rTop, bodyAB(d, 0.5).b + ease);
+    // снизу бёдра переходят в «перемычку» у шага: закрывает просвет между штанинами
+    for (let y = sp.yC - 0.045; y <= sp.yW + 1e-6; y += 0.012) {
+      const yf = y / H, bd = bodyAB(d, yf), t = smooth((sp.yW - y) / (sp.yW - sp.yC)), lo = clamp((sp.yC - y) / 0.045, 0, 1);
+      let a = Math.max(lerp(aW, aBot, t), bd.a + ease), b = Math.max(lerp(bW, bBot, t), bd.b + ease);
+      if (lo > 0) { a = aBot * (1 - 0.25 * lo); b = bBot * (1 - 0.35 * lo); }
+      [a, b] = layerAB(yf, a, b);
+      rings.push({y, a, b, f: clamp((a - bd.a) * 0.08, 0, 0.006) * t});
+    }
+    addShell(g, ringMesh(rings, -Math.PI / 2, Math.PI, 40, (phi, r) => [uFront(phi), vHip(r.y)], seed), mF, inner, 'front');
+    addShell(g, ringMesh(rings, Math.PI / 2, Math.PI, 40, (phi, r, t) => [t, vHip(r.y)], seed + 1), mB, inner, 'back');
   }
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return g;
@@ -417,7 +599,7 @@ export function createFitting(ctx) {
     const c = classify(p); if (!c) return null;
     return {id: idOf(p, s), name: p.name, shop: s ? s.name : '', shopCol: s ? s.colHex : '#888', price: p.price || 0, oldPrice: p.oldPrice || 0, url: p.url || (s && ctx.siteOf(s)) || '',
       color: p.color || '#888888', colorName: p.colorName || '', thumb: ctx.thumb(p), model: p.model, slot: c.slot, kind: c.kind, sizes: p.sizes || null, feed: !!p.feed, glb: p.glb || null,
-      tex: p.tex || null, fit: p.fit || null, states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, collar: !!p.collar, hood: !!p.hood};
+      tex: p.tex || null, fit: p.fit || null, shape: p.shape || null, states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, collar: !!p.collar, hood: !!p.hood};
   }
   const has = (p, s) => W.items.some(i => i.id === idOf(p, s));
   function add(p, s, wear) {
@@ -487,7 +669,9 @@ export function createFitting(ctx) {
     if (key === built.key) return; built.key = key;
     R.avatar.children.slice().forEach(o => { R.avatar.remove(o); o.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== R.skinMat) { if (m.material.map && !Object.values(TEX).includes(m.material.map)) m.material.map.dispose(); m.material.dispose(); } }); });
     R.skinMat.color.copy(LIN(SKIN[b.skin | 0] || SKIN[0])); R.skinMat.roughness = (b.skin | 0) === 0 ? 0.35 : 0.6;
-    const body = buildBody(b, R.skinMat); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); R.avatar.add(body.g); R.d = body.d;
+    // широкая вещь отводит руки: они лежат на ткани, а не проходят сквозь неё
+    const d0 = bodyDims(b); d0.armA = armSpread(worn(), d0);
+    const body = buildBody(b, R.skinMat, d0); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); R.avatar.add(body.g); R.d = body.d;
     const order = {shoes: 0, bottom: 1, dress: 2, top: 3, outer: 4};
     UNDER = []; UNDERZ = []; worn().sort((a, c) => order[a.slot] - order[c.slot]).forEach(it => { R.avatar.add(garmentMesh(it, body.d)); commitLayer(); }); UNDER = UNDERZ = null;
   }
@@ -619,7 +803,7 @@ export function createFitting(ctx) {
     const list = await r.json(), s = {name: shopName || 'Мой гардероб', colHex: '#0e7490'};
     list.forEach(mt => {
       const dir = base + mt.id + '/';
-      const p = {name: mt.name, kind: mt.kind, color: mt.color, fit: mt.fit, states: mt.states, zip: mt.zip, collar: mt.collar, id: 'w-' + mt.id, feed: true,
+      const p = {name: mt.name, kind: mt.kind, color: mt.color, fit: mt.fit, shape: mt.shape, states: mt.states, zip: mt.zip, collar: mt.collar, id: 'w-' + mt.id, feed: true,
         tex: {front: dir + 'front.webp', back: dir + 'back.webp', sleeve: mt.sleeve ? dir + 'sleeve.webp' : null}, pic: dir + 'front.webp'};
       const it = toItem(p, s); if (!it) return; it.thumb = p.pic;
       const old = W.items.findIndex(i => i.id === it.id); if (old >= 0) W.items[old] = Object.assign(it, {state: W.items[old].state || it.state}); else W.items.push(it);
@@ -628,7 +812,7 @@ export function createFitting(ctx) {
   }
 
   return {
-    setView: kind => { if (R) view(kind); }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
+    setView: kind => { if (R) view(kind); }, setRot: r => { if (R) { R.view.rot = r; R.avatar.rotation.y = r; } }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
     addPack, wear(ids, states) { W.worn = []; ids.forEach(id => putOn(id, true)); Object.entries(states || {}).forEach(([id, st]) => { const it = W.items.find(i => i.id === id); if (it) it.state = st; }); persist(); render(); },
     setState(id, st) { const it = W.items.find(i => i.id === id); if (it) { it.state = st; persist(); render(); } },
     open: openRoom, close: closeRoom, get isOpen() { return open; },
