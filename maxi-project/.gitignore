@@ -3,3 +3,4 @@ dist/
 tools/test/out/
 tools/pipeline/work/
 tools/wardrobe/raw/
+tools/wardrobe/out/

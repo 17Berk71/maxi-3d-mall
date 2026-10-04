@@ -313,3 +313,5 @@ html.calm *,html.calm *::before,html.calm *::after{transition:none!important;ani
 @media (max-height:500px) and (min-width:500px){
  #fitting{flex-direction:row}.fit-stage{height:auto;flex:1}.fit-panel{width:min(380px,50vw);border-width:0 0 0 1px}
 }
+.fit-states{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 8px}
+.fit-states small{font-size:12px;color:var(--muted);font-weight:700;margin-right:2px}
