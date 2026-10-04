@@ -22,7 +22,8 @@ const SLOT_ORDER = ['outer', 'dress', 'top', 'bottom', 'shoes'];
 const KIND_SLOT = {tee: 'top', sweater: 'top', shirt: 'top', hoodie: 'top', jacket: 'outer', coat: 'outer', puffer: 'outer', vest: 'outer', dress: 'dress',
   pants: 'bottom', jeans: 'bottom', shorts: 'bottom', skirt: 'bottom', sneaker: 'shoes', boot: 'shoes', shoe: 'shoes'};
 export function classify(p) {
-  if (p.kind && KIND_SLOT[p.kind]) return {slot: KIND_SLOT[p.kind], kind: p.kind};
+  // зипка (худи на молнии) носится поверх футболки — это верхний слой, а не «верх»
+  if (p.kind && KIND_SLOT[p.kind]) return {slot: p.kind === 'hoodie' && p.zip ? 'outer' : KIND_SLOT[p.kind], kind: p.kind};
   const n = (p.name || '').toLowerCase(), m = p.model;
   const has = re => re.test(n);
   if (m === 'shoe' || has(/кроссов|кед|слипон|ботин|сапог|туфл|лофер|бутс|мокасин|сандал|босонож/))
@@ -292,7 +293,7 @@ function photoGarment(item, d) {
     if (k === 'hoodie' || item.hood) {
       if (st === 'hood') {
         // капюшон надет: оболочка вокруг головы, лицо открыто
-        const hood = new THREE.Mesh(new THREE.SphereGeometry(0.128 * d.s, 28, 18, Math.PI * 0.62, Math.PI * 1.76, 0.0, Math.PI * 0.72), mS);
+        const hood = new THREE.Mesh(new THREE.SphereGeometry(0.128 * d.s, 28, 18, Math.PI * 0.86, Math.PI * 1.28, 0.0, Math.PI * 0.74), mS);
         hood.position.set(0, 0.928 * H, -0.006 * d.s); hood.scale.set(1.0, 1.18, 1.08); g.add(hood);
       } else {
         const hood = new THREE.Mesh(new THREE.SphereGeometry(0.13 * d.s, 24, 16, Math.PI * 0.15, Math.PI * 1.7, 0.2, Math.PI * 0.62), mS);
@@ -307,6 +308,9 @@ function photoGarment(item, d) {
     const waist = 0.6, crotchY = 0.47, Wh = flatW(d, 0.53, off);
     let hemY = waist - (f.len_w || 1.8) * Wh / H;
     hemY = Math.max(k === 'shorts' ? 0.25 : 0.03, Math.min(k === 'shorts' ? 0.4 : 0.3, hemY));
+    // длинные брюки по фото лёжа выходят короче: широкий крой на фото шире, чем пояс на фигуре.
+    // Пока брюки (не укороченные по названию) — до щиколотки; длину возьмём из размерной сетки, когда она будет в выгрузке
+    if (k !== 'shorts' && !/укороч|кюлот|капри/i.test(item.name || '')) hemY = Math.min(hemY, 0.06);
     const cv = Math.max(0.15, Math.min(0.75, f.crotch || 0.42));
     const vOf = y => { const yf = y / H; return yf >= crotchY ? (waist - yf) / (waist - crotchY) * cv : cv + (crotchY - yf) / (crotchY - hemY) * (1 - cv); };
     photoTorso(d, crotchY - 0.005, waist, off, mF, mB, g, {vOf});

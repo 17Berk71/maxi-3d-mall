@@ -143,7 +143,9 @@ def top_parts(im, m, kind):
     gmed = np.median(core, 0)
     while bot > top + L0 * .5:
         px = lab[bot][m[bot] > 0]
-        if len(px) and np.linalg.norm(np.median(px, 0) - gmed) > 32: m[bot] = 0; bot -= 1
+        med = np.median(px, 0) if len(px) else gmed
+        # далеко по цвету — или та же светлота, но оттенок стены (белая вещь на бирюзовой стене)
+        if len(px) and (np.linalg.norm(med - gmed) > 32 or np.linalg.norm(med[1:] - gmed[1:]) > 7): m[bot] = 0; bot -= 1
         else: break
     # сверху — вешалка (серый пластик) и стена над плечами: убрать пиксели, далёкие по цвету от вещи
     yh = top + int(L0 * .14)
