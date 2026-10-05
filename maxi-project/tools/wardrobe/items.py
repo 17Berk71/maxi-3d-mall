@@ -25,4 +25,18 @@ ITEMS = [
     dict(id='brown-pants', name='Брюки на резинке', kind='pants', elastic=True, front='3ee4d24c', back='65e4e52b', worn=['fdf4f8dd', 'f5b54112x']),
     dict(id='nike-pants', name='Штаны нейлоновые Nike', kind='pants', elastic=True, front='a6435039', back='40f40230', worn=['afdd9abd', '8bb621b4']),
     dict(id='cream-shorts', name='Шорты джинсовые', kind='shorts', front='e7268e0b', back='c8f49e61', worn=['a7529a3a', '9e360828']),
+
+    # Вещи из карточек магазина (фото на модели + таблица размеров). Мерки — по таблице выбранного размера:
+    # waist/hip — полуобхват (ширина лёжа), inseam — по внутреннему шву, outseam — длина брюк, hem — низ штанины лёжа.
+    dict(id='tj-baggy', name='Джинсы багги TJeans Big Boy', kind='jeans', src='model', front='tj-front', back='tj-back', worn=[], brand='TJeans',
+         note='таблица размеров магазина; «обхват изделия снизу» понят как ширина низа штанины лёжа',
+         sizes=[dict(name='32/L', ru='48', cm=dict(waist=41, hip=70, inseam=74, outseam=107, hem=28)),
+                dict(name='33/L', ru='50', cm=dict(waist=43, hip=72, inseam=74, outseam=107, hem=28)),
+                dict(name='34/XL', ru='50-52', cm=dict(waist=45, hip=74, inseam=74, outseam=109, hem=29))]),
+    # У футболки в таблице — мерки тела, а не вещи. Вещь: прямой крой → ширина лёжа ≈ (грудь + 8 см) / 2; длина — оценка по размеру.
+    dict(id='td-tee', name='Футболка Телодвижения, прямой крой', kind='tee', src='model', front='td-front', back='td-back', worn=[], brand='Телодвижения',
+         note='в таблице магазина мерки тела; размеры вещи оценены (прямой крой)',
+         sizes=[dict(name='XS', ru='42', body=dict(chest=[82, 86], waist=[62, 66], hips=[90, 94]), cm=dict(chest=47, len=66)),
+                dict(name='3XL', ru='54', body=dict(chest=[106, 110], waist=[86, 90], hips=[114, 118]), cm=dict(chest=59, len=76)),
+                dict(name='4XL', ru='56', body=dict(chest=[110, 114], waist=[98, 102], hips=[116, 120]), cm=dict(chest=61, len=78))]),
 ]

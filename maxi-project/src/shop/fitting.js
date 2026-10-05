@@ -53,11 +53,14 @@ function sizeHint(b) {
 }
 
 // ---------- фигура: профиль туловища и конечностей по параметрам ----------
+// телосложение: если задан вес — по индексу массы тела (18 → худощавое, 30 → плотное), иначе ползунок
+const buildOf = b => b.weight ? Math.max(0, Math.min(1, (b.weight / Math.pow(b.height / 100, 2) - 18) / 12)) : (b.build == null ? 0.5 : b.build);
 function bodyDims(b) {
+  b = Object.assign({}, b, {build: buildOf(b)});
   const H = b.height / 100, s = H / 1.7, k = 0.86 + b.build * 0.34, R = c => c / 100 / (2 * Math.PI);
   const m = b.sex === 'm';
   return {
-    H, s, k, m,
+    H, s, k, m, b,
     chest: R(b.chest), waist: R(b.waist), hips: R(b.hips),
     neck: 0.052 * s * (m ? 1.12 : 1) * (0.9 + b.build * 0.2),
     shX: m ? 1.42 : 1.3,           // ширина плеч относительно груди
@@ -321,6 +324,33 @@ function addShell(g, geo, mat, inner, role) {
   return m;
 }
 
+// ---------- размеры из таблицы магазина ----------
+// item.sizesT: [{name, ru, cm:{len, chest | waist, hip, inseam, outseam, hem}, body:{chest:[от,до], waist, hips}}]; item.size — выбранный (или подбор по фигуре)
+function recommendSize(item, b) {
+  const S = item.sizesT; if (!S || !S.length) return null;
+  const top = ['tee', 'sweater', 'hoodie', 'jacket', 'shirt'].includes(item.kind);
+  const fits = sz => {
+    if (sz.body) { const r = top ? sz.body.chest : sz.body.waist; return r && (top ? b.chest : b.waist) <= r[1]; }
+    if (top && sz.cm.chest) return sz.cm.chest * 2 >= b.chest + 6;
+    if (!top && sz.cm.waist) return sz.cm.waist * 2 >= b.waist - 1;
+    return false;
+  };
+  return (S.find(fits) || S[S.length - 1]).name;
+}
+const sizeOf = (item, b) => item.sizesT ? item.sizesT.find(z => z.name === (item.size || recommendSize(item, b))) || item.sizesT[0] : null;
+function itemCm(item, b) { const sz = b && sizeOf(item, b); return Object.assign({}, (item.shape && item.shape.cm) || {}, sz ? sz.cm : {}); }
+// как сядет: сравнение мерок вещи с фигурой (простыми словами)
+function fitNote(item, b) {
+  const sz = sizeOf(item, b); if (!sz) return '';
+  const c = sz.cm, out = [], top = ['tee', 'sweater', 'hoodie', 'jacket', 'shirt'].includes(item.kind);
+  if (sz.body && sz.body.chest && top) { const [lo, hi] = sz.body.chest; out.push(b.chest > hi ? 'мало в груди по таблице (' + lo + '–' + hi + ' см)' : b.chest < lo - 4 ? 'велико по таблице' : 'твой размер по таблице магазина'); }
+  if (top && c.chest) { const e = c.chest * 2 - b.chest; out.push(e < 0 ? 'в обтяжку' : e < 8 ? 'по фигуре' : e < 18 ? 'свободно' : 'оверсайз'); }
+  if (!top && c.waist) { const e = c.waist * 2 - b.waist; out.push(e < -2 ? 'пояс мал (' + c.waist * 2 + ' см при талии ' + b.waist + ')' : e <= 4 ? 'пояс по талии' : 'пояс свободный — с ремнём'); }
+  if (!top && c.hip) { const e = c.hip * 2 - b.hips; out.push(e > 25 ? 'очень свободно в бёдрах' : e > 10 ? 'свободно в бёдрах' : 'по бёдрам'); }
+  if (!top && c.outseam) { const need = b.height * 0.595 - 2, dl = Math.round(c.outseam - need); out.push(dl > 4 ? 'длинные: ~' + dl + ' см ложится на обувь' : dl < -6 ? 'укороченные' : 'до обуви'); }
+  return out.join(' · ');
+}
+
 // длина вещи по спинке (м), если мерок нет: типичная для своего размера, чуть зависит от роста
 const LEN0 = {tee: 0.71, sweater: 0.68, hoodie: 0.68, jacket: 0.68, shirt: 0.76};
 function cleanTail(arr) {
@@ -331,7 +361,7 @@ function cleanTail(arr) {
 }
 // параметры верха на этой фигуре
 function topSpec(item, d) {
-  const sh = item.shape || {}, cm = sh.cm || {}, k = item.kind, H = d.H;
+  const sh = item.shape || {}, cm = itemCm(item, d.b), k = item.kind, H = d.H;
   const L = cm.len ? cm.len / 100 : (LEN0[k] || 0.7) * (sh.crop ? 0.84 : 1) * Math.pow(H / 1.8, 0.6);
   // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
   const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
@@ -351,20 +381,26 @@ function topSpec(item, d) {
   return {L, Fs, F, yHPS, yHem, yN, yArm, loose, ease, xS, ySh: Math.max(ySh, yArm + 0.05), aFree, hk};
 }
 function bottomSpec(item, d) {
-  const sh = item.shape || {}, cm = sh.cm || {}, k = item.kind, H = d.H;
-  const yW = 0.595 * H, bw = bodyAB(d, 0.595), Fw = ellP(bw.a, bw.b) / 2;
+  const sh = item.shape || {}, cm = itemCm(item, d.b), k = item.kind, H = d.H;
+  let yW = 0.595 * H; const bw = bodyAB(d, 0.595), Fw = ellP(bw.a, bw.b) / 2;
   // масштаб: пояс садится на талию (на резинке лёжа собран ~в 1.2 раза); у длинных брюк ещё и длина «до пола» — берём среднее
   const kW = (cm.waist ? cm.waist / 100 : (Fw + 0.012) / (sh.elastic ? 1.1 : 1));
   const tot = (sh.rise || 0.75) + (sh.leg_len || 1.6), full = k !== 'shorts' && !/укороч|кюлот|капри/i.test(item.name || '');
   const kk = cm.outseam ? cm.outseam / 100 / tot : kW;
   // длинные брюки шьют «до пола»: если по фото вышли короче щиколотки — дотянуть
   const T = full && !cm.outseam ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
-  const yC = 0.47 * H - 0.015;                                  // шаг: по фото лёжа не виден (штанины лежат вплотную), берём по фигуре
+  let yC = 0.47 * H - 0.015;                                  // шаг: по фото лёжа не виден (штанины лежат вплотную), берём по фигуре
+  // по таблице размеров: шаг = длина − шаговый шов; короткий шаг сажает брюки ниже на бёдрах, длинный — «спущенный» шаг
+  if (cm.outseam && cm.inseam) { const rise = (cm.outseam - cm.inseam) / 100, bodyC = 0.47 * H - 0.012; yC = Math.min(yW - rise, bodyC); yW = yC + rise; }
   let legLen = T - (yW - yC), yHem = yC - legLen, stack = 0;
   if (yHem < 0.012) { stack = 0.012 - yHem; yHem = 0.012; legLen = yC - yHem; }
   let lw = (sh.leg || [0.6]).slice(); if (lw.length > 2 && lw[lw.length - 1] < lw[lw.length - 2] * 0.8) lw[lw.length - 1] = lw[lw.length - 2] * 0.96;
   lw = lw.map(v => v * kk);
-  return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T};
+  // мерки таблицы: низ штанины и бёдра точные, профиль между ними — по фото
+  if (cm.hem) { const f = cm.hem / 100 / lw[lw.length - 1]; lw = lw.map(v => v * f); }
+  if (cm.hip) lw[0] = Math.min(lw[0], cm.hip / 100 * 0.62);
+  for (let i = 1; i < lw.length - 1 && cm.hip; i++) lw[i] = Math.min(lw[i], lw[0] * 1.15);
+  return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip: cm.hip ? cm.hip / 100 : 0};
 }
 // насколько вещь раздвигает руки (широкая вещь — руки лежат на ней, а не протыкают)
 function armSpread(items, d) {
@@ -409,6 +445,8 @@ function photoGarment(item, d) {
       [a, b] = layerAB(yf, a, b, tucked && y < 0.6 * H ? 0.002 : 0.008);
       const loose = Math.max(0, a - bd.a - ease) * 0.35 + Math.max(0, b - bd.b - ease) * 0.3;
       const f = clamp(loose, 0, 0.016) * smooth((sp.yArm - y) / 0.1) * (band && y < yHem + band ? 0.4 : 1) + 0.0015;
+      // складки уходят и внутрь — над нижней вещью отступаем на их глубину, чтобы она не проступала
+      if (UNDER && !(tucked && y < 0.6 * H)) { const u = uget(UNDER, yf), uz = uget(UNDERZ, yf); if (u) a = Math.max(a, u + 0.006 + f * 1.1); if (uz) b = Math.max(b, uz + 0.006 + f * 1.1); noteAB(yf, a + f, b + f); }
       rings.push({y, a, b, f});
     });
     // ткань не делает «ступенек»: если внизу её что-то распирает (широкие брюки), выше она расходится плавно, как трапеция
@@ -510,7 +548,8 @@ function photoGarment(item, d) {
     // бёдра: от пояса (по фигуре + припуск) вниз к ширине двух штанин
     const rings = [], bw = bodyAB(d, sp.yW / H);
     const [aW, bW] = fitAB(2 * Math.max(sp.ww, ellP(bw.a, bw.b) / 2 + ease), bw.a + ease, bw.b + ease, 9, bw.b / bw.a);
-    const aBot = Math.max(hipA, xcTop + rTop), bBot = Math.max(rTop, bodyAB(d, 0.5).b + ease);
+    let aBot = Math.max(hipA, xcTop + rTop), bBot = Math.max(rTop, bodyAB(d, 0.5).b + ease);
+    if (sp.hip) { const [ah, bh] = fitAB(2 * sp.hip, aBot, bBot, aBot + 0.02, 0.62); aBot = ah; bBot = Math.min(bh, aBot * 0.95); }   // лишняя ширина уходит в глубину, без «галифе» по бокам   // полуобхват бёдер по таблице: широкий «багги»-зад
     // снизу бёдра переходят в «перемычку» у шага: закрывает просвет между штанинами
     for (let y = sp.yC - 0.045; y <= sp.yW + 1e-6; y += 0.012) {
       const yf = y / H, bd = bodyAB(d, yf), t = smooth((sp.yW - y) / (sp.yW - sp.yC)), lo = clamp((sp.yC - y) / 0.045, 0, 1);
@@ -599,7 +638,7 @@ export function createFitting(ctx) {
     const c = classify(p); if (!c) return null;
     return {id: idOf(p, s), name: p.name, shop: s ? s.name : '', shopCol: s ? s.colHex : '#888', price: p.price || 0, oldPrice: p.oldPrice || 0, url: p.url || (s && ctx.siteOf(s)) || '',
       color: p.color || '#888888', colorName: p.colorName || '', thumb: ctx.thumb(p), model: p.model, slot: c.slot, kind: c.kind, sizes: p.sizes || null, feed: !!p.feed, glb: p.glb || null,
-      tex: p.tex || null, fit: p.fit || null, shape: p.shape || null, states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, collar: !!p.collar, hood: !!p.hood};
+      tex: p.tex || null, fit: p.fit || null, shape: p.shape || null, sizesT: p.sizesT || null, size: null, brand: p.brand || '', note: p.note || '', states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, collar: !!p.collar, hood: !!p.hood};
   }
   const has = (p, s) => W.items.some(i => i.id === idOf(p, s));
   function add(p, s, wear) {
@@ -665,7 +704,7 @@ export function createFitting(ctx) {
   const SKIN = ['#e8e2da', '#f1d3bd', '#d9a882', '#a8714f', '#6e4630'];
   let built = {key: ''};
   function rebuild() {
-    if (!R) return; const b = PREFS.body, key = JSON.stringify(b) + '|' + worn().map(i => i.id + ':' + (i.state || '')).join(',');
+    if (!R) return; const b = PREFS.body, key = JSON.stringify(b) + '|' + worn().map(i => i.id + ':' + (i.state || '') + ':' + (i.size || '')).join(',');
     if (key === built.key) return; built.key = key;
     R.avatar.children.slice().forEach(o => { R.avatar.remove(o); o.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== R.skinMat) { if (m.material.map && !Object.values(TEX).includes(m.material.map)) m.material.map.dispose(); m.material.dispose(); } }); });
     R.skinMat.color.copy(LIN(SKIN[b.skin | 0] || SKIN[0])); R.skinMat.roughness = (b.skin | 0) === 0 ? 0.35 : 0.6;
@@ -716,6 +755,14 @@ export function createFitting(ctx) {
         const row = h('div', 'fit-states'); row.appendChild(h('small', '', it.name + ':'));
         it.states.forEach(([key, label]) => { const b = h('button', 'sh-tab' + ((it.state || it.states[0][0]) === key ? ' on' : ''), label); b.onclick = () => { it.state = key; persist(); render(); }; row.appendChild(b); });
         top.appendChild(row); });
+      // размер по таблице магазина: подбор по фигуре и подсказка, как сядет
+      wn.filter(it => it.sizesT && it.sizesT.length).forEach(it => {
+        const b = PREFS.body, rec = recommendSize(it, b), cur = it.size || rec;
+        const row = h('div', 'fit-states'); row.appendChild(h('small', '', 'Размер · ' + it.name + ':'));
+        it.sizesT.forEach(z => { const bt = h('button', 'sh-tab' + (z.name === cur ? ' on' : ''), z.name + (z.name === rec ? ' ✓' : '')); bt.title = (z.ru ? 'RU ' + z.ru : '') + (z.name === rec ? ' · подходит по фигуре' : ''); bt.onclick = () => { it.size = z.name === rec ? null : z.name; persist(); render(); }; row.appendChild(bt); });
+        top.appendChild(row);
+        const note = fitNote(it, b); if (note) top.appendChild(h('p', 'sh-note', note + (it.note ? ' (' + it.note + ')' : '')));
+      });
       const sum = wn.reduce((a, it) => a + (it.price || 0), 0); if (sum) top.appendChild(h('p', 'sh-note', 'Образ целиком: ' + ctx.fmtPrice(sum) + ' · вещи из ' + new Set(wn.map(i => i.shop)).size + ' магаз.')); }
     body.appendChild(top);
     // вещи из всех магазинов
@@ -764,10 +811,10 @@ export function createFitting(ctx) {
     body.scrollTop = st;
   }
   // ползунки фигуры: и в примерочной, и в «О проекте» → «Настройки»
-  const SL = [['height', 'Рост', 140, 205, 1, 'см'], ['chest', 'Обхват груди', 70, 135, 1, 'см'], ['waist', 'Обхват талии', 55, 130, 1, 'см'], ['hips', 'Обхват бёдер', 75, 140, 1, 'см'], ['build', 'Телосложение', 0, 1, 0.01, '']];
+  const SL = [['height', 'Рост', 140, 205, 1, 'см'], ['weight', 'Вес', 40, 150, 1, 'кг'], ['chest', 'Обхват груди', 70, 135, 1, 'см'], ['waist', 'Обхват талии', 55, 130, 1, 'см'], ['hips', 'Обхват бёдер', 75, 140, 1, 'см']];
   function renderBodyControls(box) {
     const b = PREFS.body, wrap = h('div', 'fit-body');
-    const sx_ = h('div', 'seg3'); [['f', 'Женская'], ['m', 'Мужская']].forEach(([v, t]) => { const bt = h('button', b.sex === v ? 'on' : '', t); bt.onclick = () => { const dflt = v === 'm' ? {sex: 'm', height: 180, chest: 98, waist: 84, hips: 100} : {sex: 'f', height: 168, chest: 90, waist: 72, hips: 98}; setPref('body', dflt); }; sx_.appendChild(bt); });
+    const sx_ = h('div', 'seg3'); [['f', 'Женская'], ['m', 'Мужская']].forEach(([v, t]) => { const bt = h('button', b.sex === v ? 'on' : '', t); bt.onclick = () => { const dflt = v === 'm' ? {sex: 'm', height: 180, weight: 78, chest: 98, waist: 84, hips: 100} : {sex: 'f', height: 168, weight: 60, chest: 90, waist: 72, hips: 98}; setPref('body', dflt); }; sx_.appendChild(bt); });
     wrap.appendChild(h('div', 'sh-lab', 'Фигура')); wrap.appendChild(sx_);
     SL.forEach(([k, t, mn, mx, st, u]) => {
       const row = h('label', 'fit-sl'); const top = h('span'); top.appendChild(h('b', '', t)); const val = h('small', '', k === 'build' ? (b[k] < 0.33 ? 'худощавое' : b[k] > 0.66 ? 'плотное' : 'среднее') : b[k] + ' ' + u); top.appendChild(val); row.appendChild(top);
@@ -803,7 +850,7 @@ export function createFitting(ctx) {
     const list = await r.json(), s = {name: shopName || 'Мой гардероб', colHex: '#0e7490'};
     list.forEach(mt => {
       const dir = base + mt.id + '/';
-      const p = {name: mt.name, kind: mt.kind, color: mt.color, fit: mt.fit, shape: mt.shape, states: mt.states, zip: mt.zip, collar: mt.collar, id: 'w-' + mt.id, feed: true,
+      const p = {name: mt.name, kind: mt.kind, color: mt.color, fit: mt.fit, shape: mt.shape, sizesT: mt.sizes || null, brand: mt.brand, note: mt.note, states: mt.states, zip: mt.zip, collar: mt.collar, id: 'w-' + mt.id, feed: true,
         tex: {front: dir + 'front.webp', back: dir + 'back.webp', sleeve: mt.sleeve ? dir + 'sleeve.webp' : null}, pic: dir + 'front.webp'};
       const it = toItem(p, s); if (!it) return; it.thumb = p.pic;
       const old = W.items.findIndex(i => i.id === it.id); if (old >= 0) W.items[old] = Object.assign(it, {state: W.items[old].state || it.state}); else W.items.push(it);
@@ -813,7 +860,9 @@ export function createFitting(ctx) {
 
   return {
     setView: kind => { if (R) view(kind); }, setRot: r => { if (R) { R.view.rot = r; R.avatar.rotation.y = r; } }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
-    addPack, wear(ids, states) { W.worn = []; ids.forEach(id => putOn(id, true)); Object.entries(states || {}).forEach(([id, st]) => { const it = W.items.find(i => i.id === id); if (it) it.state = st; }); persist(); render(); },
+    addPack, wear(ids, states, sizes) { W.worn = []; ids.forEach(id => putOn(id, true)); Object.entries(states || {}).forEach(([id, st]) => { const it = W.items.find(i => i.id === id); if (it) it.state = st; });
+      W.items.forEach(it => { if (it.sizesT) it.size = (sizes && sizes[it.id]) || null; }); persist(); render(); },
+    fitNote: id => { const it = W.items.find(i => i.id === id); return it ? fitNote(it, PREFS.body) + ' | размер ' + ((sizeOf(it, PREFS.body) || {}).name || '-') : ''; },
     setState(id, st) { const it = W.items.find(i => i.id === id); if (it) { it.state = st; persist(); render(); } },
     open: openRoom, close: closeRoom, get isOpen() { return open; },
     add, has, count: () => W.items.length, onChange: f => subs.push(f),

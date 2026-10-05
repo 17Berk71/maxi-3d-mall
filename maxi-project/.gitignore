@@ -5,3 +5,4 @@ tools/pipeline/work/
 tools/wardrobe/raw/
 tools/wardrobe/out/
 __pycache__/
+tools/wardrobe/models/

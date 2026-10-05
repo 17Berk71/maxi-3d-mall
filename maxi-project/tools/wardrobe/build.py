@@ -246,7 +246,7 @@ def top_parts(im, m, kind):
 PERSP = 0.3            # вещь на полу снята сверху наискосок: низ кадра ближе к камере и крупнее (≈30% на всю вещь)
 
 
-def bottom_parts(im, m, kind, flat=False):
+def bottom_parts(im, m, kind, flat=False, crotch_frac=None):
     h, w = m.shape
     wid = m.sum(1)
     big = np.where(wid > wid.max() * .25)[0]
@@ -264,6 +264,8 @@ def bottom_parts(im, m, kind, flat=False):
     while y > top + L * .12 and gap_at(y): y -= 1
     crotch = y + 1 if y < bot - int(L * .08) else None
     if crotch is None: crotch = top + int(L * .38)
+    # вещь на человеке: широкие штанины касаются друг друга почти до низа — шаг берём из таблицы размеров (длина − шаговый шов)
+    if crotch_frac: crotch = top + int(L * crotch_frac)
     rs = [r for r in runs(m[crotch + 3]) if r[1] - r[0] > hip0 * .15]
     if len(rs) >= 2: cx = int((rs[0][1] + rs[1][0]) / 2)
     hip_w = float(np.median(wid[top + int(L * .05):crotch]))
@@ -275,7 +277,10 @@ def bottom_parts(im, m, kind, flat=False):
 
     def leg_span(side):
         def f(y):
-            rs = runs(m[y])
+            rs = []
+            for r in runs(m[y]):          # кусок через середину (штанины слились) — делим по середине
+                if r[0] < cx < r[1]: rs += [(r[0], cx), (cx, r[1])]
+                else: rs.append(r)
             rs = [r for r in rs if ((r[0] + r[1]) / 2 < cx) == (side < 0)]
             if not rs: return (cx - 10, cx) if side < 0 else (cx, cx + 10)
             return max(rs, key=lambda q: q[1] - q[0])
@@ -342,16 +347,49 @@ def apply_gain(img, g):
     return np.clip(img.astype(np.float32) * g[::-1].reshape(1, 1, 3), 0, 255).astype(np.uint8)
 
 
+def load_model_photo(key, kind):
+    """Фото из карточки магазина (вещь на человеке): обрезать интерфейс скриншота, маска вещи — нейросетью (seg_person.py)."""
+    from seg_person import crop_screen, cloth_masks
+    im = cv2.imread(find(key))
+    im = crop_screen(im)
+    h, w = im.shape[:2]
+    if h > 1400: im = cv2.resize(im, (int(w * 1400 / h), 1400), interpolation=cv2.INTER_AREA); h, w = im.shape[:2]
+    ms = cloth_masks(im)
+    m = ms['upper'] if kind in TOPS else ms['lower']
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    n, lab_, st, _ = cv2.connectedComponentsWithStats(m)
+    if n > 1: m = (lab_ == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
+    # сверху к низу может прилипнуть край кофты (сеть иногда относит его к низу): кофта шире пояса —
+    # ищем самое узкое место в верхней трети (пояс), всё выше него, если оно заметно шире, — не брюки
+    if kind not in TOPS:
+        wid = cv2.blur(m.sum(1).astype(np.float32).reshape(-1, 1), (1, 9)).ravel()
+        ys = np.where(wid > wid.max() * .3)[0]; y0, y1 = ys[0], ys[-1]
+        # пояс — там, где ширина резко падает (низ кофты шире пояса брюк)
+        dd = 10
+        seg = range(y0 + dd, y0 + int((y1 - y0) * .35))
+        yw = max(seg, key=lambda y: wid[y - dd] - wid[y + dd])
+        if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
+    return im, m
+
+
 def build(it):
     od = os.path.join(OUT, it['id']); os.makedirs(od, exist_ok=True)
     meta = dict(id=it['id'], name=it['name'], kind=it['kind'], states=it.get('states'), zip=it.get('zip', False), collar=it.get('collar', False))
     ovs = []
     for side in ('front', 'back'):
-        im = load(it[side])
-        m, flat = segment(im)
+        if it.get('src') == 'model':
+            im, m = load_model_photo(it[side], it['kind'])
+            flat = False
+        else:
+            im = load(it[side])
+            m, flat = segment(im)
         part = top_parts if it['kind'] in TOPS else bottom_parts
-        tex, sleeve, mm, info = part(im, m, it['kind'], flat) if part is bottom_parts else part(im, m, it['kind'])
-        if not flat:
+        cf = None
+        if it.get('sizes') and part is bottom_parts:
+            c0 = it['sizes'][0]['cm']
+            if c0.get('outseam') and c0.get('inseam'): cf = (c0['outseam'] - c0['inseam']) / c0['outseam']
+        tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf) if part is bottom_parts else part(im, m, it['kind'])
+        if not flat and it.get('src') != 'model':
             g = wall_gain(im); tex = apply_gain(tex, g)
             if sleeve is not None: sleeve = apply_gain(sleeve, g)
             mm['color'] = tuple(int(c) for c in np.clip(np.array(mm['color']) * g, 0, 255))
@@ -371,6 +409,10 @@ def build(it):
     meta['shape']['hang'] = not f.get('flat')
     for k in ('elastic', 'crop', 'cm', 'fitname'):
         if it.get(k): meta['shape'][k] = it[k]
+    if it.get('src') == 'model': meta['shape']['hang'] = False; meta['shape']['worn'] = True   # ширины сняты с вещи на человеке
+    if it.get('sizes'): meta['sizes'] = it['sizes']
+    for k in ('brand', 'url', 'price', 'note'):
+        if it.get(k): meta[k] = it[k]
     # вещь на вешалке тянется вниз и сужается: у футболки Zolla на вешалке длина/ширина 1.82, она же лёжа — 1.31.
     # Поправка 0.72 для всех верхних вещей, снятых на вешалке (лёжа — без поправки)
     if it['kind'] in TOPS and not f.get('flat'): meta['fit']['len_w'] = round(meta['fit']['len_w'] * HANG_K, 3)

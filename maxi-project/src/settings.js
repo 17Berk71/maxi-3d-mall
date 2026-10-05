@@ -1,7 +1,7 @@
 // Настройки посетителя: чувствительность обзора, качество графики, параметры фигуры для примерочной.
 // Хранятся в браузере (localStorage); если хранилище недоступно — работают до перезагрузки.
 const KEY = 'maxi-prefs';
-export const BODY0 = { sex: 'f', height: 168, chest: 90, waist: 72, hips: 98, build: 0.5, skin: 1 };
+export const BODY0 = { sex: 'f', height: 168, weight: 60, chest: 90, waist: 72, hips: 98, build: 0.5, skin: 1 };
 export const PREFS = { sens: 1, gfx: 'auto', body: { ...BODY0 } };
 try {
   const v = JSON.parse(localStorage.getItem(KEY) || 'null');
