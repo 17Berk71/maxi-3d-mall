@@ -400,7 +400,9 @@ function bottomSpec(item, d) {
   if (cm.hem) { const f = cm.hem / 100 / lw[lw.length - 1]; lw = lw.map(v => v * f); }
   if (cm.hip) lw[0] = Math.min(lw[0], cm.hip / 100 * 0.62);
   for (let i = 1; i < lw.length - 1 && cm.hip; i++) lw[i] = Math.min(lw[i], lw[0] * 1.15);
-  return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip: cm.hip ? cm.hip / 100 : 0};
+  // бёдра (полуобхват): по таблице или по фото (середина посадки; ниже на фото лёжа уже расходятся штанины)
+  const hip = cm.hip ? cm.hip / 100 : sh.hip && sh.hip.length > 3 ? sh.hip[3] * kk : 0;
+  return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip};
 }
 // насколько вещь раздвигает руки (широкая вещь — руки лежат на ней, а не протыкают)
 function armSpread(items, d) {
@@ -523,7 +525,10 @@ function photoGarment(item, d) {
       for (let i = 1; i < tab.length; i++) if (yf <= tab[i][0]) { const t = (yf - tab[i - 1][0]) / (tab[i][0] - tab[i - 1][0]); return (tab[i - 1][1] + (tab[i][1] - tab[i - 1][1]) * t) * (yf > 0.3 ? 1 : d.s); } return d.thigh; };
     // штанины висят от бёдер и касаются друг друга у шага; книзу чуть расходятся
     const rTop = Math.max(legR(0), d.thigh + ease), hipA = bodyAB(d, 0.5).a + ease + 0.004;
-    const xcTop = Math.max(d.legX, Math.min(rTop * 0.96 + 0.004, hipA - rTop));
+    // широкие брюки не облегают: зад и бёдра — по мерке вещи (сколько ткани, столько и ширины), тело только не даёт уйти внутрь
+    const hb = bodyAB(d, 0.53);
+    const [aH, bH] = sp.hip ? fitAB(2 * sp.hip, hb.a + ease, hb.b + ease, 9, 0.66) : [hipA, hb.b + ease];
+    const xcTop = Math.max(d.legX, Math.min(rTop * 0.96 + 0.004, Math.max(hipA, aH) - rTop * 0.9));
     const stackH = sp.stack ? Math.min(0.22, 0.05 + sp.stack * 1.6) : 0;
     [-1, 1].forEach(side => {
       const rings = [];
@@ -533,7 +538,8 @@ function photoGarment(item, d) {
         if (y > sp.yC) r = Math.max(r, rTop);
         let st_ = 0;
         if (stackH && y < sp.yHem + stackH) { st_ = smooth(1 - (y - sp.yHem) / stackH); r += 0.008 * st_; }
-        const xc = side * (Math.max(d.legX, Math.min(xcTop, r * 0.96 + 0.004)) + 0.03 * smooth(t));
+        // у шага штанины могут заходить друг на друга, ниже (с ~15% длины) — висят рядом, каждая своей ширины
+        const xc = side * (Math.max(d.legX, lerp(Math.min(xcTop, r * 0.96 + 0.004), r * 0.96 + 0.004, smooth(t / 0.15))) + 0.03 * smooth(t));
         const loose = Math.max(0, r - bodyLeg(y) - ease);
         const ripple = st_ ? 0.006 * st_ * Math.sin(y * 120 + seed) : 0;
         rings.push({y, a: r + ripple, b: r + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
@@ -548,12 +554,13 @@ function photoGarment(item, d) {
     // бёдра: от пояса (по фигуре + припуск) вниз к ширине двух штанин
     const rings = [], bw = bodyAB(d, sp.yW / H);
     const [aW, bW] = fitAB(2 * Math.max(sp.ww, ellP(bw.a, bw.b) / 2 + ease), bw.a + ease, bw.b + ease, 9, bw.b / bw.a);
-    let aBot = Math.max(hipA, xcTop + rTop), bBot = Math.max(rTop, bodyAB(d, 0.5).b + ease);
-    if (sp.hip) { const [ah, bh] = fitAB(2 * sp.hip, aBot, bBot, aBot + 0.02, 0.62); aBot = ah; bBot = Math.min(bh, aBot * 0.95); }   // лишняя ширина уходит в глубину, без «галифе» по бокам   // полуобхват бёдер по таблице: широкий «багги»-зад
+    const aBot = Math.max(hipA, aH, xcTop + rTop), bBot = Math.max(rTop, bH, bodyAB(d, 0.5).b + ease);
     // снизу бёдра переходят в «перемычку» у шага: закрывает просвет между штанинами
     for (let y = sp.yC - 0.045; y <= sp.yW + 1e-6; y += 0.012) {
       const yf = y / H, bd = bodyAB(d, yf), t = smooth((sp.yW - y) / (sp.yW - sp.yC)), lo = clamp((sp.yC - y) / 0.045, 0, 1);
-      let a = Math.max(lerp(aW, aBot, t), bd.a + ease), b = Math.max(lerp(bW, bBot, t), bd.b + ease);
+      // пояс по талии → зад по мерке бёдер (к середине посадки) → ширина двух штанин у шага
+      const t1 = smooth(t / 0.5);
+      let a = Math.max(lerp(aW, Math.max(aH, aW), t1), lerp(aW, aBot, t), bd.a + ease), b = Math.max(lerp(bW, Math.max(bH, bW), t1), lerp(bW, bBot, t), bd.b + ease);
       if (lo > 0) { a = aBot * (1 - 0.25 * lo); b = bBot * (1 - 0.35 * lo); }
       [a, b] = layerAB(yf, a, b);
       rings.push({y, a, b, f: clamp((a - bd.a) * 0.08, 0, 0.006) * t});
