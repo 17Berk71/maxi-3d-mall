@@ -65,7 +65,8 @@ function bodyDims(b) {
     neck: 0.052 * s * (m ? 1.12 : 1) * (0.9 + b.build * 0.2),
     shX: m ? 1.42 : 1.3,           // ширина плеч относительно груди
     legX: R(b.hips) * 0.55,
-    thigh: R(b.hips) * 0.57 * (0.92 + b.build * 0.16),
+    // бёдра ног заполняют таз: верх ног не уже нижней части туловища (иначе туловище «сидит» на тонких ногах, как на палочках)
+    thigh: R(b.hips) * 0.63 * (0.92 + b.build * 0.16),
   };
 }
 // радиус туловища на высоте yf (доля роста)
@@ -137,7 +138,7 @@ function buildBody(b, skinMat, d0) {
     const hand = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), skinMat); hand.scale.set(0.022 * d.s, 0.06 * d.s, 0.04 * d.s);
     hand.position.copy(a.pos).add(new THREE.Vector3(Math.sin(a.rot) * (a.L + 0.05 * d.s), -Math.cos(a.rot) * (a.L + 0.05 * d.s), 0)); hand.rotation.z = a.rot; g.add(hand);
   });
-  const sh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12), skinMat); sh.scale.set(d.chest * d.shX * 0.98, d.chest * 0.42, d.chest * 0.72); sh.position.y = 0.8 * H; g.add(sh);
+  const sh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12), skinMat); sh.scale.set(d.chest * d.shX * 0.98, d.chest * 0.42, d.chest * 0.62); sh.position.y = 0.8 * H; g.add(sh);
   return {g, d};
 }
 
@@ -248,7 +249,7 @@ function bodyAB(d, yf) {
   let r = yf < 0.53 ? Math.max(torsoR(d, Math.max(0.47, yf)), d.hips * (yf < 0.5 ? 0.99 : 0.97)) : torsoR(d, yf);
   let a = r * (sx(d, Math.max(0.6, yf)) * 0.98 + 0.02), b = r * (sz(d, yf) + (yf < 0.6 ? 0.04 : 0));
   const dy = (yf - 0.8) * d.H / (d.chest * 0.42);
-  if (Math.abs(dy) < 1) { const k = Math.sqrt(1 - dy * dy); a = Math.max(a, d.chest * d.shX * 0.98 * k); b = Math.max(b, d.chest * 0.72 * k); }
+  if (Math.abs(dy) < 1) { const k = Math.sqrt(1 - dy * dy); a = Math.max(a, d.chest * d.shX * 0.98 * k); b = Math.max(b, d.chest * 0.62 * k); }
   if (yf < 0.47) { a = Math.max(a, d.legX + d.thigh); b = Math.max(b, d.thigh); }
   return {a, b};
 }
@@ -527,7 +528,10 @@ function photoGarment(item, d) {
     const rTop = Math.max(legR(0), d.thigh + ease), hipA = bodyAB(d, 0.5).a + ease + 0.004;
     // широкие брюки не облегают: зад и бёдра — по мерке вещи (сколько ткани, столько и ширины), тело только не даёт уйти внутрь
     const hb = bodyAB(d, 0.53);
-    const [aH, bH] = sp.hip ? fitAB(2 * sp.hip, hb.a + ease, hb.b + ease, 9, 0.66) : [hipA, hb.b + ease];
+    // лишняя ткань в заду не держит форму овала: висит складками. Вширь — не больше ~4.5 см на сторону, вглубь ~5 см, остальное — складки
+    let [aH, bH] = sp.hip ? fitAB(2 * sp.hip, hb.a + ease, hb.b + ease, 9, 0.66) : [hipA, hb.b + ease];
+    const seatExtra = sp.hip ? Math.max(0, ellP(aH, bH) - ellP(Math.min(aH, hb.a + ease + 0.045), Math.min(bH, hb.b + ease + 0.03))) : 0;
+    aH = Math.min(aH, hb.a + ease + 0.045); bH = Math.min(bH, hb.b + ease + 0.03);
     const xcTop = Math.max(d.legX, Math.min(rTop * 0.96 + 0.004, Math.max(hipA, aH) - rTop * 0.9));
     const stackH = sp.stack ? Math.min(0.22, 0.05 + sp.stack * 1.6) : 0;
     [-1, 1].forEach(side => {
@@ -543,7 +547,7 @@ function photoGarment(item, d) {
         const loose = Math.max(0, r - bodyLeg(y) - ease);
         const ripple = st_ ? 0.006 * st_ * Math.sin(y * 120 + seed) : 0;
         rings.push({y, a: r + ripple, b: r + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
-        noteAB(y / H, Math.abs(xc) + r, r * 1.3);
+        if (y < sp.yC - 0.04) noteAB(y / H, Math.abs(xc) + r, r * 1.3);   // у шага верх ложится на зад, а не на ширину двух штанин
       }
       const leftHalf = f => (f ? side < 0 : side > 0);
       [[-Math.PI / 2, mF, true], [Math.PI / 2, mB, false]].forEach(([p0, mat, front]) => {
@@ -563,7 +567,7 @@ function photoGarment(item, d) {
       let a = Math.max(lerp(aW, Math.max(aH, aW), t1), lerp(aW, aBot, t), bd.a + ease), b = Math.max(lerp(bW, Math.max(bH, bW), t1), lerp(bW, bBot, t), bd.b + ease);
       if (lo > 0) { a = aBot * (1 - 0.25 * lo); b = bBot * (1 - 0.35 * lo); }
       [a, b] = layerAB(yf, a, b);
-      rings.push({y, a, b, f: clamp((a - bd.a) * 0.08, 0, 0.006) * t});
+      rings.push({y, a, b, f: clamp((a - bd.a) * 0.08 + seatExtra * 0.03 * t1, 0, 0.012) * Math.max(t, t1 * 0.6)});
     }
     addShell(g, ringMesh(rings, -Math.PI / 2, Math.PI, 40, (phi, r) => [uFront(phi), vHip(r.y)], seed), mF, inner, 'front');
     addShell(g, ringMesh(rings, Math.PI / 2, Math.PI, 40, (phi, r, t) => [t, vHip(r.y)], seed + 1), mB, inner, 'back');
