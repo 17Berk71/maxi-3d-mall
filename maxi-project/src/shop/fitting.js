@@ -78,8 +78,12 @@ function torsoR(d, yf) {
   return T[T.length - 1][1];
 }
 // туловище не круглое: шире, чем глубже; плечи шире груди
-function sx(d, yf) { const t = Math.max(0, Math.min(1, (yf - 0.72) / 0.08)); return 1.2 + (d.shX - 1.2) * t * (yf < 0.82 ? 1 : Math.max(0, 1 - (yf - 0.82) / 0.03)); }
-function sz(d, yf) { return yf > 0.66 && yf < 0.78 && !d.m ? 0.84 : 0.78; }
+// у мужской фигуры грудная клетка шире и площе (V-силуэт), таз уже; у женской — как было
+function sx(d, yf) {
+  const base = d.m ? 1.15 + 0.15 * Math.max(0, Math.min(1, (yf - 0.6) / 0.1)) : 1.2;
+  const t = Math.max(0, Math.min(1, (yf - 0.72) / 0.08)); return base + (d.shX - base) * t * (yf < 0.82 ? 1 : Math.max(0, 1 - (yf - 0.82) / 0.03));
+}
+function sz(d, yf) { return d.m ? (yf > 0.64 && yf < 0.8 ? 0.7 : 0.78) : yf > 0.66 && yf < 0.78 ? 0.84 : 0.78; }
 
 // лофт вдоль оси Y по профилю [[y, r], ...] (y по возрастанию), с эллиптическим сечением
 function loft(prof, segs, fx, fz, phi0, phiLen) {
@@ -531,8 +535,8 @@ function photoGarment(item, d) {
     const hb = bodyAB(d, 0.53);
     // лишняя ткань в заду не держит форму овала: висит складками. Вширь — не больше ~4.5 см на сторону, вглубь ~5 см, остальное — складки
     let [aH, bH] = sp.hip ? fitAB(2 * sp.hip, hb.a + ease, hb.b + ease, 9, 0.66) : [hipA, hb.b + ease];
-    const seatExtra = sp.hip ? Math.max(0, ellP(aH, bH) - ellP(Math.min(aH, hb.a + ease + 0.045), Math.min(bH, hb.b + ease + 0.03))) : 0;
-    aH = Math.min(aH, hb.a + ease + 0.045); bH = Math.min(bH, hb.b + ease + 0.03);
+    const seatExtra = sp.hip ? Math.max(0, ellP(aH, bH) - ellP(Math.min(aH, hb.a + ease + 0.008), Math.min(bH, hb.b + ease + 0.035))) : 0;
+    aH = Math.min(aH, hb.a + ease + 0.008); bH = Math.min(bH, hb.b + ease + 0.035);
     const xcTop = Math.max(d.legX, Math.min(rTop * 0.96 + 0.004, Math.max(hipA, aH) - rTop * 0.9));
     const aSeat = Math.max(hipA, aH);                             // полуширина зада: верх штанин её продолжает
     const seatB = Math.max(bH, hb.b + ease) * 0.95;               // полуглубина зада (ось штанины на той же линии, что и центр тела)
@@ -549,13 +553,14 @@ function photoGarment(item, d) {
         // штанины висят от линии бёдер: если зад шире двух штанин — между ними просвет, но не уже зада снаружи
         // у шага штанины касаются друг друга (без просвета), а ткань зада продолжается в них: верх штанины не уже половины зада
         r = Math.max(r, lerp(aSeat / 2 + 0.003, r, smooth(t / 0.35)));
-        const xc = side * (Math.max(d.legX, r * 0.96 + 0.004) + 0.03 * smooth(t));
-        // вглубь штанина у шага продолжает зад и только ниже становится круглой — без «ступеньки» под ягодицами
-        const bLeg = Math.max(r, lerp(seatB, r, smooth(t / 0.35)));
+        // спереди верх штанин не шире зада (широкая штанина у бедра уходит вглубь и в складки), ниже колена — своей ширины
+        const aLeg = Math.max(bodyLeg(y) + ease, Math.min(r, lerp(aSeat / 2 + 0.003, r, smooth((t - 0.15) / 0.45))));
+        const bLeg = Math.max(aLeg < r ? solve(x => ellP(aLeg, x), aLeg, 1, 2 * Math.PI * r) : r, lerp(seatB, r, smooth(t / 0.35)));
+        const xc = side * (Math.max(d.legX, aLeg * 0.96 + 0.004) + 0.03 * smooth(t));
         const loose = Math.max(0, r - bodyLeg(y) - ease);
         const ripple = st_ ? 0.006 * st_ * Math.sin(y * 120 + seed) : 0;
-        rings.push({y, a: r + ripple, b: bLeg + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
-        if (y < sp.yC - 0.04) noteAB(y / H, Math.abs(xc) + r, bLeg * 1.2);   // у шага верх ложится на зад, а не на ширину двух штанин
+        rings.push({y, a: aLeg + ripple, b: bLeg + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
+        { const fl = clamp(loose * 0.22, 0, 0.012) + 0.0015; noteAB(y / H, Math.abs(xc) + aLeg + fl, bLeg * 1.2 + fl); }   // ширина штанин со складками — для верха, что надет поверх
       }
       const leftHalf = f => (f ? side < 0 : side > 0);
       [[-Math.PI / 2, mF, true], [Math.PI / 2, mB, false]].forEach(([p0, mat, front]) => {
@@ -566,7 +571,7 @@ function photoGarment(item, d) {
     // бёдра: от пояса (по фигуре + припуск) вниз к ширине двух штанин
     const rings = [], bw = bodyAB(d, sp.yW / H);
     const [aW, bW] = fitAB(2 * Math.max(sp.ww, ellP(bw.a, bw.b) / 2 + ease), bw.a + ease, bw.b + ease, 9, bw.b / bw.a);
-    const aBot = Math.max(hipA, aH, xcTop + rTop), bBot = Math.max(rTop, bH, bodyAB(d, 0.5).b + ease);
+    const aBot = Math.max(hipA, aH), bBot = Math.max(rTop, bH, bodyAB(d, 0.5).b + ease);
     // снизу бёдра переходят в «перемычку» у шага: закрывает просвет между штанинами
     for (let y = sp.yC - 0.045; y <= sp.yW + 1e-6; y += 0.012) {
       const yf = y / H, bd = bodyAB(d, yf), t = smooth((sp.yW - y) / (sp.yW - sp.yC)), lo = clamp((sp.yC - y) / 0.045, 0, 1);
@@ -575,7 +580,9 @@ function photoGarment(item, d) {
       let a = Math.max(lerp(aW, Math.max(aH, aW), t1), lerp(aW, aBot, t), bd.a + ease), b = Math.max(lerp(bW, Math.max(bH, bW), t1), lerp(bW, bBot, t), bd.b + ease);
       if (lo > 0) { a = aBot * (1 - 0.25 * lo); b = bBot * (1 - 0.35 * lo); }
       [a, b] = layerAB(yf, a, b);
-      rings.push({y, a, b, f: clamp((a - bd.a) * 0.08 + seatExtra * 0.03 * t1, 0, 0.012) * Math.max(t, t1 * 0.6)});
+      const fz = clamp((a - bd.a) * 0.08 + seatExtra * 0.03 * t1, 0, 0.012) * Math.max(t, t1 * 0.6);
+      noteAB(yf, a + fz, b + fz);                                  // складки зада тоже учитываем: верх не должен их «протыкать»
+      rings.push({y, a, b, f: fz});
     }
     addShell(g, ringMesh(rings, -Math.PI / 2, Math.PI, 40, (phi, r) => [uFront(phi), vHip(r.y)], seed), mF, inner, 'front');
     addShell(g, ringMesh(rings, Math.PI / 2, Math.PI, 40, (phi, r, t) => [t, vHip(r.y)], seed + 1), mB, inner, 'back');
