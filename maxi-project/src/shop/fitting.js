@@ -56,6 +56,9 @@ function sizeHint(b) {
 // телосложение: если задан вес — по индексу массы тела (18 → худощавое, 30 → плотное), иначе ползунок
 const buildOf = b => b.weight ? Math.max(0, Math.min(1, (b.weight / Math.pow(b.height / 100, 2) - 18) / 12)) : (b.build == null ? 0.5 : b.build);
 function bodyDims(b) {
+  const d = bodyDims0(b); d.legX = Math.max(d.hips * 0.55, d.thigh + 0.013); return d;   // зазор между бёдрами ~2.5 см — для шагового шва
+}
+function bodyDims0(b) {
   b = Object.assign({}, b, {build: buildOf(b)});
   const H = b.height / 100, s = H / 1.7, k = 0.86 + b.build * 0.34, R = c => c / 100 / (2 * Math.PI);
   const m = b.sex === 'm';
@@ -64,7 +67,7 @@ function bodyDims(b) {
     chest: R(b.chest), waist: R(b.waist), hips: R(b.hips),
     neck: 0.052 * s * (m ? 1.12 : 1) * (0.9 + b.build * 0.2),
     shX: m ? 1.42 : 1.3,           // ширина плеч относительно груди
-    legX: R(b.hips) * 0.55,
+    legX: 0,   // ниже: ноги стоят с небольшим зазором (между бёдрами проходит шаговый шов брюк)
     // бёдра ног заполняют таз: верх ног не уже нижней части туловища (иначе туловище «сидит» на тонких ногах, как на палочках)
     thigh: R(b.hips) * 0.63 * (0.92 + b.build * 0.16),
   };
@@ -632,7 +635,8 @@ function makeCollider(d, under) {
     if (y < 0.004) { y = 0.004; hit = true; }
     const k = Math.max(0, Math.min(N - 1, Math.round(y / H * N)));
     if (A[k] > 0) { const a = A[k] + m, b = B[k] + m, q = (x / a) ** 2 + (z / b) ** 2; if (q < 1) { const s = 1 / Math.sqrt(Math.max(q, 1e-6)); x *= s; z *= s; hit = true; } }
-    if (LR[k] > 0) for (const side of [-1, 1]) { const cx = side * d.legX, r = LR[k] + m, dx = x - cx, dd = Math.hypot(dx, z); if (dd < r) { const s = r / Math.max(dd, 1e-5); x = cx + dx * s; z *= s; hit = true; } }
+    // бёдра манекена касаются — для ткани оставляем между ними зазор, иначе шаговому шву негде пройти
+    if (LR[k] > 0) for (const side of [-1, 1]) { const cx = side * d.legX, r = Math.min(LR[k], d.legX - 0.002) + m, dx = x - cx, dd = Math.hypot(dx, z); if (dd < r) { const s = r / Math.max(dd, 1e-5); x = cx + dx * s; z *= s; hit = true; } }
     { // плечи: эллипсоид, выталкивание по нормали (с верха плеча — вверх)
       const ex = x / (SX + m), ey = (y - 0.8 * H) / (SY + m), ez = z / (SZ + m), q = ex * ex + ey * ey + ez * ez;
       if (q < 1) { const s = 1 / Math.sqrt(Math.max(q, 1e-6)); x *= s; y = 0.8 * H + (y - 0.8 * H) * s; z *= s; hit = true; } }
@@ -775,9 +779,227 @@ export function drapeGarment(item, d, under) {
   return g3;
 }
 
+// ---------- библиотека выкроек (шаблоны) + симуляция ----------
+// Вещь собирается из деталей кроя по меркам: фото задаёт форму и рисунок, таблица размеров (или оценка) — масштаб.
+// Футболка/свитшот/худи: перед и спинка (плечевые и боковые швы) + два рукава-трубы, вшитые в проймы.
+// Брюки/джинсы/шорты: перед и спинка во всю ширину (обе штанины), сшиты по боковым и шаговым швам; у спинки в заду ткани больше.
+// Ткань — пресеты по виду вещи (деним жёсткий, трикотаж мягкий).
+const FABRIC = {
+  tee: {bend: 0.3, comp: 0.05, stretch: 0.9}, sweater: {bend: 0.4, comp: 0.08, stretch: 0.85}, hoodie: {bend: 0.45, comp: 0.08, stretch: 0.85},
+  shirt: {bend: 0.45, comp: 0.06, stretch: 1}, jacket: {bend: 0.7, comp: 0.15, stretch: 1},
+  jeans: {bend: 0.7, comp: 0.18, stretch: 1}, pants: {bend: 0.45, comp: 0.08, stretch: 1}, shorts: {bend: 0.6, comp: 0.12, stretch: 1},
+};
+const pip = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+const segDist = (px, py, [ax, ay], [bx, by]) => { const dx = bx - ax, dy = by - ay, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(px - ax - dx * t, py - ay - dy * t); };
+// правая половина контура (от точки на оси до точки на оси) + метки отрезков → весь контур зеркально
+function mirrorPoly(pts, labs) {
+  const n = pts.length, P = pts.slice(), L = labs.slice(0, n - 1);
+  L.push(labs[n - 2]);                                               // отрезок через ось внизу (низ/шаг) — та же метка
+  for (let i = n - 2; i >= 1; i--) { P.push([-pts[i][0], pts[i][1]]); L.push(labs[i - 1]); }
+  return {P, L};
+}
+// ткань из частиц: детали (плоские слои) и трубы (рукава), связи, швы, закреплённые точки
+function makeCloth() {
+  return {P: [], E: [], seams: [], pin: [], meshes: [],
+    add(x, y, z) { this.P.push(x, y, z); this.pin.push(0); return this.pin.length - 1; },
+    link(i, j, rest, kind, sc) { if (i == null || j == null) return; this.E.push(i, j, rest * (sc || 1), kind); },
+  };
+}
+// плоская деталь по многоугольнику (метры, y вниз от верха): сетка cell, края помечены ближайшим отрезком контура (метки labels[i])
+function addPanel(C, poly, labels, cell, place, uvf, mat, role, restScale, classify) {
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; poly.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+  const gw = Math.ceil((x1 - x0) / cell) + 1, gh = Math.ceil((y1 - y0) / cell) + 1, id = new Map(), pts = [];
+  for (let r = 0; r < gh; r++) for (let c = 0; c < gw; c++) { const x = x0 + (c + 0.5) * cell, y = y0 + (r + 0.5) * cell; if (pip(poly, x, y)) { const [px, py, pz] = place(x, y); id.set(r * 10000 + c, pts.length); pts.push({r, c, x, y, g: C.add(px, py, pz)}); } }
+  const at = (r, c) => { const k = id.get(r * 10000 + c); return k == null ? null : pts[k]; };
+  const rs = (a, b) => restScale ? restScale((a.x + b.x) / 2, (a.y + b.y) / 2) : 1;
+  pts.forEach(p => {
+    for (const [dr, dc, kind] of [[0, 1, 0], [1, 0, 0], [1, 1, 1], [1, -1, 1], [0, 2, 2], [2, 0, 2]]) { const q = at(p.r + dr, p.c + dc); if (q) C.link(p.g, q.g, Math.hypot(q.x - p.x, q.y - p.y), kind, rs(p, q)); }
+    p.edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([a, b]) => !at(p.r + a, p.c + b));
+    if (p.edge) { let best = 1e9, lab = null; for (let i = 0; i < poly.length; i++) { const dd = segDist(p.x, p.y, poly[i], poly[(i + 1) % poly.length]); if (dd < best) { best = dd; lab = labels[i]; } } p.lab = lab;
+      if (classify) p.lab = classify(p, {up: !at(p.r - 1, p.c), down: !at(p.r + 1, p.c), side: !at(p.r, p.c - 1) || !at(p.r, p.c + 1)}) || lab; }
+  });
+  const tris = [];
+  pts.forEach((p, k) => { p.k = k; });
+  // треугольники — в местных номерах вершин этой детали
+  pts.forEach(p => { const b = at(p.r, p.c + 1), c = at(p.r + 1, p.c), e = at(p.r + 1, p.c + 1);
+    if (b && c && e) tris.push(p.k, c.k, b.k, b.k, c.k, e.k); else if (b && e) tris.push(p.k, e.k, b.k); else if (c && e) tris.push(p.k, c.k, e.k); else if (b && c) tris.push(p.k, c.k, b.k); });
+  C.meshes.push({verts: pts.map(p => p.g), uv: pts.map(p => uvf(p.x, p.y)), tris, mat, role});
+  return {pts, at};
+}
+// труба (рукав) вдоль оси от S0 по D: кольца, радиус rad(s); возвращает верхнее кольцо (угол 0 — сверху-снаружи, π/2 — спереди)
+function addTube(C, S0, D, len, rad, segs, rings, mat, side, uvf, cap) {
+  // cap: {center, ry, rz} — верхнее кольцо (окат) лежит в плоскости проймы; ниже рукав плавно становится трубой вокруг руки
+  const e1 = new THREE.Vector3(-D.y, D.x, 0).normalize().multiplyScalar(side), e2 = new THREE.Vector3(0, 0, 1), up = new THREE.Vector3(0, 1, 0);
+  const g = [], pos = [];
+  for (let i = 0; i < rings; i++) { const s = len * i / (rings - 1), C0 = S0.clone().addScaledVector(D, s), r = rad(s), row = [], prow = [], t = cap ? Math.min(1, s / 0.09) : 1;
+    for (let j = 0; j < segs; j++) { const a = j / segs * Math.PI * 2;
+      const tube = C0.clone().addScaledVector(e1, Math.cos(a) * r).addScaledVector(e2, Math.sin(a) * r);
+      const P = t < 1 ? cap.center.clone().addScaledVector(up, Math.cos(a) * cap.ry).addScaledVector(e2, Math.sin(a) * cap.rz).lerp(tube, t * t * (3 - 2 * t)) : tube;
+      row.push(C.add(P.x, P.y, P.z)); prow.push(P); }
+    g.push(row); pos.push(prow); }
+  const dist = (i1, j1, i2, j2) => pos[i1][j1 % segs].distanceTo(pos[i2][j2 % segs]);
+  for (let i = 0; i < rings; i++) for (let j = 0; j < segs; j++) { const a = g[i][j];
+    C.link(a, g[i][(j + 1) % segs], dist(i, j, i, j + 1), 0); C.link(a, g[i][(j + 2) % segs], dist(i, j, i, j + 2), 2);
+    if (i + 1 < rings) { C.link(a, g[i + 1][j], dist(i, j, i + 1, j), 0); C.link(a, g[i + 1][(j + 1) % segs], dist(i, j, i + 1, j + 1), 1); if (i + 2 < rings) C.link(a, g[i + 2][j], dist(i, j, i + 2, j), 2); } }
+  const verts = [], uv = [], tris = [];
+  for (let i = 0; i < rings; i++) for (let j = 0; j <= segs; j++) { verts.push(g[i][j % segs]); uv.push(uvf(j / segs, i / (rings - 1))); }
+  const W = segs + 1;
+  for (let i = 0; i < rings - 1; i++) for (let j = 0; j < segs; j++) { const a = i * W + j, b = a + 1, c = a + W, e = c + 1; tris.push(a, c, b, b, c, e); }
+  C.meshes.push({verts, uv, tris, mat, local: true});
+  return {top: g[0], bottom: g[rings - 1]};
+}
+// расчёт: тяжесть, связи (растяжение/сжатие/изгиб — по пресету ткани), швы стягиваются постепенно, столкновения
+function runCloth(C, push, fab, yPin) {
+  const n = C.pin.length, P = new Float32Array(C.P), V = new Float32Array(n * 3), prev = new Float32Array(n * 3), E = C.E, S = C.seams, hit = new Uint8Array(n);
+  const S0 = S.map(([i, j]) => Math.hypot(P[j * 3] - P[i * 3], P[j * 3 + 1] - P[i * 3 + 1], P[j * 3 + 2] - P[i * 3 + 2]));
+  let FIX = null;
+  const steps = 320, iters = 7, dt = 1 / 90, sewEnd = 128;
+  for (let s = 0; s < steps; s++) {
+    const ramp = Math.min(1, s / sewEnd), gk = s < sewEnd ? 0 : Math.min(1, (s - sewEnd) / 25);
+    prev.set(P);
+    // пояс: пока шьём — держится только по высоте, потом застёгнут (не съезжает и не проворачивается)
+    if (s === Math.round(sewEnd)) { FIX = P.slice(); }
+    for (let i = 0; i < n; i++) { const q = i * 3; V[q + 1] -= 9.8 * gk * dt; P[q] += V[q] * dt; P[q + 1] += V[q + 1] * dt; P[q + 2] += V[q + 2] * dt; if (C.pin[i]) { P[q + 1] = yPin; if (FIX) { P[q] = FIX[q]; P[q + 2] = FIX[q + 2]; } } }
+    for (let it = 0; it < iters; it++) {
+      for (let e = 0; e < E.length; e += 4) {
+        const i = E[e], j = E[e + 1], rest = E[e + 2], kind = E[e + 3], a3 = i * 3, b3 = j * 3;
+        const dx = P[b3] - P[a3], dy = P[b3 + 1] - P[a3 + 1], dz = P[b3 + 2] - P[a3 + 2], len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6, diff = len - rest;
+        const k = kind === 2 ? (diff > 0 ? fab.bend : fab.bend * 0.4) : (diff > 0 ? fab.stretch : fab.comp); if (!k) continue;
+        const c = k * diff / len * 0.5, wa = C.pin[i] ? 0 : 1, wb = C.pin[j] ? 0 : 1;
+        P[a3] += dx * c; P[a3 + 1] += dy * c * wa; P[a3 + 2] += dz * c; P[b3] -= dx * c; P[b3 + 1] -= dy * c * wb; P[b3 + 2] -= dz * c;
+      }
+      for (let rep = 0; rep < 2; rep++) for (let k = 0; k < S.length; k++) { const [i, j] = S[k], a3 = i * 3, b3 = j * 3, gx = P[b3] - P[a3], gy = P[b3 + 1] - P[a3 + 1], gz = P[b3 + 2] - P[a3 + 2], len = Math.hypot(gx, gy, gz) || 1e-6, rest = S0[k] * (1 - ramp), diff = len - rest;
+        if (diff > 0) { const c = 0.5 * diff / len; P[a3] += gx * c; P[a3 + 1] += gy * c; P[a3 + 2] += gz * c; P[b3] -= gx * c; P[b3 + 1] -= gy * c; P[b3 + 2] -= gz * c; } }
+      for (let i = 0; i < n; i++) { if (push(P, i * 3)) hit[i] = 1; if (C.pin[i]) { P[i * 3 + 1] = yPin; if (FIX) { P[i * 3] = FIX[i * 3]; P[i * 3 + 2] = FIX[i * 3 + 2]; } } }
+    }
+    // трение о тело: касающаяся точка почти не скользит (иначе тяжёлые рукава стаскивают вещь с плеч)
+    const FR = 0.3;
+    if (FR < 1) for (let i = 0; i < n; i++) if (hit[i] && !C.pin[i]) { const q = i * 3; for (let k = 0; k < 3; k++) P[q + k] = prev[q + k] + (P[q + k] - prev[q + k]) * FR; push(P, q); }
+    for (let i = 0; i < n * 3; i++) V[i] = (P[i] - prev[i]) / dt * 0.985;
+    for (let i = 0; i < n; i++) if (hit[i]) { V[i * 3] *= 0.4; V[i * 3 + 1] *= 0.4; V[i * 3 + 2] *= 0.4; hit[i] = 0; }
+  }
+  // сглаживание «лесенки» сетки (2 прохода) с повторной проверкой столкновений
+  const nb = Array.from({length: n}, () => []); for (let e = 0; e < E.length; e += 4) if (E[e + 3] === 0) { nb[E[e]].push(E[e + 1]); nb[E[e + 1]].push(E[e]); }
+  for (const [i, j] of S) { nb[i].push(j); nb[j].push(i); }
+  for (let pass = 0; pass < 2; pass++) { const Q = P.slice(); for (let i = 0; i < n; i++) { const L = nb[i]; if (!L.length) continue; let x = 0, y = 0, z = 0; for (const t of L) { x += Q[t * 3]; y += Q[t * 3 + 1]; z += Q[t * 3 + 2]; }
+    P[i * 3] = (Q[i * 3] + x / L.length) / 2; P[i * 3 + 1] = (Q[i * 3 + 1] + y / L.length) / 2; P[i * 3 + 2] = (Q[i * 3 + 2] + z / L.length) / 2; push(P, i * 3); } }
+  // швы: сшитые точки сводим вместе (остаток зазора после расчёта — иначе виден просвет по шву)
+  for (let pass = 0; pass < 2; pass++) for (const [i, j] of S) { const d2 = Math.hypot(P[j * 3] - P[i * 3], P[j * 3 + 1] - P[i * 3 + 1], P[j * 3 + 2] - P[i * 3 + 2]); if (d2 > 0.05) continue;
+    for (let k = 0; k < 3; k++) { const m = (P[i * 3 + k] + P[j * 3 + k]) / 2; P[i * 3 + k] = m; P[j * 3 + k] = m; } }
+  return P;
+}
+function clothMeshes(C, P, H) {
+  const g = new THREE.Group();
+  C.meshes.forEach(m => {
+    const pos = new Float32Array(m.verts.length * 3), uv = new Float32Array(m.verts.length * 2);
+    m.verts.forEach((v, k) => { pos[k * 3] = P[v * 3]; pos[k * 3 + 1] = P[v * 3 + 1]; pos[k * 3 + 2] = P[v * 3 + 2]; uv[k * 2] = m.uv[k][0]; uv[k * 2 + 1] = 1 - m.uv[k][1]; });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(m.tris); geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, m.mat); mesh.castShadow = true; if (m.role) mesh.userData.role = m.role; g.add(mesh);
+  });
+  if (UNDER) { const n = C.pin.length; for (let i = 0; i < n; i++) noteAB(P[i * 3 + 1] / H, Math.abs(P[i * 3]) + 0.004, Math.abs(P[i * 3 + 2]) + 0.004); }
+  return g;
+}
+// мерки верха (м): ширина лёжа W, длина L, плечи S, пройма AD, рукав SL/SO, горловина
+function topMeasures(item, d) {
+  const sp = topSpec(item, d), sh = item.shape || {}, k = item.kind, cm = itemCm(item, d.b), long = k !== 'tee';
+  // вещь меньше тела не наденется: трикотаж тянется, поэтому не уже груди + 1.5 см (а «мало» честно пишет подсказка размера)
+  const bodyHalf = d.b.chest / 200, W = Math.max(sp.Fs[1], bodyHalf + 0.015), L = sp.L, loose = Math.max(0, W - bodyHalf - 0.03);
+  const S = cm.shoulder ? cm.shoulder / 100 : Math.min(W * 1.02, W * 0.84 + loose * 0.9);            // оверсайз — спущенное плечо
+  const AD = Math.min(0.34, 0.215 + loose * 0.6) * Math.pow(d.H / 1.8, 0.5);
+  const SL = cm.sleeve ? cm.sleeve / 100 : long ? 0.335 * d.H * 0.98 + 0.03 - (S / 2 - armX(d)) : Math.max(0.16, Math.min(0.3, (sh.sl_len ? sh.sl_len * L * 0.6 : 0.2) + loose * 0.4));
+  const SO = long ? (k === 'jacket' ? 0.15 : 0.11) : Math.max(0.15, 0.17 + loose * 0.5);
+  const HW = sp.Fs[sp.Fs.length - 3] || W;
+  return {W, L, S, AD, SL, SO, HW: long && (k === 'sweater' || k === 'hoodie') ? Math.max(bodyHalf * 1.02, W * 0.86) : Math.max(HW, W * 0.95), NW: 0.17 * Math.pow(d.H / 1.8, 0.5), ND: item.collar ? 0.04 : 0.07, NDb: 0.02, sp};
+}
+export function drapeTemplate(item, d, under) {
+  if (!DRAPE_ON || !item.tex) return null;
+  // шорты пока прежним способом: короткая штанина в симуляции съезжает с одной ноги (доделать)
+  const k = item.kind, top = ['tee', 'sweater', 'hoodie', 'shirt'].includes(k), bottom = ['jeans', 'pants'].includes(k);
+  if (!top && !bottom) return null;
+  if (item.state && item.state !== 'closed' && item.state !== 'loose') return null;     // расстёгнута, капюшон, заправлена — пока прежний способ
+  const H = d.H, C = makeCloth(), push = makeCollider(d, under), base = item.color || '#888', fab = FABRIC[k] || FABRIC.tee;
+  const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
+  const mF = photoMat(item.tex.frontCut || item.tex.front, base), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base);
+  [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
+  const zo = 0.21 * d.s, cell = 0.022;
+  let yPin = 0, info = {};
+  if (top) {
+    const M = topMeasures(item, d), yTop = 0.858 * H + 0.012; info = M;
+    // контур половины (x ≥ 0) и метки отрезков; зеркалим
+    const arm = [], nA = 6; for (let i = 0; i <= nA; i++) { const t = i / nA, x = M.S / 2 + (M.W / 2 - M.S / 2) * Math.pow(t, 2.2) - 0.012 * Math.sin(t * Math.PI), y = 0.04 + (M.AD - 0.04) * t; arm.push([x, y]); }
+    const mk = nd => { const pts = [], labs = [];
+      for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push([M.NW / 2 * Math.sin(t * Math.PI / 2), nd * Math.cos(t * Math.PI / 2)]); labs.push(i < 5 ? 'neck' : 'shoulder'); }
+      arm.forEach((p, i) => { pts.push(p); labs.push(i < nA ? 'arm' : 'side'); });
+      pts.push([M.HW / 2, M.L]); labs.push('hem'); pts.push([0, M.L]);
+      return mirrorPoly(pts, labs); };
+    // uv: корпус на фото — между cx±hw, по высоте 0..1
+    const uvT = (a, mirror) => (x, y) => [mirror ? a.cx - x / (M.W / 2) * (a.hw || 0.3) : a.cx + x / (M.W / 2) * (a.hw || 0.3), Math.min(0.99, y / M.L)];
+    const F = mk(M.ND), B = mk(M.NDb);
+    // края по тому, какого соседа нет: сверху — плечо (или горловина у середины), сбоку выше подмышки — пройма, ниже — бок, снизу — низ
+    const cls = nd => (p, m) => {
+      if (m.down && p.y > M.L - cell * 1.5) return 'hem';
+      if (Math.abs(p.x) < M.NW / 2 + cell * 0.6 && p.y < nd + cell) return 'neck';
+      if (m.side && p.y > 0.03 && p.y < M.AD + cell * 0.5 && Math.abs(p.x) > M.S / 2 - cell) return 'arm';
+      if (m.up && p.y < 0.07) return 'shoulder';
+      if (m.side && p.y >= M.AD) return 'side';
+      return null; };
+    const pf = addPanel(C, F.P, F.L, cell, (x, y) => [x, yTop - y, zo], uvT(aF, false), mF, 'front', null, cls(M.ND));
+    const pb = addPanel(C, B.P, B.L, cell, (x, y) => [x, yTop - y, -zo], uvT(aB, true), mB, 'back', null, cls(M.NDb));
+    // швы: плечи и бока — перед со спинкой (ячейки с одинаковыми координатами сетки)
+    pf.pts.forEach(p => { if (!p.edge || (p.lab !== 'shoulder' && p.lab !== 'side')) return; const q = pb.at(p.r, p.c); if (q && q.edge) C.seams.push([p.g, q.g]); });
+    // рукава: трубы вдоль руки, верхнее кольцо вшито в пройму (перед: от плеча к подмышке — спереди трубы; спинка — сзади)
+    const j = armJ(d), mS = item.tex.sleeve ? photoMat(item.tex.sleeve, base) : photoMat(null, base); mS.side = THREE.DoubleSide;
+    const hole = (M.AD + 0.01) * 2.1, r0 = Math.max(hole / (2 * Math.PI), armRad(d, 0) + 0.015), r1 = Math.max(M.SO / Math.PI, armRad(d, Math.min(1, M.SL / j.L)) + 0.008);
+    [-1, 1].forEach(side => {
+      const D = new THREE.Vector3(Math.sin(j.th) * side, -Math.cos(j.th), 0);
+      // начало рукава — в середине проймы (между плечевой точкой и подмышкой), чтобы шов сошёлся без натяжки
+      const S0 = new THREE.Vector3(side * Math.max(j.x * 0.9, (M.S / 2 + M.W / 2) / 2), yTop - (0.04 + M.AD) / 2, 0);
+      // окат: эллипс в плоскости проймы — по высоте от плеча до подмышки, по глубине — чтобы длина совпала с проймой
+      const ry = (M.AD - 0.04) / 2 + 0.012, rz = solve(z => ellP(ry, z), 0.02, 0.3, hole);
+      const cap = {center: new THREE.Vector3(side * (M.S / 2 + M.W / 2) / 2, yTop - (0.04 + M.AD) / 2, 0), ry, rz};
+      const tube = addTube(C, S0, D, M.SL, s => r0 + (r1 - r0) * Math.pow(s / M.SL, 0.8), 20, Math.max(6, Math.round(M.SL / 0.025)), mS, side, (u, v) => [u, v], cap);
+      const ring = tube.top, segs = ring.length;
+      const loop = (P_, front) => P_.pts.filter(p => p.edge && p.lab === 'arm' && Math.sign(p.x) === side).sort((a, b) => a.y - b.y).map(p => p.g);
+      const lf = loop(pf, true), lb = loop(pb, false);
+      // спереди: угол 0 (плечо) → π (подмышка) через π/2 (перед); сзади: через 3π/2
+      lf.forEach((g_, t) => { const a = Math.PI * (lf.length > 1 ? t / (lf.length - 1) : 0.5); C.seams.push([g_, ring[Math.round(a / (2 * Math.PI) * segs) % segs]]); });
+      lb.forEach((g_, t) => { const a = 2 * Math.PI - Math.PI * (lb.length > 1 ? t / (lb.length - 1) : 0.5); C.seams.push([g_, ring[Math.round(a / (2 * Math.PI) * segs) % segs]]); });
+    });
+  } else {
+    const sp = bottomSpec(item, d), cm = itemCm(item, d.b), sh = item.shape || {};
+    const WW = Math.max(sp.ww, ellP(bodyAB(d, sp.yW / H).a, bodyAB(d, sp.yW / H).b) / 2 + 0.01), R = sp.yW - sp.yC, IN = sp.legLen + sp.stack;
+    const HP = Math.max(sp.hip || WW * 1.15, ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
+    const lw = sp.lw.slice(), TW = Math.max(lw[0], HP * 0.55, d.thigh * Math.PI + 0.02);
+    const legW = t => Math.max(interp(lw, t) * (TW / lw[0]), 0.12);
+    yPin = sp.yW; info = {WW, HP, R, IN, TW};
+    // контур: пояс → бёдра → внешний шов вниз → низ → шаговый шов вверх к шагу → зеркально
+    const pts = [[0, 0], [WW / 2, 0], [HP / 2, R * 0.55]], labs = ['waist', 'side'];
+    // метка labs[i] — отрезок от pts[i] к pts[i+1]
+    const N = 10; for (let i = 0; i <= N; i++) { const t = i / N; pts.push([Math.max(HP / 2 * (1 - t) + (0.004 + 0.012 * t + legW(t)) * t, 0.004 + 0.012 * t + legW(t)), R + IN * t]); labs.push('side'); }
+    labs.push('hem');                                                  // от внешнего угла низа к внутреннему
+    for (let i = N; i >= 1; i--) { const t = i / N; pts.push([0.004 + 0.012 * t, R + IN * t]); labs.push('inner'); }
+    pts.push([0, R]);
+    // проверка: отрезков на один меньше точек
+    const {P: poly, L: lab} = mirrorPoly(pts, labs);
+    const uvP = (a, mirror) => { const wpx = a.ww || 0.6; return (x, y) => { const u = mirror ? a.cx - x / WW * wpx : a.cx + x / WW * wpx; const cr = a.crotch || 0.4; return [u, y < R ? y / R * cr : cr + (y - R) / IN * (1 - cr)]; }; };
+    if (dr.front) { const row = dr.front.grid[1] || dr.front.grid[0]; aF.ww = (row.lastIndexOf('1') - row.indexOf('1') + 1) / dr.front.gw; }
+    if (dr.back) { const row = dr.back.grid[1] || dr.back.grid[0]; aB.ww = (row.lastIndexOf('1') - row.indexOf('1') + 1) / dr.back.gw; }
+    // у спинки в заду ткани больше: связи по горизонтали длиннее до шага
+    const seat = (x, y) => y < R * 1.05 ? 1 + 0.14 * Math.sin(Math.min(1, y / R) * Math.PI * 0.9) : 1;
+    const pf = addPanel(C, poly, lab, cell, (x, y) => [x, sp.yW - y, zo * 0.95], uvP(aF, false), mF, 'front');
+    const pb = addPanel(C, poly, lab, cell, (x, y) => [x, sp.yW - y, -zo * 0.95], uvP(aB, true), mB, 'back', seat);
+    pf.pts.forEach(p => { if (!p.edge || (p.lab !== 'side' && p.lab !== 'inner')) return; const q = pb.at(p.r, p.c); if (q && q.edge) C.seams.push([p.g, q.g]); });
+    [pf, pb].forEach(P_ => P_.pts.forEach(p => { if (p.y < cell * 1.1) C.pin[p.g] = 1; }));
+  }
+  const P = runCloth(C, push, fab, yPin);
+  const g = clothMeshes(C, P, H);
+  g.userData.measures = info;
+  return g;
+}
+
 // одна вещь на фигуре; если у вещи будет glb — здесь подменить на загруженную модель (вариант «В»)
 export function garmentMesh(item, d) {
-  if (item.tex) { const g = item.drape ? drapeGarment(item, d, UNDER ? {a: UNDER, b: UNDERZ} : null) : null; return g || photoGarment(item, d); }
+  if (item.tex) { const un = UNDER ? {a: UNDER, b: UNDERZ} : null; const g = drapeTemplate(item, d, un) || (item.drape ? drapeGarment(item, d, un) : null); return g || photoGarment(item, d); }
   const c = classify(item) || {slot: 'top', kind: 'tee'}, k = c.kind, g = new THREE.Group(), H = d.H, off = EASE[k] || 0.012;
   const fab = k === 'jeans' ? 'denim' : k === 'puffer' ? 'quilt' : (k === 'sweater' || k === 'hoodie') ? 'knit' : k === 'jacket' && /кож|косух/i.test(item.name) ? 'leather' : 'plain';
   const mat = fabricMat(item, fab), dark = new THREE.MeshStandardMaterial({color: LIN(item.color || '#888').multiplyScalar(0.55), roughness: 0.8});
