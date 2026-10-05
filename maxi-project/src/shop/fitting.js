@@ -392,7 +392,8 @@ function bottomSpec(item, d) {
   const T = full && !cm.outseam ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
   let yC = 0.47 * H - 0.015;                                  // шаг: по фото лёжа не виден (штанины лежат вплотную), берём по фигуре
   // по таблице размеров: шаг = длина − шаговый шов; короткий шаг сажает брюки ниже на бёдрах, длинный — «спущенный» шаг
-  if (cm.outseam && cm.inseam) { const rise = (cm.outseam - cm.inseam) / 100, bodyC = 0.47 * H - 0.012; yC = Math.min(yW - rise, bodyC); yW = yC + rise; }
+  // длина − шаговый шов = посадка по ткани (по изгибу спереди); по вертикали она ≈ на 20% короче
+  if (cm.outseam && cm.inseam) { const rise = (cm.outseam - cm.inseam) / 100 * 0.8, bodyC = 0.47 * H - 0.012; yC = Math.min(yW - rise, bodyC); yW = yC + rise; }
   let legLen = T - (yW - yC), yHem = yC - legLen, stack = 0;
   if (yHem < 0.012) { stack = 0.012 - yHem; yHem = 0.012; legLen = yC - yHem; }
   let lw = (sh.leg || [0.6]).slice(); if (lw.length > 2 && lw[lw.length - 1] < lw[lw.length - 2] * 0.8) lw[lw.length - 1] = lw[lw.length - 2] * 0.96;
@@ -533,6 +534,8 @@ function photoGarment(item, d) {
     const seatExtra = sp.hip ? Math.max(0, ellP(aH, bH) - ellP(Math.min(aH, hb.a + ease + 0.045), Math.min(bH, hb.b + ease + 0.03))) : 0;
     aH = Math.min(aH, hb.a + ease + 0.045); bH = Math.min(bH, hb.b + ease + 0.03);
     const xcTop = Math.max(d.legX, Math.min(rTop * 0.96 + 0.004, Math.max(hipA, aH) - rTop * 0.9));
+    const aSeat = Math.max(hipA, aH);                             // полуширина зада: верх штанин её продолжает
+    const seatB = Math.max(bH, hb.b + ease) * 0.95;               // полуглубина зада (ось штанины на той же линии, что и центр тела)
     const stackH = sp.stack ? Math.min(0.22, 0.05 + sp.stack * 1.6) : 0;
     [-1, 1].forEach(side => {
       const rings = [];
@@ -543,11 +546,16 @@ function photoGarment(item, d) {
         let st_ = 0;
         if (stackH && y < sp.yHem + stackH) { st_ = smooth(1 - (y - sp.yHem) / stackH); r += 0.008 * st_; }
         // у шага штанины могут заходить друг на друга, ниже (с ~15% длины) — висят рядом, каждая своей ширины
-        const xc = side * (Math.max(d.legX, lerp(Math.min(xcTop, r * 0.96 + 0.004), r * 0.96 + 0.004, smooth(t / 0.15))) + 0.03 * smooth(t));
+        // штанины висят от линии бёдер: если зад шире двух штанин — между ними просвет, но не уже зада снаружи
+        // у шага штанины касаются друг друга (без просвета), а ткань зада продолжается в них: верх штанины не уже половины зада
+        r = Math.max(r, lerp(aSeat / 2 + 0.003, r, smooth(t / 0.35)));
+        const xc = side * (Math.max(d.legX, r * 0.96 + 0.004) + 0.03 * smooth(t));
+        // вглубь штанина у шага продолжает зад и только ниже становится круглой — без «ступеньки» под ягодицами
+        const bLeg = Math.max(r, lerp(seatB, r, smooth(t / 0.35)));
         const loose = Math.max(0, r - bodyLeg(y) - ease);
         const ripple = st_ ? 0.006 * st_ * Math.sin(y * 120 + seed) : 0;
-        rings.push({y, a: r + ripple, b: r + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
-        if (y < sp.yC - 0.04) noteAB(y / H, Math.abs(xc) + r, r * 1.3);   // у шага верх ложится на зад, а не на ширину двух штанин
+        rings.push({y, a: r + ripple, b: bLeg + ripple, cx: xc, f: clamp(loose * 0.22, 0, 0.012) + 0.0015});
+        if (y < sp.yC - 0.04) noteAB(y / H, Math.abs(xc) + r, bLeg * 1.2);   // у шага верх ложится на зад, а не на ширину двух штанин
       }
       const leftHalf = f => (f ? side < 0 : side > 0);
       [[-Math.PI / 2, mF, true], [Math.PI / 2, mB, false]].forEach(([p0, mat, front]) => {
