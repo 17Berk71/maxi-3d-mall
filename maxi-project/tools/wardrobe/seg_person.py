@@ -8,16 +8,26 @@ _S = None
 
 
 def crop_screen(im):
-    """Скриншот карточки товара с телефона: отрезать интерфейс (полосы цвета фона приложения сверху и снизу)."""
+    """Скриншот карточки товара с телефона: отрезать интерфейс. Цвет фона приложения — строка над фото (13% высоты);
+    фото — самый длинный непрерывный кусок строк, где этого цвета меньше 80%."""
     h, w = im.shape[:2]
-    bg = np.median(im[:, :8].reshape(-1, 3), 0)
-    ui = (np.abs(im.astype(int) - bg).max(2) < 10).mean(1) > 0.8
+    bg = np.median(im[int(h * .13)].reshape(-1, 3), 0)
+    ui = (np.abs(im.astype(int) - bg).max(2) < 12).mean(1) > 0.8
     rows = np.where(~ui)[0]
-    # самый длинный непрерывный кусок «не интерфейса»
-    best, s = (0, h), None
-    runs = np.split(rows, np.where(np.diff(rows) > 3)[0] + 1)
-    r = max(runs, key=len)
-    return im[r[0]:r[-1] + 1]
+    if not len(rows): return im
+    r = max(np.split(rows, np.where(np.diff(rows) > 3)[0] + 1), key=len)
+    return im[r[0]:r[-1] + 1] if len(r) > h * .3 else im
+
+
+def crop_rows(im):
+    """Границы фото на скриншоте (строки от и до)."""
+    h = im.shape[0]
+    bg = np.median(im[int(h * .13)].reshape(-1, 3), 0)
+    ui = (np.abs(im.astype(int) - bg).max(2) < 12).mean(1) > 0.8
+    rows = np.where(~ui)[0]
+    if not len(rows): return 0, h
+    r = max(np.split(rows, np.where(np.diff(rows) > 3)[0] + 1), key=len)
+    return (r[0], r[-1] + 1) if len(r) > h * .3 else (0, h)
 
 
 def cloth_masks(im):

@@ -33,10 +33,12 @@ ITEMS = [
          sizes=[dict(name='32/L', ru='48', cm=dict(waist=41, hip=70, inseam=74, outseam=107, hem=28)),
                 dict(name='33/L', ru='50', cm=dict(waist=43, hip=72, inseam=74, outseam=107, hem=28)),
                 dict(name='34/XL', ru='50-52', cm=dict(waist=45, hip=74, inseam=74, outseam=109, hem=29))]),
-    # У футболки в таблице — мерки тела, а не вещи. Вещь: прямой крой → ширина лёжа ≈ (грудь + 8 см) / 2; длина — оценка по размеру.
-    dict(id='td-tee', name='Футболка Телодвижения, прямой крой', kind='tee', src='model', front='td-front', back='td-back', worn=[], brand='Телодвижения',
-         note='в таблице магазина мерки тела; размеры вещи оценены (прямой крой)',
-         sizes=[dict(name='XS', ru='42', body=dict(chest=[82, 86], waist=[62, 66], hips=[90, 94]), cm=dict(chest=47, len=66)),
-                dict(name='3XL', ru='54', body=dict(chest=[106, 110], waist=[86, 90], hips=[114, 118]), cm=dict(chest=59, len=76)),
-                dict(name='4XL', ru='56', body=dict(chest=[110, 114], waist=[98, 102], hips=[116, 120]), cm=dict(chest=61, len=78))]),
+    # У футболки в таблице — мерки тела, а не вещи. Вещь приталенная: ширина лёжа ≈ (грудь + 4 см) / 2.
+    # Длина — по фото: на модели низ футболки чуть ниже пояса брюк (hem_waist считает build.py), ref_len — длина размера на модели
+    # (оценка: L), остальные размеры длиннее/короче на шаг сетки ~2 см.
+    dict(id='td-tee', name='Футболка Телодвижения, прямой крой', kind='tee', src='model', front='td-front', back='td-back', worn=[], brand='Телодвижения', ref_len=70,
+         note='в таблице магазина мерки тела; ширина и длина вещи оценены по фото',
+         sizes=[dict(name='XS', ru='42', body=dict(chest=[82, 86], waist=[62, 66], hips=[90, 94]), cm=dict(chest=45, len=66)),
+                dict(name='3XL', ru='54', body=dict(chest=[106, 110], waist=[86, 90], hips=[114, 118]), cm=dict(chest=57, len=72)),
+                dict(name='4XL', ru='56', body=dict(chest=[110, 114], waist=[98, 102], hips=[116, 120]), cm=dict(chest=59, len=74))]),
 ]
