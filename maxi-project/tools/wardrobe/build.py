@@ -313,6 +313,33 @@ def bottom_parts(im, m, kind, flat=False, crotch_frac=None):
     return tex, None, meta, dict(top=top, bot=bot, cx=cx, crotch=crotch)
 
 
+DRAPE_ROWS = 64
+
+
+def cut_for_drape(im, m, info, kind, od, side):
+    """Для симуляции ткани: вырезанное фото (RGBA) по силуэту вещи и грубая сетка силуэта — это «выкройка» перед/спинки.
+    Координаты якорей — в долях кадра выреза (0..1)."""
+    top, bot = info['top'], info['bot']
+    mm = m.copy(); mm[:top] = 0; mm[bot + 1:] = 0
+    xs = np.where(mm.any(0))[0]; x0, x1 = max(0, xs[0] - 2), min(m.shape[1], xs[-1] + 3)
+    crop = im[top:bot + 1, x0:x1]; mc = mm[top:bot + 1, x0:x1]
+    H, W = crop.shape[:2]
+    # края маски чуть растянуть цветом вещи, чтобы по краю выкройки не было фона
+    inv = (mc == 0).astype(np.uint8) * 255
+    filled = cv2.inpaint(crop, inv, 5, cv2.INPAINT_TELEA)
+    rgba = np.dstack([filled, (cv2.GaussianBlur(mc.astype(np.float32), (3, 3), 0) * 255).clip(0, 255).astype(np.uint8)])
+    k = 720 / H if H > 720 else 1
+    if k < 1: rgba = cv2.resize(rgba, (int(W * k), int(H * k)), interpolation=cv2.INTER_AREA)
+    cv2.imwrite(os.path.join(od, side + '_cut.webp'), rgba, [cv2.IMWRITE_WEBP_QUALITY, 88])
+    gh = DRAPE_ROWS; gw = max(8, int(round(gh * W / H)))
+    g = cv2.resize(mc.astype(np.float32), (gw, gh), interpolation=cv2.INTER_AREA) > 0.5
+    grid = [''.join('1' if v else '0' for v in row) for row in g]
+    a = dict(cx=(info['cx'] - x0) / W)
+    if 'hw' in info: a.update(hw=info['hw'] / W, arm=(info['arm'] - top) / H)
+    if 'crotch' in info: a.update(crotch=(info['crotch'] - top) / H)
+    return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: round(float(v), 4) for k_, v in a.items()})
+
+
 def overlay(im, m, info, kind):
     o = im.copy()
     o[m == 0] = (o[m == 0] * .25).astype(np.uint8)
@@ -425,6 +452,7 @@ def build(it):
             if sleeve is not None: sleeve = apply_gain(sleeve, g)
             mm['color'] = tuple(int(c) for c in np.clip(np.array(mm['color']) * g, 0, 255))
         cv2.imwrite(os.path.join(od, side + '.webp'), tex, [cv2.IMWRITE_WEBP_QUALITY, 88])
+        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if (not flat and it.get('src') != 'model') else im, m, info, it['kind'], od, side)
         if sleeve is not None and side == 'front': cv2.imwrite(os.path.join(od, 'sleeve.webp'), sleeve, [cv2.IMWRITE_WEBP_QUALITY, 85])
         meta[side] = dict((k, (round(v, 3) if isinstance(v, float) else v)) for k, v in mm.items())
         meta[side]['flat'] = bool(flat)
