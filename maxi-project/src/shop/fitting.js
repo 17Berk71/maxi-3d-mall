@@ -824,8 +824,10 @@ function makeCloth() {
   };
 }
 // плоская деталь по многоугольнику (метры, y вниз от верха): сетка cell, края помечены ближайшим отрезком контура (метки labels[i])
-function addPanel(C, poly, labels, cell, place, uvf, mat, role, restScale, classify) {
+function addPanel(C, poly, labels, cell, place, uvf, mat, role, restScale, classify, ox) {
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; poly.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+  // ox: сетка привязана к этой линии (столбцы на ox ± cell/2) — у зеркальных деталей точки шва по середине совпадают
+  if (ox != null) x0 = ox - Math.ceil((ox - x0) / cell) * cell;
   const gw = Math.ceil((x1 - x0) / cell) + 1, gh = Math.ceil((y1 - y0) / cell) + 1, id = new Map(), pts = [];
   for (let r = 0; r < gh; r++) for (let c = 0; c < gw; c++) { const x = x0 + (c + 0.5) * cell, y = y0 + (r + 0.5) * cell; if (pip(poly, x, y)) { const [px, py, pz] = place(x, y); id.set(r * 10000 + c, pts.length); pts.push({r, c, x, y, g: C.add(px, py, pz)}); } }
   const at = (r, c) => { const k = id.get(r * 10000 + c); return k == null ? null : pts[k]; };
@@ -1090,12 +1092,13 @@ export function drapeTemplate(item, d, under) {
     // Раньше перед был одной деталью с внутренним швом у самой середины: штанина висела снаружи от ноги, к низу сходилась к ноге
     // конусом и «липла», а по глубине оставалась узкой.
     const cxL = d.legX + 0.01, N = 10, xo = t => Math.max(cxL + legW(t) / 2, t < 0.35 ? HP / 2 * (1 - t / 0.35) + (cxL + legW(t) / 2) * (t / 0.35) : 0), xi = t => cxL - legW(t) / 2;
-    const half = [[0, 0], [WW / 2, 0], [HP / 2, R * 0.55]], hl = ['waist', 'side'];
-    for (let i = 0; i <= N; i++) { const t = i / N; half.push([xo(t), R + IN * t]); hl.push('side'); }
-    hl[hl.length - 1] = 'hem';                                          // отрезок от внешнего угла низа к внутреннему
-    for (let i = N; i >= 0; i--) { const t = i / N; half.push([xi(t), R + IN * t]); hl.push('inner'); }
-    // от шага к середине — сидение (шов посередине), плавной кривой
-    const x0 = xi(0); half.push([x0 * 0.45, R * 0.93], [0, R * 0.72]); hl[hl.length - 1] = 'rise'; hl.push('rise', 'rise');
+    // метка hl[i] — отрезок от half[i] к half[i+1] (последний — к half[0]); число меток = числу точек
+    const half = [[0, 0], [WW / 2, 0], [HP / 2, R * 0.55]], hl = ['waist', 'side', 'side'];
+    for (let i = 0; i <= N; i++) { const t = i / N; half.push([xo(t), R + IN * t]); if (i < N) hl.push('side'); }
+    hl.push('hem');                                                     // от внешнего угла низа к внутреннему
+    for (let i = N; i >= 0; i--) { const t = i / N; half.push([xi(t), R + IN * t]); if (i > 0) hl.push('inner'); }
+    // от шага к середине — сидение и ширинка (шов посередине), плавной кривой
+    const x0 = xi(0); half.push([x0 * 0.45, R * 0.93], [0, R * 0.72]); hl.push('rise', 'rise', 'rise');
     const polyOf = sg => half.map(([x, y]) => [sg * x, y]);
     const spansOf = poly => y => { const xs = []; for (let i = 0; i < poly.length; i++) { const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length]; if ((ay > y) !== (by > y)) xs.push(ax + (bx - ax) * (y - ay) / (by - ay)); } xs.sort((a, b) => a - b); return xs.length >= 2 ? [xs[0], xs[xs.length - 1]] : null; };
     const runs = (g, v) => { const row = g.grid[Math.max(0, Math.min(g.gh - 1, Math.floor(v * g.gh)))], r = []; let c = 0; while (c < g.gw) { if (row[c] === '1') { const c0 = c; while (c < g.gw && row[c] === '1') c++; if (c - c0 > 1) r.push([c0 / g.gw, c / g.gw]); } else c++; } return r; };
@@ -1116,12 +1119,15 @@ export function drapeTemplate(item, d, under) {
     // в начале шаговые язычки левой и правой штанины лежат друг на друге (деталь центрована на своей ноге — так при сшивании
     // штанина сворачивается вокруг ноги); разводятся по сторонам, когда штанина уже обняла ногу (C.half в runCloth)
     [1, -1].forEach(sg => { const poly = polyOf(sg), L = hl.slice(), pl = z => (x, y) => [x, sp.yW - y, z];
-      parts['f' + sg] = addPanel(C, poly, L, cell, pl(zo * 0.95), uvP(aF, false, dr.front, sg, poly), mF, 'front');
-      parts['b' + sg] = addPanel(C, poly, L, cell, pl(-zo * 0.95), uvP(aB, true, dr.back, sg, poly), mB, 'back', seat); });
+      parts['f' + sg] = addPanel(C, poly, L, cell, pl(zo * 0.95), uvP(aF, false, dr.front, sg, poly), mF, 'front', null, null, 0);
+      parts['b' + sg] = addPanel(C, poly, L, cell, pl(-zo * 0.95), uvP(aB, true, dr.back, sg, poly), mB, 'back', seat, null, 0); });
     // швы: бок и шаговый — перед со спинкой своей стороны (одинаковая выкройка — одинаковые ячейки); сидение — левая с правой (зеркально)
     [1, -1].forEach(sg => { const pf = parts['f' + sg], pb = parts['b' + sg]; pf.pts.forEach(p => { if (!p.edge || (p.lab !== 'side' && p.lab !== 'inner')) return; const q = pb.at(p.r, p.c); if (q && q.edge && q.lab === p.lab) C.seams.push([p.g, q.g]); }); });
-    ['f', 'b'].forEach(k => { const A = parts[k + '1'], B = parts[k + '-1'], eb = B.pts.filter(p => p.edge && p.lab === 'rise');
-      A.pts.forEach(p => { if (!p.edge || p.lab !== 'rise') return; let best = cell, q = null; for (const o of eb) { const dd = Math.abs(o.x + p.x) + Math.abs(o.y - p.y); if (dd < best) { best = dd; q = o; } } if (q) C.seams.push([p.g, q.g]); }); });
+    // (у самого шага сходятся четыре детали — туда же берём начало шаговых швов, иначе в развилке остаётся дырка)
+    const crotchJoin = p => p.edge && (p.lab === 'rise' || (p.lab === 'inner' && p.y < R + cell * 4));
+    ['f', 'b'].forEach(k => { const A = parts[k + '1'], B = parts[k + '-1'], eb = B.pts.filter(crotchJoin);
+      // (шов сидения и ширинки: у середины столбцы на ±cell/2 — пара по зеркалу; ниже по кривой шага — ближайшая точка)
+      A.pts.forEach(p => { if (!crotchJoin(p)) return; let best = cell * 1.3, q = null; for (const o of eb) { const dd = Math.abs(o.x + p.x) + Math.abs(o.y - p.y); if (dd < best) { best = dd; q = o; } } if (q) C.seams.push([p.g, q.g]); }); });
     // штанины не проходят друг сквозь друга: ниже шага каждая держится своей стороны от середины
     // (только верх штанины, где язычки: ниже ноги манекена сами разводят штанины, а у пола лишняя длина должна ложиться свободно —
     // иначе её выталкивает наружу и низ штанины стаскивает с ноги)
