@@ -17,7 +17,7 @@ for (const it of items) {
   for (const st of it.states.length ? it.states : ['']) {
     const wear = it.slot === 'bottom' ? [tee, it.id] : [it.id, jeans], t0 = Date.now();
     await pg.evaluate(([w, id, st]) => FIT.wear(w, st ? {[id]: st} : {}), [wear, it.id, st]);
-    await pg.waitForFunction(id => FIT.qc(id) !== null, it.id, {timeout: 60000}).catch(() => {});
+    await pg.waitForTimeout(50); await pg.evaluate(() => FIT.ready());
     const q = await pg.evaluate(id => FIT.qc(id), it.id), shot = 'qc_' + it.id.replace(/\W/g, '_') + (st ? '_' + st : '') + '.jpg';
     await pg.locator('#fitC').screenshot({path: process.env.OUT + '/' + shot, type: 'jpeg', quality: 70});
     rows.push({id: it.id, name: it.name, state: st, q, shot, ms: Date.now() - t0});

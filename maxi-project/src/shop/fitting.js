@@ -984,9 +984,10 @@ function addHood(C, d, M, fronts, pb, mat, up, cell, uvS) {
   if (C.hood && C.hood.length === 2) { const [A, B] = C.hood, eb = B.pts.filter(p => p.edge && p.lab === 'crown');
     A.pts.forEach(p => { if (!p.edge || p.lab !== 'crown') return; let best = cell, q = null; for (const b of eb) { const dd = Math.abs(b.x - p.x) + Math.abs(b.y - p.y); if (dd < best) { best = dd; q = b; } } if (q) C.seams.push([p.g, q.g]); }); }
 }
-export function drapeTemplate(item, d, under) {
+// подготовка расчёта ткани: выкройка, швы, начальное положение. Сам расчёт (runCloth) — отдельно: в фоновом потоке
+// (garmentMeshAsync) или сразу (drapeTemplate). finish(P) — по готовым точкам собирает сетку, слой, автопроверку
+export function drapePrepare(item, d, under) {
   if (!DRAPE_ON || !item.tex) return null;
-  // шорты пока прежним способом: короткая штанина в симуляции съезжает с одной ноги (доделать)
   const k = item.kind, top = ['tee', 'sweater', 'hoodie', 'shirt', 'jacket'].includes(k), bottom = ['jeans', 'pants', 'shorts'].includes(k);
   if (!top && !bottom) return null;
   const st = item.state || '', open = st === 'open', tucked = st === 'tucked', hoodUp = st === 'hood', hooded = k === 'hoodie' || item.hood;
@@ -1139,7 +1140,7 @@ export function drapeTemplate(item, d, under) {
     C.sector = []; [1, -1].forEach(sg => { const sp_ = spansOf(polyOf(sg)); ['f', 'b'].forEach(k => parts[k + sg].pts.forEach(p => { if (p.y <= R + cell) return; const iv = sp_(p.y); if (!iv) return;
       const inn = sg > 0 ? iv[0] : iv[1], out = sg > 0 ? iv[1] : iv[0], t = (p.x - inn) / ((out - inn) || 1e-4); C.sector.push([p.g, k === 'f' ? 1 : -1, t < 0.3 ? -sg : t > 0.7 ? sg : 0, sg * (d.legX + 0.01)]); })); });
   }
-  const P = runCloth(C, push, fab, yPin);
+  const finish = P => {
   // окат рукава после расчёта кладём точно на край проймы (между сшитыми точками кольцо рукава иначе отходит — видна щель)
   chains.forEach(({ring, lf, lb}) => { const segs = ring.length;
     // концы проймы (у плеча и под мышкой) у переда и спинки — одна точка: сводим к середине
@@ -1153,7 +1154,65 @@ export function drapeTemplate(item, d, under) {
   g.userData.measures = info;
   if (typeof window !== 'undefined' && window.__keep) window.__last = {C, P};
   try { QC[item.id] = qcCloth(C, P, d, item, dr, info, top, aF, aB); g.userData.qc = QC[item.id]; } catch (e) { QC[item.id] = null; }
-  return g;
+  return g; };
+  return {C, fab, yPin, d, under, finish, run: () => finish(runCloth(C, push, fab, yPin))};
+}
+export function drapeTemplate(item, d, under) { const j = drapePrepare(item, d, under); return j ? j.run() : null; }
+
+// ---------- расчёт ткани в фоновом потоке и кэш ----------
+// Расчёт вещи — 1.5–2.5 с на компьютере и в 2–3 раза дольше на телефоне. В фоне страница не замирает,
+// а готовый результат (точки ткани) хранится: та же вещь на той же фигуре во второй раз надевается сразу.
+// Версия расчёта: менять при любой правке выкроек, швов или расчёта — старый кэш станет недействительным.
+export const CLOTH_VER = 'c1';
+let WORKER = null, WSEQ = 0; const WJOBS = new Map();
+function clothWorker() {
+  if (WORKER !== null) return WORKER;
+  try {
+    // код расчёта берём из этих же функций (toString): отдельный файл не нужен ни Vite, ни сборке артефакта
+    const src = [torsoR, sx, sz, armRad, armX, armJ, legR, makeCollider, runCloth].map(f => { const t = f.toString(); return /^function[\s*(]/.test(t) ? t : 'const ' + f.name + ' = ' + t + ';'; }).join('\n')
+      + '\nself.onmessage = e => { const {id, C, d, under, fab, yPin} = e.data; try { const P = runCloth(C, makeCollider(d, under), fab, yPin); self.postMessage({id, P}, [P.buffer]); } catch (err) { self.postMessage({id, err: String(err && err.message || err)}); } };';
+    WORKER = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
+    WORKER.onmessage = e => { const j = WJOBS.get(e.data.id); if (!j) return; WJOBS.delete(e.data.id); if (e.data.err) { console.warn('расчёт ткани в фоне не удался, считаю здесь:', e.data.err); WORKER = false; j.reject(new Error(e.data.err)); } else j.resolve(e.data.P); };
+    WORKER.onerror = () => { WJOBS.forEach(j => j.reject(new Error('worker'))); WJOBS.clear(); WORKER = false; };
+  } catch (e) { WORKER = false; }
+  return WORKER;
+}
+function solveInWorker(job) {
+  const w = clothWorker(); if (!w) return Promise.resolve(null);
+  const id = ++WSEQ, C = job.C, msg = {id, C: {P: Float32Array.from(C.P), E: C.E, seams: C.seams, pin: C.pin, hold: C.hold, mid: C.mid, half: C.half, sector: C.sector, force: C.force, stickyIds: C.stickyIds, fr: C.fr}, d: job.d, under: job.under, fab: job.fab, yPin: job.yPin};
+  return new Promise((resolve, reject) => { WJOBS.set(id, {resolve, reject}); w.postMessage(msg); }).catch(() => null);
+}
+// кэш: в памяти (последние 40) и в IndexedDB браузера (последние 300, ~50 КБ каждый)
+const MEMC = new Map();
+let IDB = null;
+function idb() {
+  if (IDB) return IDB;
+  IDB = new Promise(res => { try { const r = indexedDB.open('maxi-fit', 1); r.onupgradeneeded = () => r.result.createObjectStore('drape'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); } catch (e) { res(null); } });
+  return IDB;
+}
+async function cacheGet(key) {
+  if (MEMC.has(key)) return MEMC.get(key);
+  const db = await idb(); if (!db) return null;
+  return new Promise(res => { try { const q = db.transaction('drape').objectStore('drape').get(key); q.onsuccess = () => { const v = q.result; if (v && v.p) { MEMC.set(key, v.p); res(v.p); } else res(null); }; q.onerror = () => res(null); } catch (e) { res(null); } });
+}
+async function cachePut(key, P) {
+  MEMC.set(key, P); if (MEMC.size > 40) MEMC.delete(MEMC.keys().next().value);
+  const db = await idb(); if (!db) return;
+  try { const tx = db.transaction('drape', 'readwrite'), st = tx.objectStore('drape'); st.put({p: P, t: Date.now()}, key);
+    // изредка чистим: оставляем 300 самых свежих
+    if (Math.random() < 0.1) { const all = st.getAll(), keys = st.getAllKeys(); tx.oncomplete = null;
+      keys.onsuccess = () => { all.onsuccess = () => { const L = keys.result.map((k, i) => [k, all.result[i].t]).sort((a, b) => b[1] - a[1]); if (L.length > 300) { const t2 = db.transaction('drape', 'readwrite').objectStore('drape'); L.slice(300).forEach(([k]) => t2.delete(k)); } }; }; } } catch (e) {}
+}
+// одна вещь: подготовка здесь, расчёт — из кэша, в фоне или (если фон недоступен) здесь же
+export async function garmentMeshAsync(item, d, key, alive) {
+  if (!item.tex) return garmentMesh(item, d);
+  delete QC[item.id];
+  const un = UNDER ? {a: UNDER.slice(), b: UNDERZ.slice()} : null, job = drapePrepare(item, d, un);
+  if (!job) return garmentMesh(item, d);
+  let P = key ? await cacheGet(key) : null;
+  if (!P) { P = await solveInWorker(job); if (alive && !alive()) return null; if (!P) P = runCloth(job.C, makeCollider(job.d, job.under), job.fab, job.yPin); if (key) cachePut(key, P); }
+  if (alive && !alive()) return null;
+  return job.finish(Float32Array.from(P));
 }
 
 // ---------- автопроверка надетой вещи ----------
@@ -1354,16 +1413,44 @@ export function createFitting(ctx) {
   }
   const SKIN = ['#e8e2da', '#f1d3bd', '#d9a882', '#a8714f', '#6e4630'];
   let built = {key: ''};
+  // сборка образа: тело сразу, вещи по очереди (снизу вверх — каждая ложится на предыдущие); ткань считается в фоне.
+  // Пока считается, виден прежний образ и надпись «Надеваю…»; новая сборка ждёт окончания прежней (слои — общие)
+  const disposeObj = o => o.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== R.skinMat) { if (m.material.map && !Object.values(TEX).includes(m.material.map) && !Object.values(PTEX).includes(m.material.map)) m.material.map.dispose(); m.material.dispose(); } });
+  function setBusy(on) {
+    let e = el('fitBusy'); const c = el('fitC');
+    if (!e && on && c && c.parentNode) { e = document.createElement('div'); e.id = 'fitBusy'; e.textContent = 'Надеваю…';
+      e.style.cssText = 'position:absolute;left:50%;top:14px;transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:rgba(20,18,16,.72);color:#fff;font:600 13px/1.3 system-ui,sans-serif;pointer-events:none;z-index:5';
+      if (getComputedStyle(c.parentNode).position === 'static') c.parentNode.style.position = 'relative'; c.parentNode.appendChild(e); }
+    if (e) e.hidden = !on;
+  }
+  built.chain = Promise.resolve(); built.tok = 0;
   function rebuild() {
-    if (!R) return; const b = PREFS.body, key = JSON.stringify(b) + '|' + worn().map(i => i.id + ':' + (i.state || '') + ':' + (i.size || '')).join(',');
-    if (key === built.key) return; built.key = key;
-    R.avatar.children.slice().forEach(o => { R.avatar.remove(o); o.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== R.skinMat) { if (m.material.map && !Object.values(TEX).includes(m.material.map)) m.material.map.dispose(); m.material.dispose(); } }); });
-    R.skinMat.color.copy(LIN(SKIN[b.skin | 0] || SKIN[0])); R.skinMat.roughness = (b.skin | 0) === 0 ? 0.35 : 0.6;
+    if (!R) return; const b = PREFS.body, wn = worn(), key = JSON.stringify(b) + '|' + wn.map(i => i.id + ':' + (i.state || '') + ':' + (i.size || '')).join(',');
+    if (key === built.key) return; built.key = key; const tok = ++built.tok;
+    built.chain = built.chain.then(() => buildOutfit(tok, b, wn)).catch(e => console.error(e));
+  }
+  async function buildOutfit(tok, b, wn) {
+    const alive = () => tok === built.tok && R;
+    if (!alive()) return;
     // широкая вещь отводит руки: они лежат на ткани, а не проходят сквозь неё
-    const d0 = bodyDims(b); d0.armA = armSpread(worn(), d0);
-    const body = buildBody(b, R.skinMat, d0); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); R.avatar.add(body.g); R.d = body.d;
-    const order = {shoes: 0, bottom: 1, dress: 2, top: 3, outer: 4};
-    UNDER = []; UNDERZ = []; BOT_YW = 0; worn().sort((a, c) => order[a.slot] - order[c.slot]).forEach(it => { R.avatar.add(garmentMesh(it, body.d)); commitLayer(); }); UNDER = UNDERZ = null;
+    const d0 = bodyDims(b); d0.armA = armSpread(wn, d0);
+    const body = buildBody(b, R.skinMat, d0), next = new THREE.Group(); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); next.add(body.g);
+    const order = {shoes: 0, bottom: 1, dress: 2, top: 3, outer: 4}, bodyKey = JSON.stringify(b) + '|' + d0.armA.toFixed(3);
+    const busy = setTimeout(() => { if (alive()) setBusy(true); }, 120);
+    UNDER = []; UNDERZ = []; BOT_YW = 0; let below = '', ok = true;
+    try {
+      for (const it of wn.slice().sort((a, c) => order[a.slot] - order[c.slot])) {
+        const me = it.id + ':' + (it.state || '') + ':' + (it.size || '');
+        const g = await garmentMeshAsync(it, body.d, DRAPE_ON && it.tex ? CLOTH_VER + '|' + bodyKey + '|' + below + '|' + me : null, alive);
+        if (!alive() || !g) { ok = false; if (g) disposeObj(g); break; }
+        next.add(g); commitLayer(); below += me + ',';
+      }
+    } finally { UNDER = UNDERZ = null; PEND = []; PENDZ = []; clearTimeout(busy); }
+    if (!ok || !alive()) { disposeObj(next); return; }
+    setBusy(false);
+    R.skinMat.color.copy(LIN(SKIN[b.skin | 0] || SKIN[0])); R.skinMat.roughness = (b.skin | 0) === 0 ? 0.35 : 0.6;
+    R.avatar.children.slice().forEach(o => { R.avatar.remove(o); disposeObj(o); });
+    next.children.slice().forEach(o => R.avatar.add(o)); R.d = body.d;
     document.querySelectorAll('[data-qc]').forEach(qcLine);
   }
   // строка автопроверки под вещью: только если вещь показана неточно (балл ниже 70) — что именно не так
@@ -1519,6 +1606,7 @@ export function createFitting(ctx) {
     addPack, wear(ids, states, sizes) { W.worn = []; ids.forEach(id => putOn(id, true)); Object.entries(states || {}).forEach(([id, st]) => { const it = W.items.find(i => i.id === id); if (it) it.state = st; });
       W.items.forEach(it => { if (it.sizesT) it.size = (sizes && sizes[it.id]) || null; }); persist(); render(); },
     qc: id => QC[id] || null,
+    ready: () => { rebuild(); return built.chain; },          // для проверок: дождаться, пока образ соберётся
     fitNote: id => { const it = W.items.find(i => i.id === id); return it ? fitNote(it, PREFS.body) + ' | размер ' + ((sizeOf(it, PREFS.body) || {}).name || '-') : ''; },
     setState(id, st) { const it = W.items.find(i => i.id === id); if (it) { it.state = st; persist(); render(); } },
     open: openRoom, close: closeRoom, get isOpen() { return open; },
