@@ -621,10 +621,14 @@ function photoGarment(item, d) {
 let DRAPE_ON = typeof location !== 'undefined' && /[?&]drape=1/.test(location.search);
 export function setDrape(v) { DRAPE_ON = !!v; }
 // фигура для столкновений: туловище — эллипсы по высоте, ноги — круги, руки — капсулы, шея и голова, пол
+// радиус ноги манекена на высоте yf (как у видимой ноги)
+function legR(d, yf) {
+  const legTab = [[0.04, 0.032], [0.07, 0.036], [0.15, 0.056 * d.k], [0.24, 0.047 * d.k], [0.28, 0.05 * d.k], [0.38, d.thigh * 0.86], [0.47, d.thigh], [0.5, d.thigh * 0.98]];
+  if (yf > 0.5) return 0; for (let i = 1; i < legTab.length; i++) if (yf <= legTab[i][0]) { const t = (yf - legTab[i - 1][0]) / (legTab[i][0] - legTab[i - 1][0]); return (legTab[i - 1][1] + (legTab[i][1] - legTab[i - 1][1]) * t) * (yf > 0.3 ? 1 : d.s); } return legTab[0][1] * d.s;
+}
 function makeCollider(d, under) {
   const H = d.H, N = 400, A = new Float32Array(N), B = new Float32Array(N), LR = new Float32Array(N);
-  const legTab = [[0.04, 0.032], [0.07, 0.036], [0.15, 0.056 * d.k], [0.24, 0.047 * d.k], [0.28, 0.05 * d.k], [0.38, d.thigh * 0.86], [0.47, d.thigh], [0.5, d.thigh * 0.98]];
-  const legAt = yf => { if (yf > 0.5) return 0; for (let i = 1; i < legTab.length; i++) if (yf <= legTab[i][0]) { const t = (yf - legTab[i - 1][0]) / (legTab[i][0] - legTab[i - 1][0]); return (legTab[i - 1][1] + (legTab[i][1] - legTab[i - 1][1]) * t) * (yf > 0.3 ? 1 : d.s); } return legTab[0][1] * d.s; };
+  const legAt = yf => legR(d, yf);
   for (let i = 0; i < N; i++) {
     const yf = i / N;
     // туловище без плечевого шара (его ниже — как объёмное тело, иначе ткань соскальзывает с плеч вбок)
@@ -827,7 +831,8 @@ function addPanel(C, poly, labels, cell, place, uvf, mat, role, restScale, class
   const at = (r, c) => { const k = id.get(r * 10000 + c); return k == null ? null : pts[k]; };
   const rs = (a, b) => restScale ? restScale((a.x + b.x) / 2, (a.y + b.y) / 2) : 1;
   pts.forEach(p => {
-    for (const [dr, dc, kind] of [[0, 1, 0], [1, 0, 0], [1, 1, 1], [1, -1, 1], [0, 2, 2], [2, 0, 2]]) { const q = at(p.r + dr, p.c + dc); if (q) C.link(p.g, q.g, Math.hypot(q.x - p.x, q.y - p.y), kind, rs(p, q)); }
+    // поперечные связи (уток) — вид 3: ткань почти не сжимается поперёк (иначе труба штанины «усыхает» по обхвату и липнет к ноге)
+    for (const [dr, dc, kind] of [[0, 1, 3], [1, 0, 0], [1, 1, 1], [1, -1, 1], [0, 2, 2], [2, 0, 2]]) { const q = at(p.r + dr, p.c + dc); if (q) C.link(p.g, q.g, Math.hypot(q.x - p.x, q.y - p.y), kind, rs(p, q)); }
     p.edge = [[-1, 0], [1, 0], [0, -1], [0, 1]].some(([a, b]) => !at(p.r + a, p.c + b));
     if (p.edge) { let best = 1e9, lab = null; for (let i = 0; i < poly.length; i++) { const dd = segDist(p.x, p.y, poly[i], poly[(i + 1) % poly.length]); if (dd < best) { best = dd; lab = labels[i]; } } p.lab = lab;
       if (classify) p.lab = classify(p, {up: !at(p.r - 1, p.c), down: !at(p.r + 1, p.c), side: !at(p.r, p.c - 1) || !at(p.r, p.c + 1)}) || lab; }
@@ -853,7 +858,7 @@ function addTube(C, S0, D, len, rad, segs, rings, mat, side, uvf, cap) {
     g.push(row); pos.push(prow); }
   const dist = (i1, j1, i2, j2) => pos[i1][j1 % segs].distanceTo(pos[i2][j2 % segs]);
   for (let i = 0; i < rings; i++) for (let j = 0; j < segs; j++) { const a = g[i][j];
-    C.link(a, g[i][(j + 1) % segs], dist(i, j, i, j + 1), 0); C.link(a, g[i][(j + 2) % segs], dist(i, j, i, j + 2), 2);
+    C.link(a, g[i][(j + 1) % segs], dist(i, j, i, j + 1), 3); C.link(a, g[i][(j + 2) % segs], dist(i, j, i, j + 2), 2);
     // у оката запас по высоте (как у настоящего рукава): иначе пройма на теле уже выкройки и верх рукава натянут «рожками»
     const ease = (v, k) => cap && i < 2 ? Math.max(v, (i === 0 ? 0.04 : 0.03) * k) : v;
     if (i + 1 < rings) { C.link(a, g[i + 1][j], ease(dist(i, j, i + 1, j), 1), 0); C.link(a, g[i + 1][(j + 1) % segs], ease(dist(i, j, i + 1, j + 1), 1.15), 1); if (i + 2 < rings) C.link(a, g[i + 2][j], dist(i, j, i + 2, j), 2); } }
@@ -871,7 +876,8 @@ function runCloth(C, push, fab, yPin) {
   let FIX = null; const HX = C.hold ? P.slice() : null;
   // капюшон на голове: касающиеся точки не скользят (держится на волосах), иначе тяжесть стаскивает его назад
   const STK = C.stickyIds ? new Uint8Array(n) : null; if (STK) C.stickyIds.forEach(i => { STK[i] = 1; });
-  const steps = (typeof window !== 'undefined' && window.__dsteps) || 320, iters = 7, dt = 1 / 90, sewEnd = 128;
+  const DBG = typeof window !== 'undefined' ? window : {};   // __dsteps — остановить расчёт раньше (отладка)
+  const steps = DBG.__dsteps || 320, iters = 7, dt = 1 / 90, sewEnd = 128;
   for (let s = 0; s < steps; s++) {
     const ramp = Math.min(1, s / sewEnd), gk = s < sewEnd ? 0 : Math.min(1, (s - sewEnd) / 25);
     prev.set(P);
@@ -883,23 +889,29 @@ function runCloth(C, push, fab, yPin) {
       for (let e = 0; e < E.length; e += 4) {
         const i = E[e], j = E[e + 1], rest = E[e + 2], kind = E[e + 3], a3 = i * 3, b3 = j * 3;
         const dx = P[b3] - P[a3], dy = P[b3 + 1] - P[a3 + 1], dz = P[b3 + 2] - P[a3 + 2], len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6, diff = len - rest;
-        const k = kind === 2 ? (diff > 0 ? fab.bend : fab.bend * 0.4) : (diff > 0 ? fab.stretch : fab.comp); if (!k) continue;
+        const k = kind === 2 ? (diff > 0 ? fab.bend : fab.bend * 0.4) : (diff > 0 ? fab.stretch : kind === 3 ? (fab.compW || 0.5) : fab.comp); if (!k) continue;
         const c = k * diff / len * 0.5, wa = C.pin[i] ? 0 : 1, wb = C.pin[j] ? 0 : 1;
         P[a3] += dx * c; P[a3 + 1] += dy * c * wa; P[a3 + 2] += dz * c; P[b3] -= dx * c; P[b3 + 1] -= dy * c * wb; P[b3 + 2] -= dz * c;
       }
       for (let rep = 0; rep < 2; rep++) for (let k = 0; k < S.length; k++) { const [i, j] = S[k], a3 = i * 3, b3 = j * 3, gx = P[b3] - P[a3], gy = P[b3 + 1] - P[a3 + 1], gz = P[b3 + 2] - P[a3 + 2], len = Math.hypot(gx, gy, gz) || 1e-6, rest = S0[k] * (1 - ramp), diff = len - rest;
         if (diff > 0) { const c = 0.5 * diff / len; P[a3] += gx * c; P[a3 + 1] += gy * c; P[a3 + 2] += gz * c; P[b3] -= gx * c; P[b3 + 1] -= gy * c; P[b3 + 2] -= gz * c; } }
       if (C.hold && s < sewEnd + 20) for (const i of C.hold) P[i * 3] = HX[i * 3];
+      if (C.mid) for (const [a, b] of C.mid) { const m = (P[a * 3] + P[b * 3]) / 2; P[a * 3] -= m; if (b !== a) P[b * 3] -= m; }
+      if (C.sector && s > sewEnd * 0.6) for (const [i, fz, sx_, cx] of C.sector) { const q = i * 3;
+        if (P[q + 2] * fz < -0.005) P[q + 2] += (-0.005 * fz - P[q + 2]) * 0.3;
+        if (sx_ && (P[q] - cx) * sx_ < 0) P[q] += (cx - P[q]) * 0.3; }
+      if (C.half && s > sewEnd * 0.6) for (const [i, sg] of C.half) if (P[i * 3] * sg < 0.004) P[i * 3] += (sg * 0.004 - P[i * 3]) * 0.3;
       for (let i = 0; i < n; i++) { if (push(P, i * 3)) hit[i] = 1; if (C.pin[i]) { P[i * 3 + 1] = yPin; if (FIX) { P[i * 3] = FIX[i * 3]; P[i * 3 + 2] = FIX[i * 3 + 2]; } } }
     }
     // трение о тело: касающаяся точка почти не скользит (иначе тяжёлые рукава стаскивают вещь с плеч)
-    const FR = 0.3;
+    // у брюк трение о ноги сильнее: иначе тесная штанина под своей тяжестью проворачивается вокруг ноги и соскакивает с неё
+    const FR = C.fr || 0.3;
     if (FR < 1) for (let i = 0; i < n; i++) if (hit[i] && !C.pin[i]) { const q = i * 3, fr = STK && STK[i] && s >= sewEnd ? 0 : FR; for (let k = 0; k < 3; k++) P[q + k] = prev[q + k] + (P[q + k] - prev[q + k]) * fr; push(P, q); }
     for (let i = 0; i < n * 3; i++) V[i] = (P[i] - prev[i]) / dt * 0.985;
     for (let i = 0; i < n; i++) if (hit[i]) { V[i * 3] *= 0.4; V[i * 3 + 1] *= 0.4; V[i * 3 + 2] *= 0.4; hit[i] = 0; }
   }
   // сглаживание «лесенки» сетки (2 прохода) с повторной проверкой столкновений
-  const nb = Array.from({length: n}, () => []); for (let e = 0; e < E.length; e += 4) if (E[e + 3] === 0) { nb[E[e]].push(E[e + 1]); nb[E[e + 1]].push(E[e]); }
+  const nb = Array.from({length: n}, () => []); for (let e = 0; e < E.length; e += 4) if (E[e + 3] === 0 || E[e + 3] === 3) { nb[E[e]].push(E[e + 1]); nb[E[e + 1]].push(E[e]); }
   for (const [i, j] of S) { nb[i].push(j); nb[j].push(i); }
   for (let pass = 0; pass < 2; pass++) { const Q = P.slice(); for (let i = 0; i < n; i++) { const L = nb[i]; if (!L.length) continue; let x = 0, y = 0, z = 0; for (const t of L) { x += Q[t * 3]; y += Q[t * 3 + 1]; z += Q[t * 3 + 2]; }
     P[i * 3] = (Q[i * 3] + x / L.length) / 2; P[i * 3 + 1] = (Q[i * 3 + 1] + y / L.length) / 2; P[i * 3 + 2] = (Q[i * 3 + 2] + z / L.length) / 2; push(P, i * 3); } }
@@ -1006,8 +1018,10 @@ export function drapeTemplate(item, d, under) {
       return u => { const c = Math.max(0, Math.min(g.gw - 1, Math.floor(u * g.gw))), w = [T[c - 1], T[c], T[c + 1]].filter(v => v != null && v < 1).sort((a, b) => a - b); return w.length ? w[w.length >> 1] : 0; }; };
     // низ корпуса на фото: у длинных рукавов на вешалке рукава свисают ниже корпуса — низ сетки не подол
     const photoHem = (g, a) => { if (!g) return 1; const cc = Math.round(a.cx * g.gw); let r = Math.floor((a.arm || 0.3) * g.gh); while (r + 1 < g.gh && g.grid[r + 1][cc] === '1') r++; return Math.min(1, (r + 1) / g.gh); };
-    const uvT = (a, mirror, g, nd) => { const pt = photoTop(g), hv = photoHem(g, a); return (x, y) => { const u = mirror ? a.cx - x / (M.W / 2) * (a.hw || 0.3) : a.cx + x / (M.W / 2) * (a.hw || 0.3), py = topY(x, nd), tv = Math.min(0.3, pt(u));
-      return [u, Math.min(hv - 0.01, tv + Math.max(0, y - py) / Math.max(0.05, M.L - py) * (hv - tv))]; }; };
+    // середина переда — по молнии на фото (если найдена): на фото вещь висит чуть наискось, а в примерочной молния должна идти ровно посередине
+    const cAt = (a, v) => { const z = a.zipc; if (!z) return a.cx; const f = Math.max(0, Math.min(z.length - 1, v * z.length - 0.5)), i = Math.min(z.length - 2, Math.floor(f)); return z[i] + (z[i + 1] - z[i]) * (f - i); };
+    const uvT = (a, mirror, g, nd) => { const pt = photoTop(g), hv = photoHem(g, a); return (x, y) => { const sx_ = x / (M.W / 2) * (a.hw || 0.3), u0 = mirror ? a.cx - sx_ : a.cx + sx_, py = topY(x, nd), tv = Math.min(0.3, pt(u0));
+      const v = Math.min(hv - 0.01, tv + Math.max(0, y - py) / Math.max(0.05, M.L - py) * (hv - tv)); return [mirror ? u0 : cAt(a, v) + sx_, v]; }; };
     const F = mk(M.ND), B = mk(M.NDb);
     // половина переда (расстёгнута): контур до середины, край по середине — свободный (молния/борт)
     const mkHalf = (nd, sgn) => { const pts = [], labs = [];
@@ -1033,6 +1047,10 @@ export function drapeTemplate(item, d, under) {
     fronts.forEach(pf => pf.pts.forEach(p => { if (!p.edge || (p.lab !== 'shoulder' && p.lab !== 'side')) return; let best = cell * 0.8, q = null;
       for (const b of bEdge) { if (b.lab !== p.lab) continue; const dd = Math.abs(b.x - p.x) + Math.abs(b.y - p.y); if (dd < best) { best = dd; q = b; } } if (q) C.seams.push([p.g, q.g]); }));
     // расстёгнутые полочки: пока шьём, край у середины стоит на месте (как сметан) — иначе мягкую на сжатие ткань стягивает к боковому шву
+    // застёгнутая вещь симметрична: середина переда и спинки (молния, планка, принт) остаётся ровно посередине, не виляет
+    // (ближайший к середине столбец или пара столбцов по обе стороны: их середина держится на x = 0)
+    if (!open) C.mid = fronts.concat([pb]).flatMap(P_ => { const mn = Math.min(...P_.pts.map(p => Math.abs(p.x))), col = P_.pts.filter(p => Math.abs(Math.abs(p.x) - mn) < 1e-4);
+      return col.filter(p => p.x >= -1e-4).map(p => { const q = col.find(o => o.r === p.r && Math.abs(o.x + p.x) < 1e-4) || p; return [p.g, q.g]; }); });
     if (open) C.hold = fronts.flatMap(pf => pf.pts.filter(p => p.edge && p.lab === 'cf').map(p => p.g));
     if (tucked) fronts.concat([pb]).forEach(P_ => P_.pts.forEach(p => { if (p.edge && p.lab === 'hem') C.pin[p.g] = 1; }));
     // рукава: трубы вдоль руки, верхнее кольцо вшито в пройму (перед: от плеча к подмышке — спереди трубы; спинка — сзади)
@@ -1064,34 +1082,56 @@ export function drapeTemplate(item, d, under) {
     const WW = Math.max(sp.ww, ellP(bodyAB(d, sp.yW / H).a, bodyAB(d, sp.yW / H).b) / 2 + 0.01), R = sp.yW - sp.yC, IN = sp.legLen + sp.stack;
     const HP = Math.max(sp.hip || WW * 1.15, ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
     const lw = sp.lw.slice(), TW = Math.max(lw[0], HP * 0.55, d.thigh * Math.PI + 0.02);
-    const legW = t => Math.max(interp(lw, t) * (TW / lw[0]), 0.12);
+    // штанина не уже ноги (+ свободное облегание ~3 см по полуобхвату): иначе тесная труба в расчёте соскакивает с ноги вбок
+    const legW = t => { const yf = (sp.yW - R - IN * t) / H, r = Math.min(legR(d, Math.max(0, yf)), d.legX - 0.002) + 0.007; return Math.max(interp(lw, t) * (TW / lw[0]), 0.12, Math.PI * r + 0.03); };
     yPin = sp.yW; info = {WW, HP, R, IN, TW}; BOT_YW = sp.yW;
-    // контур: пояс → бёдра → внешний шов вниз → низ → шаговый шов вверх к шагу → зеркально
-    const pts = [[0, 0], [WW / 2, 0], [HP / 2, R * 0.55]], labs = ['waist', 'side'];
-    // метка labs[i] — отрезок от pts[i] к pts[i+1]
-    const N = 10; for (let i = 0; i <= N; i++) { const t = i / N; pts.push([Math.max(HP / 2 * (1 - t) + (0.004 + 0.012 * t + legW(t)) * t, 0.004 + 0.012 * t + legW(t)), R + IN * t]); labs.push('side'); }
-    labs.push('hem');                                                  // от внешнего угла низа к внутреннему
-    for (let i = N; i >= 1; i--) { const t = i / N; pts.push([0.004 + 0.012 * t, R + IN * t]); labs.push('inner'); }
-    pts.push([0, R]);
-    // проверка: отрезков на один меньше точек
-    const {P: poly, L: lab} = mirrorPoly(pts, labs);
-    // uv по строкам: отрезки ткани выкройки на этой высоте (одна полоса выше шага, две штанины ниже) ↔ отрезки вещи в строке фото;
-    // иначе штанины выкройки и штанины на фото (лёжа они расходятся «домиком») не совпадают и на ткань попадает фон
-    const spans = (y) => { const xs = []; for (let i = 0; i < poly.length; i++) { const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length]; if ((ay > y) !== (by > y)) xs.push(ax + (bx - ax) * (y - ay) / (by - ay)); } xs.sort((a, b) => a - b); const r = []; for (let i = 0; i + 1 < xs.length; i += 2) r.push([xs[i], xs[i + 1]]); return r; };
+    // выкройка как у настоящих брюк: четыре детали (перед и спинка, левая и правая). Штанина — вокруг своей ноги (ось на legX):
+    // у широкой штанины внутренний край заходит за середину — это «шаговый язычок», он уходит между ног вглубь.
+    // Раньше перед был одной деталью с внутренним швом у самой середины: штанина висела снаружи от ноги, к низу сходилась к ноге
+    // конусом и «липла», а по глубине оставалась узкой.
+    const cxL = d.legX + 0.01, N = 10, xo = t => Math.max(cxL + legW(t) / 2, t < 0.35 ? HP / 2 * (1 - t / 0.35) + (cxL + legW(t) / 2) * (t / 0.35) : 0), xi = t => cxL - legW(t) / 2;
+    const half = [[0, 0], [WW / 2, 0], [HP / 2, R * 0.55]], hl = ['waist', 'side'];
+    for (let i = 0; i <= N; i++) { const t = i / N; half.push([xo(t), R + IN * t]); hl.push('side'); }
+    hl[hl.length - 1] = 'hem';                                          // отрезок от внешнего угла низа к внутреннему
+    for (let i = N; i >= 0; i--) { const t = i / N; half.push([xi(t), R + IN * t]); hl.push('inner'); }
+    // от шага к середине — сидение (шов посередине), плавной кривой
+    const x0 = xi(0); half.push([x0 * 0.45, R * 0.93], [0, R * 0.72]); hl[hl.length - 1] = 'rise'; hl.push('rise', 'rise');
+    const polyOf = sg => half.map(([x, y]) => [sg * x, y]);
+    const spansOf = poly => y => { const xs = []; for (let i = 0; i < poly.length; i++) { const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length]; if ((ay > y) !== (by > y)) xs.push(ax + (bx - ax) * (y - ay) / (by - ay)); } xs.sort((a, b) => a - b); return xs.length >= 2 ? [xs[0], xs[xs.length - 1]] : null; };
     const runs = (g, v) => { const row = g.grid[Math.max(0, Math.min(g.gh - 1, Math.floor(v * g.gh)))], r = []; let c = 0; while (c < g.gw) { if (row[c] === '1') { const c0 = c; while (c < g.gw && row[c] === '1') c++; if (c - c0 > 1) r.push([c0 / g.gw, c / g.gw]); } else c++; } return r; };
-    const uvP = (a, mirror, g) => { const wpx = a.ww || 0.6; return (x, y) => { const cr = a.crotch || 0.4, v = y < R ? y / R * cr : cr + (y - R) / IN * (1 - cr); let u = mirror ? a.cx - x / WW * wpx : a.cx + x / WW * wpx;
-      if (g) { const xm = mirror ? -x : x, S = spans(y), Rn = runs(g, v); let k = S.findIndex(([p, q]) => xm >= p - 1e-4 && xm <= q + 1e-4);
-        if (k >= 0 && Rn.length) { let R_ = Rn; if (S.length === 2 && Rn.length === 1) { const [p, q] = Rn[0], m_ = Math.max(p, Math.min(q, a.cx)); R_ = [[p, m_], [m_, q]]; } else if (S.length === 1 && Rn.length > 1) R_ = [[Rn[0][0], Rn[Rn.length - 1][1]]];
-          if (R_.length === S.length) { const [p, q] = S[k], t = (xm - p) / Math.max(1e-4, q - p), [r0, r1] = R_[k], uu = r0 + (r1 - r0) * Math.max(0.02, Math.min(0.98, t)); u = uu; } } }
+    // uv по строкам: деталь ↔ своя половина вещи на фото (выше шага — от середины к боку, ниже — своя штанина от внутреннего края к внешнему)
+    const uvP = (a, mirror, g, sg, poly) => { const sp_ = spansOf(poly), ph = mirror ? -sg : sg, cr = a.crotch || 0.4; return (x, y) => {
+      const v = y < R ? y / R * cr : cr + (y - R) / IN * (1 - cr), iv = sp_(y), wpx = a.ww || 0.6; let u = a.cx + ph * Math.abs(x) / WW * wpx;
+      if (g && iv) { const Rn = runs(g, v), inn = sg > 0 ? iv[0] : iv[1], out = sg > 0 ? iv[1] : iv[0], t = Math.max(0.02, Math.min(0.98, (x - inn) / ((out - inn) || 1e-4)));
+        let r = null; if (y < R) { const c = Rn.find(([p, q]) => p <= a.cx && q >= a.cx) || Rn[0]; if (c) r = ph > 0 ? [a.cx, c[1]] : [a.cx, c[0]]; }
+        else { const sideRuns = Rn.filter(([p, q]) => ph > 0 ? q > a.cx : p < a.cx); let c = ph > 0 ? sideRuns[sideRuns.length - 1] : sideRuns[0];
+          if (c) { if (c[0] < a.cx && c[1] > a.cx) c = ph > 0 ? [a.cx, c[1]] : [c[0], a.cx]; r = ph > 0 ? [c[0], c[1]] : [c[1], c[0]]; } }
+        if (r) u = r[0] + (r[1] - r[0]) * t; }
       return [u, v]; }; };
     if (dr.front) { const row = dr.front.grid[1] || dr.front.grid[0]; aF.ww = (row.lastIndexOf('1') - row.indexOf('1') + 1) / dr.front.gw; }
     if (dr.back) { const row = dr.back.grid[1] || dr.back.grid[0]; aB.ww = (row.lastIndexOf('1') - row.indexOf('1') + 1) / dr.back.gw; }
     // у спинки в заду ткани больше: связи по горизонтали длиннее до шага
     const seat = (x, y) => y < R * 1.05 ? 1 + 0.14 * Math.sin(Math.min(1, y / R) * Math.PI * 0.9) : 1;
-    const pf = addPanel(C, poly, lab, cell, (x, y) => [x, sp.yW - y, zo * 0.95], uvP(aF, false, dr.front), mF, 'front');
-    const pb = addPanel(C, poly, lab, cell, (x, y) => [x, sp.yW - y, -zo * 0.95], uvP(aB, true, dr.back), mB, 'back', seat);
-    pf.pts.forEach(p => { if (!p.edge || (p.lab !== 'side' && p.lab !== 'inner')) return; const q = pb.at(p.r, p.c); if (q && q.edge) C.seams.push([p.g, q.g]); });
-    [pf, pb].forEach(P_ => P_.pts.forEach(p => { if (p.y < cell * 1.1) C.pin[p.g] = 1; }));
+    const parts = {};
+    // в начале шаговые язычки левой и правой штанины лежат друг на друге (деталь центрована на своей ноге — так при сшивании
+    // штанина сворачивается вокруг ноги); разводятся по сторонам, когда штанина уже обняла ногу (C.half в runCloth)
+    [1, -1].forEach(sg => { const poly = polyOf(sg), L = hl.slice(), pl = z => (x, y) => [x, sp.yW - y, z];
+      parts['f' + sg] = addPanel(C, poly, L, cell, pl(zo * 0.95), uvP(aF, false, dr.front, sg, poly), mF, 'front');
+      parts['b' + sg] = addPanel(C, poly, L, cell, pl(-zo * 0.95), uvP(aB, true, dr.back, sg, poly), mB, 'back', seat); });
+    // швы: бок и шаговый — перед со спинкой своей стороны (одинаковая выкройка — одинаковые ячейки); сидение — левая с правой (зеркально)
+    [1, -1].forEach(sg => { const pf = parts['f' + sg], pb = parts['b' + sg]; pf.pts.forEach(p => { if (!p.edge || (p.lab !== 'side' && p.lab !== 'inner')) return; const q = pb.at(p.r, p.c); if (q && q.edge && q.lab === p.lab) C.seams.push([p.g, q.g]); }); });
+    ['f', 'b'].forEach(k => { const A = parts[k + '1'], B = parts[k + '-1'], eb = B.pts.filter(p => p.edge && p.lab === 'rise');
+      A.pts.forEach(p => { if (!p.edge || p.lab !== 'rise') return; let best = cell, q = null; for (const o of eb) { const dd = Math.abs(o.x + p.x) + Math.abs(o.y - p.y); if (dd < best) { best = dd; q = o; } } if (q) C.seams.push([p.g, q.g]); }); });
+    // штанины не проходят друг сквозь друга: ниже шага каждая держится своей стороны от середины
+    // (только верх штанины, где язычки: ниже ноги манекена сами разводят штанины, а у пола лишняя длина должна ложиться свободно —
+    // иначе её выталкивает наружу и низ штанины стаскивает с ноги)
+    C.half = []; [1, -1].forEach(sg => ['f', 'b'].forEach(k => parts[k + sg].pts.forEach(p => { if (p.y > R + cell && p.y < R + IN * 0.4) C.half.push([p.g, sg]); })));
+    Object.values(parts).forEach(P_ => P_.pts.forEach(p => { if (p.y < cell * 1.1) C.pin[p.g] = 1; }));
+    C.fr = 0.1;
+    // штанина держится вокруг своей ноги: перед — спереди (z ≥ 0), спинка — сзади, внутренняя половина детали — с внутренней стороны
+    // от оси ноги, внешняя — с внешней. Без этого труба штанины под тяжестью проворачивалась вокруг ноги и соскакивала с неё
+    C.sector = []; [1, -1].forEach(sg => { const sp_ = spansOf(polyOf(sg)); ['f', 'b'].forEach(k => parts[k + sg].pts.forEach(p => { if (p.y <= R + cell) return; const iv = sp_(p.y); if (!iv) return;
+      const inn = sg > 0 ? iv[0] : iv[1], out = sg > 0 ? iv[1] : iv[0], t = (p.x - inn) / ((out - inn) || 1e-4); C.sector.push([p.g, k === 'f' ? 1 : -1, t < 0.3 ? -sg : t > 0.7 ? sg : 0, sg * (d.legX + 0.01)]); })); });
   }
   const P = runCloth(C, push, fab, yPin);
   // окат рукава после расчёта кладём точно на край проймы (между сшитыми точками кольцо рукава иначе отходит — видна щель)
@@ -1118,7 +1158,7 @@ function qcCloth(C, P, d, item, dr, info, top, aF, aB) {
   const H = d.H, out = [], add = (name, ok, val, pen, why) => out.push({name, ok, val, pen: ok ? 0 : pen, why});
   // 1. натяжение: доля связей, растянутых больше чем на 12%
   const roleOf = new Map(); C.meshes.forEach(m => m.verts.forEach(v => roleOf.set(v, m.role || 'sleeve'))); const byRole = {};
-  let nE = 0, over = 0; for (let e = 0; e < C.E.length; e += 4) { if (C.E[e + 3] !== 0) continue; const i = C.E[e] * 3, j = C.E[e + 1] * 3, L = Math.hypot(P[j] - P[i], P[j + 1] - P[i + 1], P[j + 2] - P[i + 2]); nE++;
+  let nE = 0, over = 0; for (let e = 0; e < C.E.length; e += 4) { if (C.E[e + 3] !== 0 && C.E[e + 3] !== 3) continue; const i = C.E[e] * 3, j = C.E[e + 1] * 3, L = Math.hypot(P[j] - P[i], P[j + 1] - P[i + 1], P[j + 2] - P[i + 2]); nE++;
     const r = roleOf.get(C.E[e]), br = byRole[r] = byRole[r] || [0, 0]; br[0]++; if (L > C.E[e + 2] * 1.25) { over++; br[1]++; } }
   const st = over / Math.max(1, nE); add('натяжение', st < 0.03, (st * 100).toFixed(1) + '% связей (' + Object.entries(byRole).map(([r, [a, b]]) => r + ' ' + (b / a * 100).toFixed(0) + '%').join(', ') + ')', Math.min(25, st * 400), 'ткань растянута: вещь мала или зацепилась');
   // 2. швы: доля сшитых пар, разошедшихся больше чем на 1 см

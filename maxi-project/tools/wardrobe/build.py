@@ -316,7 +316,7 @@ def bottom_parts(im, m, kind, flat=False, crotch_frac=None):
 DRAPE_ROWS = 64
 
 
-def cut_for_drape(im, m, info, kind, od, side):
+def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     """Для симуляции ткани: вырезанное фото (RGBA) по силуэту вещи и грубая сетка силуэта — это «выкройка» перед/спинки.
     Координаты якорей — в долях кадра выреза (0..1)."""
     top, bot = info['top'], info['bot']
@@ -337,7 +337,37 @@ def cut_for_drape(im, m, info, kind, od, side):
     a = dict(cx=(info['cx'] - x0) / W)
     if 'hw' in info: a.update(hw=info['hw'] / W, arm=(info['arm'] - top) / H)
     if 'crotch' in info: a.update(crotch=(info['crotch'] - top) / H)
-    return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: round(float(v), 4) for k_, v in a.items()})
+    zc = find_zip(filled, mc, a['cx'], a.get('arm', 0.25)) if zip_ and side == 'front' else None
+    if zc: a['zipc'] = zc
+    return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, list) else round(float(v), 4)) for k_, v in a.items()})
+
+
+def find_zip(rgb, mc, cx, arm):
+    """Молния на фото: по строкам — столбец с самым резким узким перепадом яркости у середины вещи.
+    Возвращает положение молнии (доля ширины) для DRAPE_ROWS строк — прямая (по МНК с отбросом выбросов), иначе None.
+    В примерочной середина переда берётся по ней: молния ложится ровно посередине и остаётся прямой."""
+    H, W = mc.shape
+    g = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    # узкая полоса, отличающаяся от соседей: |яркость − медиана в окне 9% ширины|
+    k = max(5, int(W * 0.09) | 1)
+    bg = cv2.blur(g, (k, 1)); feat = np.abs(g - bg) * (mc > 0)
+    feat = cv2.blur(feat, (3, max(3, H // 60)))
+    ys, xs = [], []
+    for y in range(int(H * max(0.08, arm * 0.5)), int(H * 0.92), max(1, H // 120)):
+        c0, c1 = int(W * (cx - 0.12)), int(W * (cx + 0.12)); row = feat[y, max(0, c0):min(W, c1)]
+        if row.size == 0 or row.max() < 12: continue
+        ys.append(y); xs.append(max(0, c0) + int(row.argmax()))
+    if len(ys) < 20: return None
+    ys, xs = np.array(ys, float), np.array(xs, float)
+    keep = np.ones(len(ys), bool)
+    for _ in range(4):
+        p = np.polyfit(ys[keep], xs[keep], 1); r = np.abs(np.polyval(p, ys) - xs); keep = r < max(4, np.median(r[keep]) * 2.5)
+    if keep.mean() < 0.6: return None
+    # молния на фото не прямая (вещь висит/лежит с изгибом): по точкам без выбросов — плавная кривая 3-й степени,
+    # тогда в примерочной молния ложится точно на середину в каждой строке и выходит прямой
+    p3 = np.polyfit(ys[keep], xs[keep], 3)
+    rows = np.clip((np.arange(DRAPE_ROWS) + 0.5) / DRAPE_ROWS * H, ys[keep].min(), ys[keep].max())
+    return [round(float(v) / W, 4) for v in np.polyval(p3, rows)]
 
 
 def overlay(im, m, info, kind):
@@ -452,7 +482,7 @@ def build(it):
             if sleeve is not None: sleeve = apply_gain(sleeve, g)
             mm['color'] = tuple(int(c) for c in np.clip(np.array(mm['color']) * g, 0, 255))
         cv2.imwrite(os.path.join(od, side + '.webp'), tex, [cv2.IMWRITE_WEBP_QUALITY, 88])
-        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if (not flat and it.get('src') != 'model') else im, m, info, it['kind'], od, side)
+        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if (not flat and it.get('src') != 'model') else im, m, info, it['kind'], od, side, bool(it.get('zip')))
         if sleeve is not None and side == 'front': cv2.imwrite(os.path.join(od, 'sleeve.webp'), sleeve, [cv2.IMWRITE_WEBP_QUALITY, 85])
         meta[side] = dict((k, (round(v, 3) if isinstance(v, float) else v)) for k, v in mm.items())
         meta[side]['flat'] = bool(flat)
