@@ -169,16 +169,37 @@ def read_feed(src):
         for p in o.findall('param'): params[(p.get('name') or '').strip()].append((p.text or '').strip())
         g = lambda t: (o.findtext(t) or '').strip()
         yield {'id': o.get('id'), 'group': o.get('group_id') or o.get('id'), 'url': g('url'), 'price': g('price'), 'oldprice': g('oldprice'),
-               'pic': g('picture'), 'desc': re.sub(r'<[^>]+>', ' ', g('description'))[:600].strip(), 'vendor': g('vendor') or g('brand'), 'name': g('name') or g('model'), 'cat': path(g('categoryId')),
+               'pic': g('picture'), 'pics': [(x.text or '').strip() for x in o.findall('picture') if (x.text or '').strip()][:6], 'desc': re.sub(r'<[^>]+>', ' ', g('description'))[:600].strip(), 'vendor': g('vendor') or g('brand'), 'name': g('name') or g('model'), 'cat': path(g('categoryId')),
                'color': (params.get('Цвет') or params.get('Color') or [''])[0], 'sizes': params.get('Размер') or params.get('Size') or [],
                'gender': (params.get('Пол') or [''])[0], 'pickup': (params.get('Самовывоз') or [''])[0].lower() in ('да', 'true', '1') or g('pickup') == 'true',
                'base': base, 'date': date}
+
+# ---------- пакеты примерки ----------
+CACHE = os.path.join(HERE, 'cache')
+def local_copy(src, base):
+    """Фото для конвейера примерки — локальным файлом (ссылки скачиваются один раз в tools/feeds/cache)."""
+    if not re.match(r'^https?://', src):
+        p = src if os.path.isabs(src) else os.path.join(base, src)
+        return p if os.path.isfile(p) else None
+    os.makedirs(CACHE, exist_ok=True)
+    fn = os.path.join(CACHE, hashlib.md5(src.encode()).hexdigest()[:16] + os.path.splitext(src.split('?')[0])[1][:5])
+    if not os.path.exists(fn):
+        try: open(fn, 'wb').write(fetch(src, ''))
+        except Exception as e: print('  фото не скачалось:', src, e); return None
+    return fn
+
+def fit_pack(of, iid, out, who, shop):
+    from fitpack import make_pack
+    base = of['base'] if not re.match(r'^https?://', of['base']) else ''
+    paths = [p for p in (local_copy(s, base) for s in of['pics']) if p]
+    return make_pack(of, iid, out, who=who, brand=shop, paths=paths) if paths else None
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('feeds', nargs='+'); ap.add_argument('--out', default=os.path.join(ROOT, 'public', 'feeds'))
     ap.add_argument('--per-shop', type=int, default=300); ap.add_argument('--source', default='')
     ap.add_argument('--demo', action='store_true', help='пометить как тестовую выгрузку (ненастоящие товары)')
+    ap.add_argument('--fit', action='store_true', help='собрать пакеты примерки (выкройка и ткань) для одежды — fitpack.py')
     a = ap.parse_args()
     shops = maxi_shops(); idx = brand_index(shops)
     os.makedirs(os.path.join(a.out, 'img'), exist_ok=True)
@@ -218,6 +239,9 @@ def main():
                 ph = process_picture(of['pic'], of['base'] if not re.match(r'^https?://', of['base']) else '', os.path.join(a.out, 'img'), iid)
                 if ph:
                     item.update(ph); item['h'] = HEIGHT_KIDS if w == 'kids' and t in HEIGHT else HEIGHT.get(t, 0.6)
+            if a.fit and t in ('tshirts', 'pants', 'jackets') and w != 'kids' and of.get('pics'):   # фигура в примерочной — взрослая
+                pk = fit_pack(of, iid, os.path.join(a.out, 'fit'), w, shop)
+                if pk: item['fit'] = 'fit/' + iid + '/'; item['fitKind'] = pk['kind']
             depts[dk]['items'].append(item)
         # порядок отделов: женщинам, мужчинам, детям; внутри — как в зале (верхняя одежда первой)
         order = {'women': 0, 'men': 1, 'kids': 2, '': 3}; torder = {k: i for i, (k, _) in enumerate(TYPES)}
@@ -239,6 +263,12 @@ def main():
         index['shops'][shop] = {'file': slug + '.json', 'n': n, 'win': win}
         print(f'{shop}: {n} товаров, отделы: ' + ', '.join(f"{d['title']} ({len(d['items'])})" for d in dl))
     json.dump(index, open(os.path.join(a.out, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    if a.fit and os.path.isdir(os.path.join(a.out, 'fit')):
+        # список пакетов примерки — для автопроверки (tools/wardrobe/qc/run.sh с PACKS=…/fit)
+        fd = os.path.join(a.out, 'fit')
+        metas = [json.load(open(os.path.join(fd, d, 'meta.json'))) for d in sorted(os.listdir(fd)) if os.path.isfile(os.path.join(fd, d, 'meta.json'))]
+        json.dump(metas, open(os.path.join(fd, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False)
+        print('пакетов примерки:', len(metas))
     if skipped: print('не из «Макси» (пропущены):', ', '.join(f'{k or "без бренда"} ×{v}' for k, v in skipped.most_common(10)))
 
 if __name__ == '__main__':

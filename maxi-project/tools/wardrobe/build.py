@@ -26,6 +26,7 @@ HANG_K = 0.72          # калибровка по футболке Zolla: лё�
 
 
 def find(key):
+    if os.path.isfile(key): return key          # путь к файлу (конвейер каталога), иначе — имя фото в raw/
     f = glob.glob(os.path.join(RAW, key + '*'))
     return f[0] if f else None
 
@@ -459,14 +460,77 @@ def load_model_photo(key, kind):
     return im, m
 
 
-def build(it):
-    od = os.path.join(OUT, it['id']); os.makedirs(od, exist_ok=True)
-    meta = dict(id=it['id'], name=it['name'], kind=it['kind'], states=it.get('states'), zip=it.get('zip', False), collar=it.get('collar', False))
+def studio_mask(im):
+    """Студийное фото из выгрузки магазина: вещь на однотонном светлом фоне (или уже без фона).
+    Маска — всё, что не фон, связанный с краями кадра; одна самая большая деталь, дырки внутри закрыты."""
+    h, w = im.shape[:2]
+    lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+    border = np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]])
+    bg = np.median(border, 0)
+    d = np.linalg.norm(lab - bg, axis=2)
+    near = (d < 9).astype(np.uint8)
+    reach = np.zeros((h, w), np.uint8)
+    for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (w // 2, 0), (w // 2, h - 1), (0, h // 2), (w - 1, h // 2)]:
+        if near[y, x] and not reach[y, x]:
+            tmp = near.copy(); mk = np.zeros((h + 2, w + 2), np.uint8); cv2.floodFill(tmp, mk, (x, y), 2); reach |= (tmp == 2)
+    m = (1 - reach).astype(np.uint8)
+    # светлая вещь на светлом фоне: часть вещи «похожа на фон» и отрезается. Уточняем GrabCut: явный фон — только очень
+    # близкий к фону цвет у краёв, остальное решают цветовые модели вещи и фона
+    if m.mean() > 0.03:
+        gc = np.where(reach > 0, cv2.GC_PR_BGD, cv2.GC_PR_FGD).astype(np.uint8)
+        gc[(reach > 0) & (d < 3)] = cv2.GC_BGD
+        core = cv2.erode(m, np.ones((15, 15), np.uint8)); gc[core > 0] = cv2.GC_FGD
+        gc[:, :2] = gc[:, -2:] = gc[:2] = gc[-2:] = cv2.GC_BGD
+        k = 2 if h > 900 else 1
+        g2 = cv2.resize(gc, (w // k, h // k), interpolation=cv2.INTER_NEAREST)
+        try:
+            cv2.grabCut(cv2.resize(im, (w // k, h // k)), g2, None, np.zeros((1, 65)), np.zeros((1, 65)), 5, cv2.GC_INIT_WITH_MASK)
+            m2 = cv2.resize(((g2 == cv2.GC_FGD) | (g2 == cv2.GC_PR_FGD)).astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+            if m2.sum() >= m.sum() * 0.9: m = m2
+        except cv2.error: pass
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab_, st, _ = cv2.connectedComponentsWithStats(m)
+    if n > 1: m = (lab_ == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
+    ff = m.copy(); cv2.floodFill(ff, None, (0, 0), 1); m = m | (1 - ff)
+    return m
+
+
+def load_any(key, maxh=1400, with_alpha=False):
+    """Фото из выгрузки: может быть PNG с прозрачным фоном — кладём на светлый фон (with_alpha — вернуть и маску из прозрачности)."""
+    im = cv2.imread(find(key), cv2.IMREAD_UNCHANGED); am = None
+    if im.ndim == 3 and im.shape[2] == 4:
+        a = im[..., 3:4].astype(np.float32) / 255
+        if a.min() < 0.1: am = (a[..., 0] > 0.5).astype(np.uint8)
+        im = (im[..., :3] * a + 244 * (1 - a)).astype(np.uint8)
+    elif im.ndim == 2: im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+    h, w = im.shape[:2]; k = maxh / h
+    if k < 1:
+        im = cv2.resize(im, (int(w * k), maxh), interpolation=cv2.INTER_AREA)
+        if am is not None: am = cv2.resize(am, (int(w * k), maxh), interpolation=cv2.INTER_NEAREST)
+    return (im, am) if with_alpha else im
+
+
+def studio_load(key):
+    """Студийное фото и маска вещи: из прозрачности PNG, если она есть, иначе — вырезанием фона."""
+    im, am = load_any(key, with_alpha=True)
+    if am is not None and 0.05 < am.mean() < 0.95:
+        n, lab_, st, _ = cv2.connectedComponentsWithStats(am)
+        if n > 1: am = (lab_ == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
+        return im, am
+    return im, studio_mask(im)
+
+
+def build(it, out=None, debug=True):
+    od = os.path.join(out or OUT, it['id']); os.makedirs(od, exist_ok=True)
+    meta = dict(id=it['id'], name=it['name'], kind=it['kind'], states=it.get('states'), zip=it.get('zip', False), collar=it.get('collar', False), hood=it.get('hood', False))
+    if it.get('who'): meta['who'] = it['who']
     ovs = []
     for side in ('front', 'back'):
         if it.get('src') == 'model':
             im, m = load_model_photo(it[side], it['kind'])
             flat = False
+        elif it.get('src') == 'studio':      # студийное фото магазина (лёжа или на невидимом манекене)
+            im, m = studio_load(it[side]); flat = True
         else:
             im = load(it[side])
             m, flat = segment(im)
@@ -490,7 +554,7 @@ def build(it):
         ovs.append(cv2.resize(tex, (360, int(360 * TEX_H / TEX_W))))
     hmax = max(o.shape[0] for o in ovs)
     sheet = np.hstack([np.vstack([o, np.full((hmax - o.shape[0], o.shape[1], 3), 255, np.uint8)]) for o in ovs])
-    cv2.imwrite(os.path.join(od, 'debug.jpg'), sheet, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    if debug: cv2.imwrite(os.path.join(od, 'debug.jpg'), sheet, [cv2.IMWRITE_JPEG_QUALITY, 80])
     # мерки — из фото спереди (сзади — запасной вариант)
     f = meta['front']
     meta['fit'] = dict((k, f[k]) for k in f if k in ('len_w', 'sleeve', 'crotch', 'hem', 'knee', 'full_w'))

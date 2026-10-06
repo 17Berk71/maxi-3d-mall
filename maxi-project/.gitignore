@@ -6,3 +6,5 @@ tools/wardrobe/raw/
 tools/wardrobe/out/
 __pycache__/
 tools/wardrobe/models/
+tools/feeds/cache/
+tools/feeds/qc_out/

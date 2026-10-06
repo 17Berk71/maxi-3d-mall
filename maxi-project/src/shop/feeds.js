@@ -48,6 +48,7 @@ export function feedCatalog(s, DEPT) {
       name: it.name, price: it.price, oldPrice: it.oldPrice, color: it.color, colorName: it.colorName, icon: base.icon, dept: d.key, deptTitle: d.title,
       model: base.model, scale: d.who === 'kids' ? 0.72 : 1, photo: it.pic && it.cut ? 'feed:' + it.id : null, pic: it.pic ? FEED_BASE + it.pic : null,
       sizes: it.sizes, url: it.url, desc: it.desc || '', pickup: !!it.pickup, feed: true, id: 'f-' + it.id,
+      fitPack: it.fit ? FEED_BASE + it.fit : null,   // пакет примерки (tools/feeds/fitpack.py): ткань по выкройке вместо простой формы
     }));
     // в зале мест больше, чем товаров в маленькой выгрузке, — товары повторяются по кругу
     return {key: d.key, title: d.title, icon: base.icon, model: base.model, lay: base.lay, items, itemAt(i) { return items[i % items.length]; }, feed: true};

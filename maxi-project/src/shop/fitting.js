@@ -618,7 +618,8 @@ function photoGarment(item, d) {
 // Ткань: точки и связи (Position Based Dynamics) — не тянется сверх длины, легко сжимается (так и появляются складки), чуть сопротивляется изгибу;
 // не проходит сквозь тело, нижние слои и пол. Картинка — само вырезанное фото, без выпрямления.
 // пока прототип: на сайте включается адресом ?drape=1 (в лаборатории — всегда)
-let DRAPE_ON = typeof location !== 'undefined' && /[?&]drape=1/.test(location.search);
+// ткань по выкройке — основной способ; ?drape=0 — прежние простые формы (для сравнения)
+let DRAPE_ON = !(typeof location !== 'undefined' && /[?&]drape=0/.test(location.search));
 export function setDrape(v) { DRAPE_ON = !!v; }
 // фигура для столкновений: туловище — эллипсы по высоте, ноги — круги, руки — капсулы, шея и голова, пол
 // радиус ноги манекена на высоте yf (как у видимой ноги)
@@ -1119,7 +1120,10 @@ export function drapePrepare(item, d, under) {
     const parts = {};
     // в начале шаговые язычки левой и правой штанины лежат друг на друге (деталь центрована на своей ноге — так при сшивании
     // штанина сворачивается вокруг ноги); разводятся по сторонам, когда штанина уже обняла ногу (C.half в runCloth)
-    [1, -1].forEach(sg => { const poly = polyOf(sg), L = hl.slice(), pl = z => (x, y) => [x, sp.yW - y, z];
+    // лишняя длина (ляжет на обувь и пол) в начале не должна уходить под пол: прижатая к полу ткань сжата и выталкивает
+    // штанину вверх, а потом её держит трение о ноги — брюки выходили короткими, как шорты. Ниже шага сжимаем по высоте
+    const kY = Math.min(1, (sp.yW - R - 0.012) / IN), yOf = y => y <= R ? y : R + (y - R) * kY;
+    [1, -1].forEach(sg => { const poly = polyOf(sg), L = hl.slice(), pl = z => (x, y) => [x, sp.yW - yOf(y), z];
       parts['f' + sg] = addPanel(C, poly, L, cell, pl(zo * 0.95), uvP(aF, false, dr.front, sg, poly), mF, 'front', null, null, 0);
       parts['b' + sg] = addPanel(C, poly, L, cell, pl(-zo * 0.95), uvP(aB, true, dr.back, sg, poly), mB, 'back', seat, null, 0); });
     // швы: бок и шаговый — перед со спинкой своей стороны (одинаковая выкройка — одинаковые ячейки); сидение — левая с правой (зеркально)
@@ -1163,7 +1167,7 @@ export function drapeTemplate(item, d, under) { const j = drapePrepare(item, d, 
 // Расчёт вещи — 1.5–2.5 с на компьютере и в 2–3 раза дольше на телефоне. В фоне страница не замирает,
 // а готовый результат (точки ткани) хранится: та же вещь на той же фигуре во второй раз надевается сразу.
 // Версия расчёта: менять при любой правке выкроек, швов или расчёта — старый кэш станет недействительным.
-export const CLOTH_VER = 'c1';
+export const CLOTH_VER = 'c2';
 let WORKER = null, WSEQ = 0; const WJOBS = new Map();
 function clothWorker() {
   if (WORKER !== null) return WORKER;
@@ -1348,7 +1352,7 @@ export function createFitting(ctx) {
     const c = classify(p); if (!c) return null;
     return {id: idOf(p, s), name: p.name, shop: s ? s.name : '', shopCol: s ? s.colHex : '#888', price: p.price || 0, oldPrice: p.oldPrice || 0, url: p.url || (s && ctx.siteOf(s)) || '',
       color: p.color || '#888888', colorName: p.colorName || '', thumb: ctx.thumb(p), model: p.model, slot: c.slot, kind: c.kind, sizes: p.sizes || null, feed: !!p.feed, glb: p.glb || null,
-      tex: p.tex || null, drape: p.drape || null, fit: p.fit || null, shape: p.shape || null, sizesT: p.sizesT || null, size: null, brand: p.brand || '', note: p.note || '', states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, collar: !!p.collar, hood: !!p.hood};
+      tex: p.tex || null, pack: p.fitPack || null, drape: p.drape || null, fit: p.fit || null, shape: p.shape || null, sizesT: p.sizesT || null, size: null, brand: p.brand || '', note: p.note || '', states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, collar: !!p.collar, hood: !!p.hood, who: p.who || ''};
   }
   const has = (p, s) => W.items.some(i => i.id === idOf(p, s));
   function add(p, s, wear) {
@@ -1432,6 +1436,8 @@ export function createFitting(ctx) {
   async function buildOutfit(tok, b, wn) {
     const alive = () => tok === built.tok && R;
     if (!alive()) return;
+    // у вещей из выгрузки сначала скачать пакеты примерки; после этого меняются состояние и размеры — образ соберётся заново со следующего кадра
+    if (wn.some(i => i.pack && !i.tex)) { await Promise.all(wn.map(loadPack)); if (alive()) { built.key = ''; render(); } return; }
     // широкая вещь отводит руки: они лежат на ткани, а не проходят сквозь неё
     const d0 = bodyDims(b); d0.armA = armSpread(wn, d0);
     const body = buildBody(b, R.skinMat, d0), next = new THREE.Group(); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); next.add(body.g);
@@ -1588,13 +1594,29 @@ export function createFitting(ctx) {
   addEventListener('keydown', e => { if (open && e.key === 'Escape') { e.stopPropagation(); closeRoom(); } }, true);
 
   // набор вещей с текстурами из фабрики (index.json + папки с front/back/sleeve.webp)
+  // поля вещи из пакета примерки (фабрика tools/wardrobe или конвейер выгрузок tools/feeds/fitpack.py)
+  function packFields(mt, dir) {
+    return {kind: mt.kind, fit: mt.fit, shape: mt.shape, sizesT: mt.sizes || null, states: mt.states, zip: mt.zip, collar: mt.collar, hood: !!mt.hood, drape: mt.drape || null,
+      tex: {front: dir + 'front.webp', back: dir + 'back.webp', sleeve: mt.sleeve ? dir + 'sleeve.webp' : null, frontCut: dir + 'front_cut.webp', backCut: dir + 'back_cut.webp'}};
+  }
+  // вещь из выгрузки магазина: пакет примерки (выкройка, вырезанное фото, сетка размеров) скачивается, когда вещь надевают
+  const PACKS = {};
+  async function loadPack(it) {
+    if (!it.pack || it.tex) return;
+    try {
+      const mt = await (PACKS[it.pack] = PACKS[it.pack] || fetch(it.pack + 'meta.json').then(r => r.ok ? r.json() : null).catch(() => null));
+      if (!mt) { it.pack = null; return; }
+      const f = packFields(mt, it.pack); Object.assign(it, f, {sizesT: it.sizesT || f.sizesT});
+      if (!it.state && it.states) it.state = it.states[0][0];
+      const c = classify(it); if (c) it.slot = c.slot;
+      persist();
+    } catch (e) { it.pack = null; }
+  }
   async function addPack(base, shopName) {
     const r = await fetch(base + 'index.json'); if (!r.ok) throw new Error('нет ' + base);
     const list = await r.json(), s = {name: shopName || 'Мой гардероб', colHex: '#0e7490'};
     list.forEach(mt => {
-      const dir = base + mt.id + '/';
-      const p = {name: mt.name, kind: mt.kind, color: mt.color, fit: mt.fit, shape: mt.shape, sizesT: mt.sizes || null, brand: mt.brand, note: mt.note, states: mt.states, zip: mt.zip, collar: mt.collar, id: 'w-' + mt.id, feed: true,
-        tex: {front: dir + 'front.webp', back: dir + 'back.webp', sleeve: mt.sleeve ? dir + 'sleeve.webp' : null, frontCut: dir + 'front_cut.webp', backCut: dir + 'back_cut.webp'}, drape: mt.drape || null, pic: dir + 'front.webp'};
+      const dir = base + mt.id + '/', p = Object.assign(packFields(mt, dir), {name: mt.name, color: mt.color, brand: mt.brand, note: mt.note, who: mt.who || '', id: 'w-' + mt.id, feed: true, pic: dir + 'front.webp'});
       const it = toItem(p, s); if (!it) return; it.thumb = p.pic;
       const old = W.items.findIndex(i => i.id === it.id); if (old >= 0) W.items[old] = Object.assign(it, {state: W.items[old].state || it.state}); else W.items.push(it);
     });

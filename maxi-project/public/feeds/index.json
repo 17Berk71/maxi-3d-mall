@@ -1,7 +1,7 @@
 {
- "updated": "2026-10-02",
+ "updated": "2026-10-06",
  "demo": true,
- "source": "тестовая выгрузка",
+ "source": "Тестовая выгрузка (ненастоящие товары)",
  "shops": {
   "Gloria Jeans": {
    "file": "gloria-jeans.json",
