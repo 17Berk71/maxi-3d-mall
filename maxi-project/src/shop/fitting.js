@@ -1595,7 +1595,7 @@ function qcCloth(C, P, d, item, dr, info, top, aF, aB) {
     const rows = 8, w3 = [], wp = [], front = torso.filter(m => m.role === 'front'), fv = front.flatMap(m => m.verts);
     const y0 = top ? 0.858 * H + 0.012 - info.AD - 0.02 : Math.max(...fv.map(v => P[v * 3 + 1])), y1 = Math.min(...fv.map(v => P[v * 3 + 1]));
     // на фото рукава слились с корпусом (висят вдоль) — силуэт на фото с рукавами: и у вещи меряем с рукавами
-    const mergedPhoto = top && item.shape && item.shape.merged; if (mergedPhoto) C.meshes.forEach(m => { if (m.local) m.verts.forEach(v => fv.push(v)); });
+    const mergedPhoto = top && item.shape && item.shape.merged && !item.shape.worn;   // на модели руки не в маске вещи if (mergedPhoto) C.meshes.forEach(m => { if (m.local) m.verts.forEach(v => fv.push(v)); });
     const a = aF, v0 = top ? (a.arm || 0.3) + 0.03 : 0.02;
     // низ корпуса на фото — последняя строка, где у середины ещё есть ткань (длинные рукава на вешалке висят ниже корпуса)
     const cRun = r => { const row = g0.grid[r], cc = Math.round(a.cx * g0.gw); if (row[cc] !== '1') return 0; let p = cc, q = cc; while (p > 0 && row[p - 1] === '1') p--; while (q < g0.gw - 1 && row[q + 1] === '1') q++; return q - p + 1; };
