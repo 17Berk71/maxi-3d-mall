@@ -312,9 +312,13 @@
  "url": "https://www.gloria-jeans.ru/",
  "color": "#1b1b1c",
  "sleeve": true,
+ "src": "studio",
+ "files": "e57091c4bc",
  "qc": {
-  "score": 100,
+  "score": 86,
   "ok": true,
-  "bad": []
+  "bad": [
+   "натяжение"
+  ]
  }
 }

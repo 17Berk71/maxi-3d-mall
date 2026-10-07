@@ -20,7 +20,7 @@ from items import ITEMS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW, OUT = os.path.join(HERE, 'raw'), os.path.join(HERE, 'out')
-TOPS = {'tee', 'sweater', 'hoodie', 'jacket', 'shirt'}
+TOPS = {'tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress'}
 TEX_W, TEX_H = 512, 640
 HANG_K = 0.72          # калибровка по футболке Zolla: лёжа 1.31, на вешалке 1.82
 
@@ -196,7 +196,11 @@ def top_parts(im, m, kind):
             ls = cv2.medianBlur(ls.reshape(-1, 1), 5).ravel() if k > 5 else ls
             from scipy.ndimage import median_filter
             ls = median_filter(ls, k, mode='nearest'); rs = median_filter(rs, k, mode='nearest')
-            mw = float(np.median(rs - ls)); c = (ls + rs) / 2; wd = np.clip(rs - ls, mw * .88, mw * 1.12)
+            # у прямых вещей ±12% от средней (убирает пятна фона), у расклешённых книзу (платье, пальто) — плавный тренд по высоте
+            mw = float(np.median(rs - ls)); c = (ls + rs) / 2
+            if kind in ('dress', 'coat'):
+                w0 = rs - ls; tr = np.polyval(np.polyfit(np.arange(len(w0)), w0, 2), np.arange(len(w0))); wd = np.clip(w0, tr * .9, tr * 1.1)
+            else: wd = np.clip(rs - ls, mw * .88, mw * 1.12)
             c = median_filter(c, k, mode='nearest')
             k2 = max(3, int(L * .04)) | 1
             c = cv2.blur(c.reshape(-1, 1), (1, k2)).ravel(); wd = cv2.blur(wd.reshape(-1, 1).astype(np.float32), (1, k2)).ravel()
@@ -326,7 +330,9 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     crop = im[top:bot + 1, x0:x1]; mc = mm[top:bot + 1, x0:x1]
     H, W = crop.shape[:2]
     # края маски чуть растянуть цветом вещи, чтобы по краю выкройки не было фона
-    inv = (mc == 0).astype(np.uint8) * 255
+    # край вещи на фото смешан с фоном (светлый ореол): краевые 3 px тоже заменяем продолжением ткани, иначе по швам
+    # выкройки, которые ложатся на край фото, видны светлые точки
+    inv = (cv2.erode(mc.astype(np.uint8), np.ones((7, 7), np.uint8)) == 0).astype(np.uint8) * 255
     filled = cv2.inpaint(crop, inv, 5, cv2.INPAINT_TELEA)
     rgba = np.dstack([filled, (cv2.GaussianBlur(mc.astype(np.float32), (3, 3), 0) * 255).clip(0, 255).astype(np.uint8)])
     k = 720 / H if H > 720 else 1
@@ -536,7 +542,8 @@ def build(it, out=None, debug=True):
             m, flat = segment(im)
         part = top_parts if it['kind'] in TOPS else bottom_parts
         cf = None
-        if it.get('sizes') and part is bottom_parts:
+        if part is bottom_parts and it['kind'] == 'skirt': cf = 0.97     # у юбки нет шага: вся длина — «посадка», профиль ширины по ней
+        if it.get('sizes') and part is bottom_parts and it['kind'] != 'skirt':
             c0 = it['sizes'][0]['cm']
             if c0.get('outseam') and c0.get('inseam'): cf = (c0['outseam'] - c0['inseam']) / c0['outseam']
         tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf) if part is bottom_parts else part(im, m, it['kind'])

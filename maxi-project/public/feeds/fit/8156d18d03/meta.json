@@ -178,7 +178,7 @@
  "back": {
   "len_w": 3.076,
   "crotch": 0.48,
-  "hem": 0.319,
+  "hem": 0.313,
   "knee": 0.517,
   "color": [
    75,
@@ -220,7 +220,7 @@
    0.501,
    0.502,
    0.5143,
-   0.3147
+   0.3174
   ],
   "leg_ang": [
    -3.3,
@@ -314,6 +314,7 @@
  "url": "https://ostin.com/",
  "color": "#4b5263",
  "sleeve": false,
+ "src": "studio",
  "qc": {
   "score": 100,
   "ok": true,

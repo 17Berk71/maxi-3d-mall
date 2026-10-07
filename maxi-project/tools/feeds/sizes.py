@@ -47,8 +47,8 @@ def parse(label, who, kind):
 
 
 # свободное облегание (см по обхвату) по виду вещи и по словам в названии; длина вещи для базового размера
-EASE = {'tee': 10, 'sweater': 12, 'hoodie': 16, 'shirt': 10, 'jacket': 16}
-LEN = {'tee': (70, 64), 'sweater': (68, 62), 'hoodie': (70, 64), 'shirt': (76, 70), 'jacket': (70, 64)}   # мужск., женск. (размер 48 / 44)
+EASE = {'tee': 10, 'sweater': 12, 'hoodie': 16, 'shirt': 10, 'jacket': 16, 'coat': 20, 'puffer': 30, 'dress': 8}
+LEN = {'tee': (70, 64), 'sweater': (68, 62), 'hoodie': (70, 64), 'shirt': (76, 70), 'jacket': (70, 64), 'coat': (100, 95), 'puffer': (74, 70), 'dress': (98, 95)}   # мужск., женск. (размер 48 / 44)
 OUTSEAM = {'jeans': (106, 102), 'pants': (106, 102), 'shorts': (52, 44)}
 
 
@@ -70,6 +70,10 @@ def garment_cm(e, kind, who, fit):
         ease = EASE[kind] + (14 if fit == 'loose' else -6 if fit == 'slim' else 0)
         if mid('chest') and 'chest' not in cm: cm['chest'] = round((mid('chest') + ease) / 2, 1)
         if 'len' not in cm: cm['len'] = round(LEN[kind][1 if who == 'women' else 0] + 1.5 * step, 1)
+    elif kind == 'skirt':
+        if mid('waist') and 'waist' not in cm: cm['waist'] = round((mid('waist') + 2) / 2, 1)
+        if mid('hips') and 'hip' not in cm: cm['hip'] = round((mid('hips') + (12 if fit == 'loose' else 4)) / 2, 1)
+        if 'len' not in cm: cm['len'] = round(60 + 0.8 * step, 1)
     elif kind in OUTSEAM:
         if mid('waist') and 'waist' not in cm: cm['waist'] = round((mid('waist') + 2) / 2, 1)
         if mid('hips') and 'hip' not in cm: cm['hip'] = round((mid('hips') + (22 if fit == 'loose' else 4 if fit == 'slim' else 10)) / 2, 1)

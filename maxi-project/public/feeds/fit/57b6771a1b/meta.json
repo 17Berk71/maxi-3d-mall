@@ -307,10 +307,13 @@
  "url": "https://zolla.com/",
  "color": "#792636",
  "sleeve": true,
+ "src": "studio",
+ "files": "6c2439e7a1",
  "qc": {
-  "score": 81,
-  "ok": true,
+  "score": 68,
+  "ok": false,
   "bad": [
+   "натяжение",
    "силуэт"
   ]
  }

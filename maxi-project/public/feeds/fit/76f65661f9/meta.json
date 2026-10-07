@@ -314,6 +314,8 @@
  "url": "https://zolla.com/",
  "color": "#959a7c",
  "sleeve": false,
+ "src": "studio",
+ "files": "2d3c9c72c6",
  "qc": {
   "score": 100,
   "ok": true,

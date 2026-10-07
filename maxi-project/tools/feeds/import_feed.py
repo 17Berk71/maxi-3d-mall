@@ -188,11 +188,54 @@ def local_copy(src, base):
         except Exception as e: print('  фото не скачалось:', src, e); return None
     return fn
 
-def fit_pack(of, iid, out, who, shop):
+FIT_TASKS, WRITES = [], []
+
+def _fit_worker(args):
+    of, iid, out, who, shop, paths = args
     from fitpack import make_pack
-    base = of['base'] if not re.match(r'^https?://', of['base']) else ''
-    paths = [p for p in (local_copy(s, base) for s in of['pics']) if p]
-    return make_pack(of, iid, out, who=who, brand=shop, paths=paths) if paths else None
+    try: return iid, make_pack(of, iid, out, who=who, brand=shop, paths=paths)
+    except Exception as e: print('  пакет примерки:', of.get('name'), e); return iid, None
+
+def run_fit(tasks, out, jobs):
+    """Пакеты примерки для всех товаров: одинаковые (то же фото и вид вещи) считаются один раз — в нескольких процессах
+    параллельно, остальным копируются. Фото скачиваются заранее (один раз, в tools/feeds/cache)."""
+    import time
+    from concurrent.futures import ProcessPoolExecutor
+    from fitpack import pack_key, clone_pack, TEMPLATE_KINDS
+    t0 = time.time(); groups = collections.OrderedDict()
+    for of, iid, who, shop, item in tasks:
+        base = of['base'] if not re.match(r'^https?://', of['base']) else ''
+        paths = [p for p in (local_copy(s, base) for s in of['pics']) if p]
+        if not paths: continue
+        k = pack_key(of, paths)
+        if k[1] not in TEMPLATE_KINDS: continue
+        groups.setdefault(k, []).append((of, iid, who, shop, item, paths))
+    os.makedirs(out, exist_ok=True)
+    firsts = [(g[0][0], g[0][1], out, g[0][2], g[0][3], g[0][5]) for g in groups.values()]
+    res = {}
+    if jobs > 1 and len(firsts) > 1:
+        # отдельные процессы запускаются «с нуля» (spawn): OpenCV в разветвлённых (fork) процессах иногда падает;
+        # упавший процесс не роняет весь запуск — оставшиеся вещи досчитываются по одной
+        import multiprocessing as mp
+        from concurrent.futures.process import BrokenProcessPool
+        try:
+            with ProcessPoolExecutor(max_workers=jobs, mp_context=mp.get_context('spawn')) as ex:
+                futs = {ex.submit(_fit_worker, f): f[1] for f in firsts}
+                for fu in futs:
+                    try: iid, r = fu.result(); res[iid] = r
+                    except BrokenProcessPool: break
+        except BrokenProcessPool: pass
+    for f in firsts:
+        if f[1] not in res: iid, r = _fit_worker(f); res[iid] = r
+    n = 0
+    for g in groups.values():
+        of0, iid0, _, _, item0, _ = g[0]; r0 = res.get(iid0)
+        if not r0: continue
+        item0['fit'] = 'fit/' + iid0 + '/'; item0['fitKind'] = r0['kind']; n += 1
+        for of, iid, who, shop, item, _ in g[1:]:
+            r = clone_pack(iid0, of, iid, out, who, shop)
+            if r: item['fit'] = 'fit/' + iid + '/'; item['fitKind'] = r['kind']; n += 1
+    print(f'пакеты примерки: {n} товаров, {len(firsts)} разных фото, {time.time() - t0:.0f} с ({jobs} процесс.)')
 
 def main():
     ap = argparse.ArgumentParser()
@@ -200,6 +243,7 @@ def main():
     ap.add_argument('--per-shop', type=int, default=300); ap.add_argument('--source', default='')
     ap.add_argument('--demo', action='store_true', help='пометить как тестовую выгрузку (ненастоящие товары)')
     ap.add_argument('--fit', action='store_true', help='собрать пакеты примерки (выкройка и ткань) для одежды — fitpack.py')
+    ap.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 2) - 1), help='сколько пакетов примерки собирать одновременно (ядра процессора)')
     a = ap.parse_args()
     shops = maxi_shops(); idx = brand_index(shops)
     os.makedirs(os.path.join(a.out, 'img'), exist_ok=True)
@@ -239,16 +283,15 @@ def main():
                 ph = process_picture(of['pic'], of['base'] if not re.match(r'^https?://', of['base']) else '', os.path.join(a.out, 'img'), iid)
                 if ph:
                     item.update(ph); item['h'] = HEIGHT_KIDS if w == 'kids' and t in HEIGHT else HEIGHT.get(t, 0.6)
-            if a.fit and t in ('tshirts', 'pants', 'jackets') and w != 'kids' and of.get('pics'):   # фигура в примерочной — взрослая
-                pk = fit_pack(of, iid, os.path.join(a.out, 'fit'), w, shop)
-                if pk: item['fit'] = 'fit/' + iid + '/'; item['fitKind'] = pk['kind']
+            if a.fit and t in ('tshirts', 'pants', 'jackets', 'dresses') and w != 'kids' and of.get('pics'):   # фигура в примерочной — взрослая
+                FIT_TASKS.append((of, iid, w, shop, item))
             depts[dk]['items'].append(item)
         # порядок отделов: женщинам, мужчинам, детям; внутри — как в зале (верхняя одежда первой)
         order = {'women': 0, 'men': 1, 'kids': 2, '': 3}; torder = {k: i for i, (k, _) in enumerate(TYPES)}
         dl = sorted(depts.values(), key=lambda d: (order[d['who']], torder.get(d['type'], 99)))
         slug = re.sub(r'[^a-z0-9а-я]+', '-', shop.lower()).strip('-') or iid
         data = {'shop': shop, 'updated': today, 'feedDate': offers[0]['date'] if offers else '', 'demo': a.demo, 'source': a.source, 'depts': dl}
-        json.dump(data, open(os.path.join(a.out, slug + '.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+        WRITES.append((os.path.join(a.out, slug + '.json'), data))   # пишем после пакетов примерки (у товаров появится fit)
         n = sum(len(d['items']) for d in dl)
         # для витрины в галерее: до трёх вещей с вырезанным фоном (сначала верх: куртки, футболки, платья)
         pri = {'jackets': 0, 'tshirts': 1, 'dresses': 2, 'pants': 3}
@@ -262,6 +305,8 @@ def main():
                         seen.add(i['pic']); types.add(t); win.append({'pic': i['pic'], 'aspect': i['aspect'], 'h': i['h'], 'color': i['color']})
         index['shops'][shop] = {'file': slug + '.json', 'n': n, 'win': win}
         print(f'{shop}: {n} товаров, отделы: ' + ', '.join(f"{d['title']} ({len(d['items'])})" for d in dl))
+    if FIT_TASKS: run_fit(FIT_TASKS, os.path.join(a.out, 'fit'), a.jobs)
+    for fn, data in WRITES: json.dump(data, open(fn, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
     json.dump(index, open(os.path.join(a.out, 'index.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     if a.fit and os.path.isdir(os.path.join(a.out, 'fit')):
         # список пакетов примерки — для автопроверки (tools/wardrobe/qc/run.sh с PACKS=…/fit)

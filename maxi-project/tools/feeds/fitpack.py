@@ -23,7 +23,7 @@ import build as W  # noqa: E402
 from sizes import size_table  # noqa: E402
 
 _DONE = {}
-TEMPLATE_KINDS = {'tee', 'sweater', 'hoodie', 'shirt', 'jacket', 'jeans', 'pants', 'shorts'}
+TEMPLATE_KINDS = {'tee', 'sweater', 'hoodie', 'shirt', 'jacket', 'jeans', 'pants', 'shorts', 'coat', 'puffer', 'dress', 'skirt'}
 
 
 def garment_kind(name, cat=''):
@@ -56,6 +56,7 @@ def states_of(kind, name):
     hood = kind == 'hoodie' or 'капюш' in n
     if kind == 'hoodie' and z: return z, [['closed', 'Застёгнута'], ['open', 'Расстёгнута'], ['hood', 'Капюшон']]
     if kind == 'hoodie' and hood: return False, [['closed', 'Капюшон снят'], ['hood', 'Капюшон']]
+    if kind in ('coat', 'puffer'): return False, [['closed', 'Застёгнут'], ['open', 'Нараспашку']]
     if kind == 'jacket':   # пиджак обычно носят нараспашку, куртку — застёгнутой
         return False, ([['open', 'Нараспашку'], ['closed', 'Застёгнут']] if re.search(r'пиджак|жакет|блейзер', n) else [['closed', 'Застёгнута'], ['open', 'Нараспашку']])
     if kind in ('tee', 'shirt', 'sweater'): return False, [['loose', 'Навыпуск'], ['tucked', 'Заправлен']]
@@ -80,7 +81,8 @@ def photo_info(path):
             # на модели: в маске есть кожа (лицо, руки, ноги) — такие фото не студийные
             ycc = cv2.cvtColor(im, cv2.COLOR_BGR2YCrCb)
             skin = ((ycc[..., 1] > 135) & (ycc[..., 1] < 175) & (ycc[..., 2] > 85) & (ycc[..., 2] < 130) & (m > 0)).sum() / max(1, m.sum())
-            if skin < 0.04: return 'studio', m, im
+            # кожа — лишь часть силуэта (лицо, руки, ноги) → человек; почти вся «кожа» — это вещь телесного цвета
+            if skin < 0.04 or skin > 0.5: return 'studio', m, im
     return 'model', None, im
 
 
@@ -110,35 +112,54 @@ def pick_photos(paths):
     return None, None, None
 
 
-def make_pack(offer, iid, out, who='', brand='', paths=None, debug=False):
-    """Пакет примерки для товара выгрузки. paths — локальные файлы фото (скачанные). Возвращает словарь для каталога или None."""
+def pack_key(offer, paths):
+    """Одинаковый ключ — один и тот же пакет (то же фото, тот же вид вещи): считается один раз, остальным копируется."""
     kind = garment_kind(offer.get('name'), offer.get('cat'))
-    if kind not in TEMPLATE_KINDS: return None
-    src, front, back = pick_photos(paths or [])
-    if not src: return None
+    return (tuple(paths or []), kind, bool(re.search(r'резинк|джоггер|спортивн', (offer.get('name') or '').lower())))
+
+
+def offer_fields(offer, who, brand):
+    kind = garment_kind(offer.get('name'), offer.get('cat'))
     zip_, states = states_of(kind, offer.get('name'))
     sizes = size_table(offer.get('sizes') or [], kind, who, brand or offer.get('vendor', ''), offer.get('name', ''))
-    it = dict(id=iid, name=offer.get('name', ''), kind=kind, src=src, front=front, back=back, zip=zip_, states=states,
-              brand=brand or offer.get('vendor', ''), url=offer.get('url', ''), who=who, hood=kind == 'hoodie' or 'капюш' in (offer.get('name') or '').lower())
+    return dict(name=offer.get('name', ''), kind=kind, zip=zip_, states=states, brand=brand or offer.get('vendor', ''), url=offer.get('url', ''), who=who,
+                hood=kind == 'hoodie' or 'капюш' in (offer.get('name') or '').lower(), sizes=sizes)
+
+
+def clone_pack(src_iid, offer, iid, out, who='', brand=''):
+    """Копия готового пакета для другого товара с тем же фото: картинки и выкройка те же, название, размеры, состояния — свои."""
+    import json, shutil
+    sd = os.path.join(out, src_iid); od = os.path.join(out, iid)
+    if not os.path.isfile(os.path.join(sd, 'meta.json')): return None
+    os.makedirs(od, exist_ok=True)
+    meta = json.load(open(os.path.join(sd, 'meta.json')))
+    # картинки не копируем: пакет ссылается на папку исходного (files) — при тысячах товаров это в разы меньше места
+    meta['files'] = meta.get('files') or src_iid
+    f = offer_fields(offer, who, brand); sizes = f.pop('sizes'); f.pop('kind')
+    meta.update(f, id=iid)
+    if sizes: meta['sizes'] = sizes
+    else: meta.pop('sizes', None)
+    meta.pop('qc', None)
+    json.dump(meta, open(os.path.join(od, 'meta.json'), 'w'), ensure_ascii=False, indent=1)
+    return {'kind': meta['kind'], 'src': meta.get('src', 'studio')}
+
+
+def make_pack(offer, iid, out, who='', brand='', paths=None, debug=False):
+    """Пакет примерки для товара выгрузки. paths — локальные файлы фото (скачанные). Возвращает словарь для каталога или None."""
+    import json
+    key = pack_key(offer, paths)
+    if key[1] not in TEMPLATE_KINDS: return None
+    if key in _DONE: return clone_pack(_DONE[key], offer, iid, out, who, brand)
+    src, front, back = pick_photos(paths or [])
+    if not src: return None
+    f = offer_fields(offer, who, brand); sizes = f.pop('sizes')
+    it = dict(f, id=iid, src=src, front=front, back=back)
     if sizes: it['sizes'] = sizes
-    if kind in ('pants', 'jeans', 'shorts') and re.search(r'резинк|джоггер|спортивн', (offer.get('name') or '').lower()): it['elastic'] = True
-    # то же фото и тот же вид вещи (другой цвет-размер-название того же товара) — картинки и выкройку не считаем заново
-    key = (front, back, kind, src, bool(it.get('elastic')))
-    if key in _DONE and os.path.isdir(os.path.join(out, _DONE[key])):
-        import json, shutil
-        od = os.path.join(out, iid); os.makedirs(od, exist_ok=True)
-        for f in os.listdir(os.path.join(out, _DONE[key])):
-            if f != 'meta.json': shutil.copy2(os.path.join(out, _DONE[key], f), os.path.join(od, f))
-        meta = json.load(open(os.path.join(out, _DONE[key], 'meta.json')))
-        meta.update(id=iid, name=it['name'], zip=zip_, states=states, brand=it['brand'], url=it['url'], who=who, hood=it['hood'])
-        if sizes: meta['sizes'] = sizes
-        else: meta.pop('sizes', None)
-        json.dump(meta, open(os.path.join(od, 'meta.json'), 'w'), ensure_ascii=False, indent=1)
-        return {'kind': kind, 'src': src}
-    try: meta = W.build(it, out=out, debug=debug)
+    if key[2] and f['kind'] in ('pants', 'jeans', 'shorts'): it['elastic'] = True
+    try: W.build(it, out=out, debug=debug)
     except Exception as e:
         print('  пакет примерки не собрался:', offer.get('name'), e); return None
+    mf = os.path.join(out, iid, 'meta.json'); meta = json.load(open(mf)); meta['src'] = src; json.dump(meta, open(mf, 'w'), ensure_ascii=False, indent=1)
     _DONE[key] = iid
-    for f in os.listdir(os.path.join(out, iid)):
-        if f in ('debug.jpg',) and not debug: os.remove(os.path.join(out, iid, f))
-    return {'kind': kind, 'src': src}
+    if not debug and os.path.exists(os.path.join(out, iid, 'debug.jpg')): os.remove(os.path.join(out, iid, 'debug.jpg'))
+    return {'kind': f['kind'], 'src': src}

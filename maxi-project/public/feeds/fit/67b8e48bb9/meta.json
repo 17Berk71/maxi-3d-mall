@@ -312,9 +312,13 @@
  "url": "https://ostin.com/",
  "color": "#868687",
  "sleeve": true,
+ "src": "studio",
+ "files": "6231e4a105",
  "qc": {
-  "score": 100,
+  "score": 83,
   "ok": true,
-  "bad": []
+  "bad": [
+   "натяжение"
+  ]
  }
 }

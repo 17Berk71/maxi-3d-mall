@@ -314,6 +314,7 @@
  "url": "https://www.gloria-jeans.ru/",
  "color": "#959a7c",
  "sleeve": false,
+ "src": "studio",
  "qc": {
   "score": 100,
   "ok": true,
