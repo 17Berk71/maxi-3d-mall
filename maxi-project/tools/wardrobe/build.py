@@ -435,7 +435,24 @@ def load_model_photo(key, kind):
         k_ = 1400 / h; im = cv2.resize(im, (int(w * k_), 1400), interpolation=cv2.INTER_AREA)
         ms = {k: cv2.resize(v, (im.shape[1], 1400), interpolation=cv2.INTER_NEAREST) for k, v in ms.items()}
         h, w = im.shape[:2]
-    m = ms['upper'] if kind in TOPS else ms['lower']
+    # платье сеть делит на «целиком», «верх» и «низ» (лиф и юбка у отрезного) — берём всё вместе
+    m = (ms['full'] | ms['upper'] | ms['lower']) if kind == 'dress' else ms['upper'] if kind in TOPS else ms['lower']
+    # юбку под блузкой навыпуск сеть часто считает «платьем» (вместе с рукавами блузки): низ — это область цвета вещи
+    # под краем верха по середине кадра (рукава другого цвета отпадают), связная с серединой
+    if kind not in TOPS and m.sum() < 0.2 * max(1, (ms['full'] | ms['upper']).sum()) and (ms['full'] | ms['upper']).sum() > 2000:
+        U = (ms['full'] | ms['upper'] | ms['lower']) > 0; cx = w // 2
+        yy = np.where(U[:, cx - 25:cx + 25].any(1))[0]
+        if len(yy):
+            # низ — самая нижняя вещь: цвет берём в нижней трети одежды по середине кадра
+            ya, yb = int(yy[0] + (yy[-1] - yy[0]) * 0.62), int(yy[0] + (yy[-1] - yy[0]) * 0.9)
+            lab_im = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32); strip = U[ya:yb, cx - 25:cx + 25]
+            if strip.sum() > 50:
+                ref = np.median(lab_im[ya:yb, cx - 25:cx + 25][strip], 0)
+                near = (np.linalg.norm(lab_im - ref, axis=2) < 22) & U
+                near = cv2.morphologyEx(near.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+                n_, lab2, st2, _ = cv2.connectedComponentsWithStats(near)
+                yc = (ya + yb) // 2
+                if n_ > 1 and near[yc, cx]: m = (lab2 == lab2[yc, cx]).astype(np.uint8)
     # где кончается верх на модели: доля «от низа вещи до пояса брюк» к «от горловины до пояса» (0 — ровно по поясу, >0 — ниже)
     global LAST_HEM
     LAST_HEM = None

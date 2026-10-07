@@ -7,7 +7,7 @@ const pg = await b.newPage({viewport: {width: 620, height: 920}}); pg.setDefault
 pg.on('pageerror', e => console.log('PAGEERR', e.message));
 await pg.goto(process.env.URL);
 const body = JSON.parse(process.env.BODY || '{"sex":"m","height":186,"weight":83,"chest":110,"waist":82,"hips":98,"skin":0}');
-await pg.evaluate(async body => { localStorage.clear(); Object.assign(PREFS.body, body); await FIT.addPack('wardrobe/'); setDrape(true); FIT.open(); }, body);
+await pg.evaluate(async body => { localStorage.clear(); Object.assign(PREFS.body, body); await FIT.addPack('wardrobe/'); setDrape(true); if (FIT.setAnim) FIT.setAnim(false); FIT.open(); }, body);
 await pg.waitForTimeout(800);
 const items = await pg.evaluate(() => FIT.items.map(i => ({id: i.id, slot: i.slot, states: (i.states || []).map(s => s[0]), name: i.name, who: i.who || '', sig: i.kind + '|' + JSON.stringify(i.drape && i.drape.front && i.drape.front.grid)})));
 // пакеты из выгрузки: каждая вещь отдельно, на типовой фигуре своего пола; одинаковые пакеты (то же фото) — один раз

@@ -153,12 +153,14 @@ function buildBody(b, skinMat, d0) {
     const foot = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), skinMat); foot.scale.set(0.045 * d.s, 0.035 * d.s, 0.12 * d.s); foot.position.set(side * d.legX, 0.03 * H, 0.05 * d.s); g.add(foot);
     // рука
     const a = armPose(d, side), arm = new THREE.Mesh(limb([[0, 0.042 * d.k * d.s], [0.07, 0.05 * d.k * d.s], [0.14, 0.046 * d.k * d.s], [0.47, 0.034 * d.k * d.s], [0.55, 0.036 * d.k * d.s], [1, 0.025 * d.s]], a.L), skinMat);
-    arm.position.copy(a.pos); arm.rotation.z = a.rot; arm.userData.part = 'arm'; arm.userData.L = a.L; g.add(arm);
+    // рука, купол и кисть — в «плечевом суставе» (pivot): для анимации примерки руку можно отвести (rotation.z)
+    const pivot = new THREE.Group(); pivot.position.copy(a.pos); pivot.rotation.z = a.rot; pivot.userData.armPivot = {side, rot: a.rot}; g.add(pivot);
+    arm.userData.part = 'arm'; arm.userData.L = a.L; pivot.add(arm);
     // торец руки у сустава закрыт пологим куполом: иначе край трубы выступал из шара плеча — «шарнир куклы»
     { const rr = 0.042 * d.k * d.s, cap = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), skinMat);
-      cap.scale.set(rr, rr * 0.45, rr); cap.position.copy(a.pos); cap.rotation.z = a.rot; cap.userData.part = 'arm'; cap.userData.L = a.L; g.add(cap); }
+      cap.scale.set(rr, rr * 0.45, rr); cap.userData.part = 'arm'; cap.userData.L = a.L; pivot.add(cap); }
     const hand = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), skinMat); hand.scale.set(0.022 * d.s, 0.06 * d.s, 0.04 * d.s);
-    hand.position.copy(a.pos).add(new THREE.Vector3(Math.sin(a.rot) * (a.L + 0.05 * d.s), -Math.cos(a.rot) * (a.L + 0.05 * d.s), 0)); hand.rotation.z = a.rot; g.add(hand);
+    hand.position.set(0, -(a.L + 0.05 * d.s), 0); pivot.add(hand);
   });
   const sh = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 12), skinMat); sh.scale.set(Math.max(d.chest * d.shX * 0.98, armX(d) + 0.02) * 0.97, d.chest * 0.41, Math.min(d.chest * 0.57, torsoR(d, 0.83) * sz(d, 0.83) * 0.95)); sh.position.y = 0.8 * H; sh.userData.part = 'sh'; g.add(sh);   // по глубине не толще груди: иначе спереди «кокетка» со складкой   // чуть меньше, чем в расчёте ткани: между узлами сетки тело не просвечивает
   return {g, d};
@@ -653,11 +655,13 @@ function makeCollider(d, under, margin) {
     LR[i] = legAt(yf);
     if (under) { const u = under.a[Math.round(yf * 100)] || 0, uz = under.b[Math.round(yf * 100)] || 0; if (u > A[i]) { A[i] = u; B[i] = Math.max(B[i], uz); } }
   }
-  const j = armJ(d), arms = [-1, 1].map(side => ({x0: j.x * side, y0: j.y, dx: Math.sin(j.th) * side, dy: -Math.cos(j.th), L: j.L}));
+  const j = armJ(d); let arms = [];
+  // руки можно отвести (анимация примерки): delta — на сколько радиан дальше от тела
+  const setArm = delta => { arms = [-1, 1].map(side => ({x0: j.x * side, y0: j.y, dx: Math.sin(j.th + delta) * side, dy: -Math.cos(j.th + delta), L: j.L})); }; setArm(0);
   const m = 0.007 + (margin || 0), hr = 0.098 * d.s, SX = Math.max(d.chest * d.shX * 0.98, armX(d) + 0.02), SY = d.chest * 0.42, SZ = d.chest * 0.62;
   // noArm: точка детали корпуса (не рукава). Рука ниже подмышки её не толкает: рука лежит поверх бока вещи,
   // а не вдавливает его внутрь (иначе широкая вещь у кистей «перетянута ремнём»)
-  return function push(P, i, noArm) {
+  const push = function (P, i, noArm) {
     let x = P[i], y = P[i + 1], z = P[i + 2], hit = false;
     if (y < 0.004) { y = 0.004; hit = true; }
     const k = Math.max(0, Math.min(N - 1, Math.round(y / H * N)));
@@ -690,6 +694,7 @@ function makeCollider(d, under, margin) {
     }
     P[i] = x; P[i + 1] = y; P[i + 2] = z; return hit;
   };
+  push.setArm = setArm; return push;
 }
 // выкройка из сетки силуэта: точки внутри, связи, край (для шва)
 function buildPattern(dr, step, close) {
@@ -907,7 +912,11 @@ function addTube(C, S0, D, len, rad, segs, rings, mat, side, uvf, cap) {
   return {top: g[0], bottom: g[rings - 1], rings: g};
 }
 // расчёт: тяжесть, связи (растяжение/сжатие/изгиб — по пресету ткани), швы стягиваются постепенно, столкновения
-function runCloth(C, push, fab, yPin) {
+// движение манекена для анимации примерки: поворот корпуса (рад) и отведение рук по доле u ∈ [0,1] фазы движения
+// (плавно с нуля и до нуля: начало и конец без рывка)
+function motionAt(u) { const w = Math.sin(Math.PI * u); return {yaw: 0.32 * Math.sin(2 * Math.PI * u) * w, arm: 0.2 * w * w}; }
+// opt.rec — записать кадры (каждые 3 шага с момента, когда вещь сшита) и добавить фазу движения (MOT шагов) и успокоения
+function runCloth(C, push, fab, yPin, opt) {
   const n = C.pin.length, P = new Float32Array(C.P), V = new Float32Array(n * 3), prev = new Float32Array(n * 3), E = C.E, S = C.seams, hit = new Uint8Array(n);
   const NA = C.noArm || (C.meshes ? armFlags(C) : null);
   const TH = C.tether && C.tether.length ? C.tether : null;
@@ -916,9 +925,16 @@ function runCloth(C, push, fab, yPin) {
   // капюшон на голове: касающиеся точки не скользят (держится на волосах), иначе тяжесть стаскивает его назад
   const STK = C.stickyIds ? new Uint8Array(n) : null; if (STK) C.stickyIds.forEach(i => { STK[i] = 1; });
   const DBG = typeof window !== 'undefined' ? window : {};   // __dsteps — остановить расчёт раньше (отладка)
-  const steps = DBG.__dsteps || 320, iters = 7, dt = 1 / 90, sewEnd = 128;
+  const REC = opt && opt.rec, base = DBG.__dsteps || 320, MOT = REC ? 144 : 0, steps = base + (REC ? MOT + 66 : 0), iters = 7, dt = 1 / 90, sewEnd = 128;
+  const frames = REC ? [] : null, fmeta = REC ? [] : null; let yawPrev = 0;
   for (let s = 0; s < steps; s++) {
     const ramp = Math.min(1, s / sewEnd), gk = s < sewEnd ? 0 : Math.min(1, (s - sewEnd) / 25);
+    // фаза движения: тело поворачивается на Δψ — в системе тела ткань по инерции поворачивается на −Δψ (точки и прошлые точки вместе)
+    let mo = null; if (MOT && s >= base && s < base + MOT) { mo = motionAt((s - base + 1) / MOT); const dpsi = mo.yaw - yawPrev; yawPrev = mo.yaw;
+      if (dpsi) { const c = Math.cos(-dpsi), sn = Math.sin(-dpsi); for (let i = 0; i < n; i++) { if (C.pin[i]) continue; const q = i * 3;
+        let x = P[q], z = P[q + 2]; P[q] = x * c + z * sn; P[q + 2] = -x * sn + z * c; x = V[q]; z = V[q + 2]; V[q] = x * c + z * sn; V[q + 2] = -x * sn + z * c; } }
+      if (push.setArm) push.setArm(mo.arm); }
+    else if (MOT && s === base + MOT && push.setArm) { push.setArm(0); yawPrev = 0; }
     prev.set(P);
     // пояс: пока шьём — держится только по высоте, потом застёгнут (не съезжает и не проворачивается)
     if (s === Math.round(sewEnd)) { FIX = P.slice(); }
@@ -950,6 +966,7 @@ function runCloth(C, push, fab, yPin) {
     if (FR < 1) for (let i = 0; i < n; i++) if (hit[i] && !C.pin[i]) { const q = i * 3, fr = STK && STK[i] && s >= sewEnd ? 0 : FR; for (let k = 0; k < 3; k++) P[q + k] = prev[q + k] + (P[q + k] - prev[q + k]) * fr; push(P, q, NA && NA[i]); }
     for (let i = 0; i < n * 3; i++) V[i] = (P[i] - prev[i]) / dt * 0.985;
     for (let i = 0; i < n; i++) if (hit[i]) { V[i * 3] *= 0.4; V[i * 3 + 1] *= 0.4; V[i * 3 + 2] *= 0.4; hit[i] = 0; }
+    if (REC && s >= sewEnd && (s - sewEnd) % 3 === 0) { frames.push(P.slice()); const m_ = MOT && s >= base && s < base + MOT ? motionAt((s - base + 1) / MOT) : {yaw: 0, arm: 0}; fmeta.push(m_.yaw, m_.arm); }
   }
   // сглаживание «лесенки» сетки (2 прохода) с повторной проверкой столкновений
   const nb = Array.from({length: n}, () => []); for (let e = 0; e < E.length; e += 4) if (E[e + 3] === 0 || E[e + 3] === 3) { nb[E[e]].push(E[e + 1]); nb[E[e + 1]].push(E[e]); }
@@ -959,6 +976,7 @@ function runCloth(C, push, fab, yPin) {
   // швы: сшитые точки сводим вместе (остаток зазора после расчёта — иначе виден просвет по шву)
   for (let pass = 0; pass < 2; pass++) for (const [i, j] of S) { const d2 = Math.hypot(P[j * 3] - P[i * 3], P[j * 3 + 1] - P[i * 3 + 1], P[j * 3 + 2] - P[i * 3 + 2]); if (d2 > 0.05) continue;
     for (let k = 0; k < 3; k++) { const m = (P[i * 3 + k] + P[j * 3 + k]) / 2; P[i * 3 + k] = m; P[j * 3 + k] = m; } }
+  if (REC) { frames.push(P.slice()); fmeta.push(0, 0); const F = new Float32Array(frames.length * P.length); frames.forEach((f, k) => F.set(f, k * P.length)); opt.frames = F; opt.meta = Float32Array.from(fmeta); opt.nf = frames.length; }
   return P;
 }
 function clothAO(C, P, N, n) {
@@ -980,6 +998,31 @@ function aoEmissive(mat) {
 }
 // сетка вещи для показа: нормали общие для всех деталей (по точкам ткани — через швы без ступеньки света),
 // каждая деталь повёрнута лицом наружу, и одно сглаживающее деление треугольников (край силуэта не «гранёный»)
+function clothNormals(C, P, flips, N) {
+  const sub = (i, j) => [P[i * 3] - P[j * 3], P[i * 3 + 1] - P[j * 3 + 1], P[i * 3 + 2] - P[j * 3 + 2]];
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  N.fill(0); const n = P.length / 3;
+  C.meshes.forEach((m, mi) => { for (let t = 0; t < m.tris.length; t += 3) { let a = m.verts[m.tris[t]], b = m.verts[m.tris[t + 1]], c = m.verts[m.tris[t + 2]]; if (flips[mi]) { const x = b; b = c; c = x; }
+    const f = cross(sub(b, a), sub(c, a)); for (const v of [a, b, c]) { N[v * 3] += f[0]; N[v * 3 + 1] += f[1]; N[v * 3 + 2] += f[2]; } } });
+  // сшитые точки — одна нормаль
+  for (const [i, j] of C.seams) for (let k = 0; k < 3; k++) { const s_ = N[i * 3 + k] + N[j * 3 + k]; N[i * 3 + k] = s_; N[j * 3 + k] = s_; }
+  for (let i = 0; i < n; i++) { const l = Math.hypot(N[i * 3], N[i * 3 + 1], N[i * 3 + 2]) || 1; N[i * 3] /= l; N[i * 3 + 1] /= l; N[i * 3 + 2] /= l; }
+}
+// кадр анимации: та же сетка (порядок вершин как в clothMeshes), новые точки ткани P — без пересборки
+function clothUpdate(g, P) {
+  const cl = g.userData.cloth; if (!cl) return; const C = cl.C, n = P.length / 3, N = cl.N || (cl.N = new Float32Array(n * 3));
+  clothNormals(C, P, cl.flips, N); const AO = clothAO(C, P, N, n);
+  g.children.forEach(mesh => { const cm = mesh.userData.cm; if (!cm) return; const m = C.meshes[cm.mi], pa = mesh.geometry.attributes.position, na = mesh.geometry.attributes.normal, ca = mesh.geometry.attributes.color;
+    const pos = pa.array, nor = na.array, col = ca ? ca.array : null;
+    m.verts.forEach((v, k) => { pos[k * 3] = P[v * 3]; pos[k * 3 + 1] = P[v * 3 + 1]; pos[k * 3 + 2] = P[v * 3 + 2]; nor[k * 3] = N[v * 3]; nor[k * 3 + 1] = N[v * 3 + 1]; nor[k * 3 + 2] = N[v * 3 + 2]; if (col) col[k * 3] = col[k * 3 + 1] = col[k * 3 + 2] = AO[v]; });
+    let r = m.verts.length; for (const [i, j] of cm.edges) {
+      const dx = pos[j * 3] - pos[i * 3], dy = pos[j * 3 + 1] - pos[i * 3 + 1], dz = pos[j * 3 + 2] - pos[i * 3 + 2], nix = nor[i * 3], niy = nor[i * 3 + 1], niz = nor[i * 3 + 2], njx = nor[j * 3], njy = nor[j * 3 + 1], njz = nor[j * 3 + 2];
+      const v_ = 2 * ((dx * (nix + njx) + dy * (niy + njy) + dz * (niz + njz)) / Math.max(1e-9, dx * dx + dy * dy + dz * dz)), hx = nix + njx - v_ * dx, hy = niy + njy - v_ * dy, hz = niz + njz - v_ * dz, hl = Math.hypot(hx, hy, hz) || 1;
+      const off = ((njx - nix) * dx + (njy - niy) * dy + (njz - niz) * dz) / 8;
+      pos[r * 3] = (pos[i * 3] + pos[j * 3]) / 2 + (nix + njx) / 2 * off; pos[r * 3 + 1] = (pos[i * 3 + 1] + pos[j * 3 + 1]) / 2 + (niy + njy) / 2 * off; pos[r * 3 + 2] = (pos[i * 3 + 2] + pos[j * 3 + 2]) / 2 + (niz + njz) / 2 * off;
+      nor[r * 3] = hx / hl; nor[r * 3 + 1] = hy / hl; nor[r * 3 + 2] = hz / hl; if (col) col[r * 3] = col[r * 3 + 1] = col[r * 3 + 2] = (col[i * 3] + col[j * 3]) / 2; r++; }
+    pa.needsUpdate = true; na.needsUpdate = true; if (ca) ca.needsUpdate = true; mesh.geometry.computeBoundingSphere(); });
+}
 function clothMeshes(C, P, H) {
   const g = new THREE.Group(), n = P.length / 3, N = new Float32Array(n * 3);
   const sub = (i, j) => [P[i * 3] - P[j * 3], P[i * 3 + 1] - P[j * 3 + 1], P[i * 3 + 2] - P[j * 3 + 2]];
@@ -988,13 +1031,10 @@ function clothMeshes(C, P, H) {
   const flips = C.meshes.map(m => { let cx = 0, cy = 0, cz = 0; m.verts.forEach(v => { cx += P[v * 3]; cy += P[v * 3 + 1]; cz += P[v * 3 + 2]; }); const k = m.verts.length || 1; cx /= k; cy /= k; cz /= k;
     let sgn = 0; for (let t = 0; t < m.tris.length; t += 3) { const a = m.verts[m.tris[t]], b = m.verts[m.tris[t + 1]], c = m.verts[m.tris[t + 2]], f = cross(sub(b, a), sub(c, a));
       sgn += f[0] * (P[a * 3] - cx) + f[1] * (P[a * 3 + 1] - cy) + f[2] * (P[a * 3 + 2] - cz); } return sgn < 0; });
-  C.meshes.forEach((m, mi) => { for (let t = 0; t < m.tris.length; t += 3) { let a = m.verts[m.tris[t]], b = m.verts[m.tris[t + 1]], c = m.verts[m.tris[t + 2]]; if (flips[mi]) { const x = b; b = c; c = x; }
-    const f = cross(sub(b, a), sub(c, a)); for (const v of [a, b, c]) { N[v * 3] += f[0]; N[v * 3 + 1] += f[1]; N[v * 3 + 2] += f[2]; } } });
-  // сшитые точки — одна нормаль
-  for (const [i, j] of C.seams) for (let k = 0; k < 3; k++) { const s_ = N[i * 3 + k] + N[j * 3 + k]; N[i * 3 + k] = s_; N[j * 3 + k] = s_; }
-  for (let i = 0; i < n; i++) { const l = Math.hypot(N[i * 3], N[i * 3 + 1], N[i * 3 + 2]) || 1; N[i * 3] /= l; N[i * 3 + 1] /= l; N[i * 3 + 2] /= l; }
+  clothNormals(C, P, flips, N);
   // затенение складок (как ambient occlusion): во впадине точка ниже соседей по нормали — темнее, на гребне — чуть светлее
   const AO = clothAO(C, P, N, n);
+  g.userData.cloth = {C, flips};
   C.meshes.forEach((m, mi) => {
     const pos = [], nor = [], uv = [], col = [], idx = [], mid = new Map();
     m.verts.forEach((v, k) => { pos.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); nor.push(N[v * 3], N[v * 3 + 1], N[v * 3 + 2]); uv.push(m.uv[k][0], 1 - m.uv[k][1]); col.push(AO[v], AO[v], AO[v]); });
@@ -1011,7 +1051,8 @@ function clothMeshes(C, P, H) {
       const ab = edge(a, b), bc = edge(b, c), ca = edge(c, a); idx.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx);
     if (!m.mat.vertexColors) { m.mat.vertexColors = true; aoEmissive(m.mat); m.mat.needsUpdate = true; }
-    const mesh = new THREE.Mesh(geo, m.mat); mesh.castShadow = true; mesh.receiveShadow = true; if (m.role) mesh.userData.role = m.role; g.add(mesh);
+    const mesh = new THREE.Mesh(geo, m.mat); mesh.castShadow = true; mesh.receiveShadow = true; if (m.role) mesh.userData.role = m.role;
+    mesh.userData.cm = {mi, edges: [...mid.entries()].sort((a_, b_) => a_[1] - b_[1]).map(([key]) => [Math.floor(key / 100000), key % 100000])}; g.add(mesh);
   });
   // слой для следующих вещей — только корпус (перед, спинка); рукава и капюшон не расширяют «туловище» верхней вещи
   if (UNDER) C.meshes.forEach(m => { if (m.role !== 'front' && m.role !== 'back') return; m.verts.forEach(i => noteAB(P[i * 3 + 1] / H, Math.abs(P[i * 3]) + 0.004, Math.abs(P[i * 3 + 2]) + 0.004)); });
@@ -1317,16 +1358,19 @@ export function drapeTemplate(item, d, under) { const j = drapePrepare(item, d, 
 // Расчёт вещи — 1.5–2.5 с на компьютере и в 2–3 раза дольше на телефоне. В фоне страница не замирает,
 // а готовый результат (точки ткани) хранится: та же вещь на той же фигуре во второй раз надевается сразу.
 // Версия расчёта: менять при любой правке выкроек, швов или расчёта — старый кэш станет недействительным.
-export const CLOTH_VER = 'c25';
+export const CLOTH_VER = 'c26';
+// анимация надевания (FIT.setAnim(false) — выключить, для автопроверок); «без анимации» на сайте и системная настройка — тоже выключают
+const ANIM = {on: true};
+function calmNow() { try { const v = localStorage.getItem('maxi-calm'); if (v !== null) return v === '1'; } catch (e) {} try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
 let WORKER = null, WSEQ = 0; const WJOBS = new Map();
 function clothWorker() {
   if (WORKER !== null) return WORKER;
   try {
     // код расчёта берём из этих же функций (toString): отдельный файл не нужен ни Vite, ни сборке артефакта
-    const src = [torsoR, sx, sz, armRad, armX, armJ, legR, makeCollider, runCloth].map(f => { const t = f.toString(); return /^function[\s*(]/.test(t) ? t : 'const ' + f.name + ' = ' + t + ';'; }).join('\n')
-      + '\nself.onmessage = e => { const {id, C, d, under, fab, yPin, margin} = e.data; try { const P = runCloth(C, makeCollider(d, under, margin), fab, yPin); self.postMessage({id, P}, [P.buffer]); } catch (err) { self.postMessage({id, err: String(err && err.message || err)}); } };';
+    const src = [torsoR, sx, sz, armRad, armX, armJ, legR, makeCollider, motionAt, runCloth].map(f => { const t = f.toString(); return /^function[\s*(]/.test(t) ? t : 'const ' + f.name + ' = ' + t + ';'; }).join('\n')
+      + '\nself.onmessage = e => { const {id, C, d, under, fab, yPin, margin, rec} = e.data; try { const o = {rec}; const P = runCloth(C, makeCollider(d, under, margin), fab, yPin, o); self.postMessage({id, P, F: o.frames, M: o.meta, nf: o.nf}, o.frames ? [P.buffer, o.frames.buffer] : [P.buffer]); } catch (err) { self.postMessage({id, err: String(err && err.message || err)}); } };';
     WORKER = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
-    WORKER.onmessage = e => { const j = WJOBS.get(e.data.id); if (!j) return; WJOBS.delete(e.data.id); if (e.data.err) { console.warn('расчёт ткани в фоне не удался, считаю здесь:', e.data.err); WORKER = false; j.reject(new Error(e.data.err)); } else j.resolve(e.data.P); };
+    WORKER.onmessage = e => { const j = WJOBS.get(e.data.id); if (!j) return; WJOBS.delete(e.data.id); if (e.data.err) { console.warn('расчёт ткани в фоне не удался, считаю здесь:', e.data.err); WORKER = false; j.reject(new Error(e.data.err)); } else { if (e.data.F) e.data.P.anim = {F: e.data.F, M: e.data.M, nf: e.data.nf}; j.resolve(e.data.P); } };
     WORKER.onerror = () => { WJOBS.forEach(j => j.reject(new Error('worker'))); WJOBS.clear(); WORKER = false; };
   } catch (e) { WORKER = false; }
   return WORKER;
@@ -1348,7 +1392,7 @@ function seamBend(C) {
 function armFlags(C) { const f = new Uint8Array(C.pin.length); C.meshes.forEach(m => { if (!m.local) m.verts.forEach(v => { f[v] = 1; }); }); return f; }
 function solveInWorker(job) {
   const w = clothWorker(); if (!w) return Promise.resolve(null);
-  const id = ++WSEQ, C = job.C, msg = {id, C: {P: Float32Array.from(C.P), E: C.E, seams: C.seams, pin: C.pin, hold: C.hold, mid: C.mid, half: C.half, sector: C.sector, force: C.force, stickyIds: C.stickyIds, fr: C.fr, noArm: C.noArm || armFlags(C), tether: Float32Array.from(C.tether || [])}, d: job.d, under: job.under, fab: typeof window !== 'undefined' && window.__fab ? Object.assign({}, job.fab, window.__fab) : job.fab, yPin: job.yPin, margin: job.margin};   // __fab — проба ткани (отладка)
+  const id = ++WSEQ, C = job.C, msg = {id, C: {P: Float32Array.from(C.P), E: C.E, seams: C.seams, pin: C.pin, hold: C.hold, mid: C.mid, half: C.half, sector: C.sector, force: C.force, stickyIds: C.stickyIds, fr: C.fr, noArm: C.noArm || armFlags(C), tether: Float32Array.from(C.tether || [])}, d: job.d, under: job.under, fab: typeof window !== 'undefined' && window.__fab ? Object.assign({}, job.fab, window.__fab) : job.fab, yPin: job.yPin, margin: job.margin, rec: !!job.rec};   // __fab — проба ткани (отладка)
   return new Promise((resolve, reject) => { WJOBS.set(id, {resolve, reject}); w.postMessage(msg); }).catch(() => null);
 }
 // кэш: в памяти (последние 40) и в IndexedDB браузера (последние 300, ~50 КБ каждый)
@@ -1373,15 +1417,19 @@ async function cachePut(key, P) {
       keys.onsuccess = () => { all.onsuccess = () => { const L = keys.result.map((k, i) => [k, all.result[i].t]).sort((a, b) => b[1] - a[1]); if (L.length > 300) { const t2 = db.transaction('drape', 'readwrite').objectStore('drape'); L.slice(300).forEach(([k]) => t2.delete(k)); } }; }; } } catch (e) {}
 }
 // одна вещь: подготовка здесь, расчёт — из кэша, в фоне или (если фон недоступен) здесь же
-export async function garmentMeshAsync(item, d, key, alive) {
+export async function garmentMeshAsync(item, d, key, alive, opts) {
   if (!item.tex) return garmentMesh(item, d);
   delete QC[item.id];
   const un = UNDER ? {a: UNDER.slice(), b: UNDERZ.slice()} : null, job = drapePrepare(item, d, un);
   if (!job) return garmentMesh(item, d);
-  let P = key ? await cacheGet(key) : null;
-  if (!P) { P = await solveInWorker(job); if (alive && !alive()) return null; if (!P) P = runCloth(job.C, makeCollider(job.d, job.under, job.margin), job.fab, job.yPin); if (key) cachePut(key, P); }
+  // anim: показать надевание в движении — только при новом расчёте (из кэша вещь сразу на месте); ключ кэша свой: итог после движения
+  const anim = !!(opts && opts.anim); if (key && anim) key += '|a';
+  let P = key && !(opts && opts.fresh) ? await cacheGet(key) : null, A = null;
+  if (!P) { job.rec = anim; P = await solveInWorker(job); if (alive && !alive()) return null;
+    if (!P) { const o = {rec: anim}; P = runCloth(job.C, makeCollider(job.d, job.under, job.margin), job.fab, job.yPin, o); if (o.frames) P.anim = {F: o.frames, M: o.meta, nf: o.nf}; }
+    A = P.anim || null; if (key) cachePut(key, P); }
   if (alive && !alive()) return null;
-  return job.finish(Float32Array.from(P));
+  const g = job.finish(Float32Array.from(P)); if (g && A) g.userData.anim = Object.assign(A, {C: job.C}); return g;
 }
 
 // ---------- автопроверка надетой вещи ----------
@@ -1519,7 +1567,7 @@ function paintBody(g, covers, skin) {
     // верх туловища под закрытой вещью — весь: кольца сетки редкие, белая вершина у шеи размазалась бы клином до плеча
     // (из выреза видна только узкая полоса — как тень внутри воротника)
     if (y > c.y0 + 0.015 && (y < c.y1 - 0.004 || (c.torso && !c.legs))) return i; } return -1; };
-  g.children.forEach(m => { const part = m.userData.part; if (!part || !m.isMesh) return;
+  g.traverse(m => { const part = m.userData.part; if (!part || !m.isMesh) return;
     const P = m.geometry.attributes.position, col = new Float32Array(P.count * 3); let any = false;
     for (let i = 0; i < P.count; i++) {
       const y = part === 'sh' ? m.position.y + P.getY(i) * m.scale.y : m.position.y + P.getY(i), t = part === 'arm' ? -P.getY(i) / m.userData.L : part === 'neck' ? P.getY(i) / (m.userData.s || 1) : 0;
@@ -1641,11 +1689,13 @@ export function createFitting(ctx) {
     const body = buildBody(b, R.skinMat, d0), next = new THREE.Group(); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); next.add(body.g);
     const order = {shoes: 0, bottom: 1, dress: 2, top: 3, outer: 4}, bodyKey = JSON.stringify(b) + '|' + d0.armA.toFixed(3);
     const busy = setTimeout(() => { if (alive()) setBusy(true); }, 120);
+    // анимация надевания: вещь ложится на тело, манекен чуть поворачивается и отводит руки (не в режиме «без анимации»)
+    const anim = ANIM.on && !calmNow(), fresh = built.fresh; built.fresh = false;
     UNDER = []; UNDERZ = []; BOT_YW = 0; let below = '', ok = true;
     try {
       for (const it of wn.slice().sort((a, c) => order[a.slot] - order[c.slot])) {
         const me = it.id + ':' + (it.state || '') + ':' + (it.size || '');
-        const g = await garmentMeshAsync(it, body.d, DRAPE_ON && it.tex ? CLOTH_VER + '|' + bodyKey + '|' + below + '|' + me : null, alive);
+        const g = await garmentMeshAsync(it, body.d, DRAPE_ON && it.tex ? CLOTH_VER + '|' + bodyKey + '|' + below + '|' + me : null, alive, {anim, fresh});
         if (!alive() || !g) { ok = false; if (g) disposeObj(g); break; }
         next.add(g); commitLayer(); below += me + ',';
       }
@@ -1655,7 +1705,11 @@ export function createFitting(ctx) {
     R.skinMat.color.copy(LIN(SKIN[b.skin | 0] || SKIN[0])); R.skinMat.roughness = 0.55;
     paintBody(body.g, next.children.map(o => o.userData && o.userData.cover).filter(Boolean), R.skinMat.color);
     R.avatar.children.slice().forEach(o => { R.avatar.remove(o); disposeObj(o); });
-    next.children.slice().forEach(o => R.avatar.add(o)); R.d = body.d;
+    const rig = new THREE.Group(); next.children.slice().forEach(o => rig.add(o)); R.avatar.add(rig); R.rig = rig; R.d = body.d; R.play = null;
+    const list = rig.children.filter(o => o.userData && o.userData.anim && o.userData.cloth);
+    if (list.length) { const pivots = []; body.g.traverse(o => { if (o.userData.armPivot) pivots.push(o); });
+      const saved = list.map(g => g.children.filter(m => m.userData.cm).map(m => ['position', 'normal', 'color'].map(a => m.geometry.attributes[a] ? m.geometry.attributes[a].array.slice() : null)));
+      R.play = {t0: performance.now(), list, saved, pivots, nf: Math.min(...list.map(g => g.userData.anim.nf)), k: -1}; }
     document.querySelectorAll('[data-qc]').forEach(qcLine);
   }
   // строка автопроверки под вещью: только если вещь показана неточно (балл ниже 70) — что именно не так
@@ -1671,9 +1725,22 @@ export function createFitting(ctx) {
     const ty = H * (v.z < 0.9 ? v.h : 0.5 + (v.h - 0.55) * 0.3);
     R.cam.position.set(Math.sin(0.0) * dist, ty + 0.08, dist); R.cam.lookAt(0, ty, 0);
     R.avatar.rotation.y += (v.rot - R.avatar.rotation.y) * 0.25;
+    if (R.play) playStep();
     R.renderer.render(R.scene, R.cam);
   }
-  function view(kind) { const v = R.view; if (kind === 'all') { v.z = 1; v.h = 0.55; } else if (kind === 'top') { v.z = 0.55; v.h = 0.72; } else if (kind === 'bottom') { v.z = 0.6; v.h = 0.28; } else if (kind === 'turn') v.rot += Math.PI; }
+  // кадры записаны каждые 3 шага расчёта (1/30 с) — проигрываем в реальном времени
+  function playStep() {
+    const P_ = R.play, k = P_.fixedK != null ? Math.min(P_.fixedK, P_.nf - 2) : Math.floor((performance.now() - P_.t0) / (1000 / 30));
+    if (k >= P_.nf - 1) { // конец: точная итоговая сетка (после доводки швов и оката), поза манекена — исходная
+      P_.list.forEach((g, gi) => g.children.filter(m => m.userData.cm).forEach((m, mi) => ['position', 'normal', 'color'].forEach((a, ai) => { const src = P_.saved[gi][mi][ai]; if (src) { m.geometry.attributes[a].array.set(src); m.geometry.attributes[a].needsUpdate = true; } })));
+      R.rig.rotation.y = 0; P_.pivots.forEach(p => { p.rotation.z = p.userData.armPivot.rot; }); R.play = null; return; }
+    if (k === P_.k) return; P_.k = k;
+    P_.list.forEach(g => { const A = g.userData.anim, n3 = A.F.length / A.nf; clothUpdate(g, A.F.subarray(k * n3, (k + 1) * n3)); });
+    const M = P_.list[0].userData.anim.M, yaw = M[k * 2], arm = M[k * 2 + 1];
+    R.rig.rotation.y = yaw; P_.pivots.forEach(p => { const a = p.userData.armPivot; p.rotation.z = a.rot + a.side * arm; });
+  }
+  function replay() { built.key = ''; built.fresh = true; }
+  function view(kind) { if (kind === 'motion') return replay(); const v = R.view; if (kind === 'all') { v.z = 1; v.h = 0.55; } else if (kind === 'top') { v.z = 0.55; v.h = 0.72; } else if (kind === 'bottom') { v.z = 0.6; v.h = 0.28; } else if (kind === 'turn') v.rot += Math.PI; }
 
   // ---------- интерфейс ----------
   const h = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -1824,7 +1891,7 @@ export function createFitting(ctx) {
   }
 
   return {
-    setView: kind => { if (R) view(kind); }, _avatar: () => R && R.avatar, setRot: r => { if (R) { R.view.rot = r; R.avatar.rotation.y = r; } }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
+    setView: kind => { if (R) view(kind); }, _avatar: () => R && R.avatar, setAnim: on => { ANIM.on = !!on; }, replay: () => replay(), playing: () => !!(R && R.play), _frame: k => { if (R && R.play) R.play.fixedK = k; return R && R.play ? R.play.nf : 0; }, setRot: r => { if (R) { R.view.rot = r; R.avatar.rotation.y = r; } }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
     addPack, wear(ids, states, sizes) { W.worn = []; ids.forEach(id => putOn(id, true)); Object.entries(states || {}).forEach(([id, st]) => { const it = W.items.find(i => i.id === id); if (it) it.state = st; });
       W.items.forEach(it => { if (it.sizesT) it.size = (sizes && sizes[it.id]) || null; }); persist(); render(); },
     qc: id => QC[id] || null,

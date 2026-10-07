@@ -41,4 +41,16 @@ ITEMS = [
          sizes=[dict(name='XS', ru='42', body=dict(chest=[82, 86], waist=[62, 66], hips=[90, 94]), cm=dict(chest=45, len=66)),
                 dict(name='3XL', ru='54', body=dict(chest=[106, 110], waist=[86, 90], hips=[114, 118]), cm=dict(chest=57, len=72)),
                 dict(name='4XL', ru='56', body=dict(chest=[110, 114], waist=[98, 102], hips=[116, 120]), cm=dict(chest=59, len=74))]),
+
+    # Юбка-шорты (фото пользователя из карточки магазина, модель 173 см, размер 42): складки, высокая посадка, белые шорты-подклад.
+    # В таблице — мерки тела (талия, бёдра); вещь: пояс ≈ (талия + 4) / 2, низ — трапеция по фото.
+    dict(id='sk-pleat', name='Юбка-шорты со складками', kind='skirt', src='model', front='sk-front', back='sk-back', worn=[], who='women', pleats=True,
+         note='таблица магазина — мерки тела; пояс вещи оценён',
+         sizes=[dict(name=str(n), ru=str(n), body=dict(waist=[w0, w0 + 4], hips=[h0, h0 + 4]), cm=dict(waist=round((w0 + 4) / 2, 1), len=round(40 + (n - 42) * 0.5, 1)))
+                for n, w0, h0 in ((38, 54, 82), (40, 58, 86), (42, 62, 90), (44, 66, 94), (46, 70, 98), (48, 74, 102))]),
+    # Платье отрезное по талии: лиф по фигуре, юбка-трапеция, рукав-фонарик, воротник-стойка (размер на модели S, рост 173).
+    dict(id='dr-marsala', name='Платье марсала со стойкой', kind='dress', src='model', front='dr-front', back='dr-front', worn=[], who='women', collar=True,
+         note='таблица магазина — мерки тела; ширина вещи по груди оценена (+8 см), длина — мини по фото',
+         sizes=[dict(name=nm, ru=ru, body=dict(chest=[c0, c0 + 4], waist=[w0, w0 + 4], hips=[h0, h0 + 4]), cm=dict(chest=round((c0 + 8) / 2, 1), len=ln))
+                for nm, ru, c0, w0, h0, ln in (('XS', '40', 78, 62, 88, 82), ('S', '42', 82, 62, 90, 83), ('M', '44', 86, 66, 94, 84))]),
 ]
