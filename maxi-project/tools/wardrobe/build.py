@@ -330,6 +330,10 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     xs = np.where(mm.any(0))[0]; x0, x1 = max(0, xs[0] - 2), min(m.shape[1], xs[-1] + 3)
     crop = im[top:bot + 1, x0:x1]; mc = mm[top:bot + 1, x0:x1]
     H, W = crop.shape[:2]
+    # дырки внутри силуэта (пуговицы, блик, принт другого цвета — сеть их не считает вещью) — это вещь: заливаем
+    # всё, что не связано с краем кадра (иначе на ткани прозрачные пятна, сквозь них видно тело)
+    pad = np.pad((mc > 0).astype(np.uint8), 1); ff = pad.copy() * 0 + (pad == 0).astype(np.uint8) * 255
+    cv2.floodFill(ff, None, (0, 0), 128); mc = ((ff[1:-1, 1:-1] != 128) | (mc > 0)).astype(mc.dtype)
     # края маски чуть растянуть цветом вещи, чтобы по краю выкройки не было фона
     # край вещи на фото смешан с фоном (светлый ореол): краевые 3 px тоже заменяем продолжением ткани, иначе по швам
     # выкройки, которые ложатся на край фото, видны светлые точки
@@ -547,6 +551,9 @@ def studio_load(key):
 def build(it, out=None, debug=True):
     od = os.path.join(out or OUT, it['id']); os.makedirs(od, exist_ok=True)
     meta = dict(id=it['id'], name=it['name'], kind=it['kind'], states=it.get('states'), zip=it.get('zip', False), collar=it.get('collar', False), hood=it.get('hood', False))
+    if it.get('pleats'): meta['pleats'] = True
+    if it.get('puff'): meta['puff'] = True
+    if it.get('stand'): meta['stand'] = True   # воротник-стойка   # рукав-фонарик: окат шире проймы, собран в неё; внизу — манжета
     if it.get('who'): meta['who'] = it['who']
     ovs = []
     for side in ('front', 'back'):

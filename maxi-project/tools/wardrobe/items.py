@@ -49,7 +49,7 @@ ITEMS = [
          sizes=[dict(name=str(n), ru=str(n), body=dict(waist=[w0, w0 + 4], hips=[h0, h0 + 4]), cm=dict(waist=round((w0 + 4) / 2, 1), len=round(40 + (n - 42) * 0.5, 1)))
                 for n, w0, h0 in ((38, 54, 82), (40, 58, 86), (42, 62, 90), (44, 66, 94), (46, 70, 98), (48, 74, 102))]),
     # Платье отрезное по талии: лиф по фигуре, юбка-трапеция, рукав-фонарик, воротник-стойка (размер на модели S, рост 173).
-    dict(id='dr-marsala', name='Платье марсала со стойкой', kind='dress', src='model', front='dr-front', back='dr-front', worn=[], who='women', collar=True,
+    dict(id='dr-marsala', name='Платье марсала со стойкой', kind='dress', src='model', front='dr-front', back='dr-front', worn=[], who='women', collar=True, puff=True, stand=True,
          note='таблица магазина — мерки тела; ширина вещи по груди оценена (+8 см), длина — мини по фото',
          sizes=[dict(name=nm, ru=ru, body=dict(chest=[c0, c0 + 4], waist=[w0, w0 + 4], hips=[h0, h0 + 4]), cm=dict(chest=round((c0 + 8) / 2, 1), len=ln))
                 for nm, ru, c0, w0, h0, ln in (('XS', '40', 78, 62, 88, 82), ('S', '42', 82, 62, 90, 83), ('M', '44', 86, 66, 94, 84))]),

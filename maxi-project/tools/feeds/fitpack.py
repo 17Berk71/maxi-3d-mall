@@ -123,7 +123,17 @@ def offer_fields(offer, who, brand):
     zip_, states = states_of(kind, offer.get('name'))
     sizes = size_table(offer.get('sizes') or [], kind, who, brand or offer.get('vendor', ''), offer.get('name', ''))
     return dict(name=offer.get('name', ''), kind=kind, zip=zip_, states=states, brand=brand or offer.get('vendor', ''), url=offer.get('url', ''), who=who,
-                hood=kind == 'hoodie' or 'капюш' in (offer.get('name') or '').lower(), sizes=sizes)
+                hood=kind == 'hoodie' or 'капюш' in (offer.get('name') or '').lower(), sizes=sizes, **style_of(kind, offer))
+
+
+def style_of(kind, offer):
+    """Особенности кроя по названию и описанию: складки (плиссе), рукав-фонарик, воротник-стойка — выкройка в примерочной их учитывает."""
+    t = ((offer.get('name') or '') + ' ' + (offer.get('desc') or offer.get('description') or '')).lower().replace('ё', 'е')
+    out = {}
+    if kind in ('skirt', 'dress') and re.search(r'плиссе|складк|гофре', t): out['pleats'] = True
+    if kind in ('dress', 'shirt', 'tee') and re.search(r'фонарик|пышн\w* рукав|объемн\w* рукав|буф', t): out['puff'] = True
+    if kind in ('dress', 'shirt', 'sweater') and re.search(r'стойк', t): out['stand'] = True
+    return out
 
 
 def clone_pack(src_iid, offer, iid, out, who='', brand=''):
