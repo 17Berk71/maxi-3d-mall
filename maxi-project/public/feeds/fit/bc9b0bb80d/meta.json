@@ -310,10 +310,10 @@
  "src": "studio",
  "files": "31ead28ae8",
  "qc": {
-  "score": 81,
+  "score": 92,
   "ok": true,
   "bad": [
-   "натяжение"
+   "сквозь тело"
   ]
  }
 }

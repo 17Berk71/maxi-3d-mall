@@ -315,10 +315,8 @@
  "src": "studio",
  "files": "e57091c4bc",
  "qc": {
-  "score": 86,
+  "score": 100,
   "ok": true,
-  "bad": [
-   "натяжение"
-  ]
+  "bad": []
  }
 }

@@ -251,7 +251,8 @@ def top_parts(im, m, kind):
 PERSP = 0.3            # вещь на полу снята сверху наискосок: низ кадра ближе к камере и крупнее (≈30% на всю вещь)
 
 
-def bottom_parts(im, m, kind, flat=False, crotch_frac=None):
+def bottom_parts(im, m, kind, flat=False, crotch_frac=None, persp=None):
+    persp = flat if persp is None else persp   # поправка перспективы — только фото на полу (студийное снято прямо)
     h, w = m.shape
     wid = m.sum(1)
     big = np.where(wid > wid.max() * .25)[0]
@@ -300,7 +301,7 @@ def bottom_parts(im, m, kind, flat=False, crotch_frac=None):
     # форма для примерочной (в долях ширины пояса): лёжа штанины расходятся «домиком» —
     # длину и ширину штанины меряем вдоль её оси, а не по вертикали кадра
     ww = float(np.median(wid[top:top + max(3, int(L * .03))]))
-    pk = (lambda y: 1 / (1 + PERSP * (y - top) / L)) if flat else (lambda y: 1.0)
+    pk = (lambda y: 1 / (1 + PERSP * (y - top) / L)) if persp else (lambda y: 1.0)
     hipw = [round(float(np.median(wid[int(top + (crotch - top) * t) - 1:int(top + (crotch - top) * t) + 2])) * pk(top + (crotch - top) * t) / ww, 4) for t in np.linspace(.02, .98, 8)]
     legs = []
     for sd in (-1, 1):
@@ -546,7 +547,7 @@ def build(it, out=None, debug=True):
         if it.get('sizes') and part is bottom_parts and it['kind'] != 'skirt':
             c0 = it['sizes'][0]['cm']
             if c0.get('outseam') and c0.get('inseam'): cf = (c0['outseam'] - c0['inseam']) / c0['outseam']
-        tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf) if part is bottom_parts else part(im, m, it['kind'])
+        tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf, flat and it.get('src') != 'studio') if part is bottom_parts else part(im, m, it['kind'])
         if it.get('src') == 'model' and side == 'front' and LAST_HEM is not None: meta['hem_waist'] = LAST_HEM
         if not flat and it.get('src') != 'model':
             g = wall_gain(im); tex = apply_gain(tex, g)

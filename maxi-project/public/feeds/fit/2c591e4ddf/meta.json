@@ -310,11 +310,8 @@
  "src": "studio",
  "files": "b8f00e7eb7",
  "qc": {
-  "score": 72,
+  "score": 100,
   "ok": true,
-  "bad": [
-   "натяжение",
-   "силуэт"
-  ]
+  "bad": []
  }
 }

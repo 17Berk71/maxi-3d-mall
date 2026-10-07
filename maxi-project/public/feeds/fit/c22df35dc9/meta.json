@@ -310,10 +310,10 @@
  "src": "studio",
  "files": "2deb75baac",
  "qc": {
-  "score": 75,
+  "score": 84,
   "ok": true,
   "bad": [
-   "натяжение",
+   "сквозь тело",
    "дырки"
   ]
  }

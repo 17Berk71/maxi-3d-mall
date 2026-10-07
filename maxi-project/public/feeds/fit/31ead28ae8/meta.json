@@ -309,10 +309,10 @@
  "sleeve": true,
  "src": "studio",
  "qc": {
-  "score": 81,
+  "score": 92,
   "ok": true,
   "bad": [
-   "натяжение"
+   "сквозь тело"
   ]
  }
 }
