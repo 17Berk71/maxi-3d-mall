@@ -350,6 +350,9 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     if 'hw' in info: a.update(hw=info['hw'] / W, arm=(info['arm'] - top) / H)
     if 'crotch' in info: a.update(crotch=(info['crotch'] - top) / H)
     zc = find_zip(filled, mc, a['cx'], a.get('arm', 0.25)) if zip_ and side == 'front' else None
+    # без молнии — планка с пуговицами (платье, рубашка): середина переда по линии пуговиц, иначе на фото вполоборота
+    # пуговицы в примерочной уезжают вбок от середины
+    if not zc and side == 'front' and kind in ('dress', 'shirt', 'coat', 'jacket'): zc = find_buttons(filled, mc, a['cx'])
     if zc: a['zipc'] = zc
     return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, list) else round(float(v), 4)) for k_, v in a.items()})
 
@@ -380,6 +383,34 @@ def find_zip(rgb, mc, cx, arm):
     p3 = np.polyfit(ys[keep], xs[keep], 3)
     rows = np.clip((np.arange(DRAPE_ROWS) + 0.5) / DRAPE_ROWS * H, ys[keep].min(), ys[keep].max())
     return [round(float(v) / W, 4) for v in np.polyval(p3, rows)]
+
+
+def find_buttons(rgb, mc, cx):
+    """Пуговицы на фото переда: небольшие круглые пятна, заметно светлее или темнее ткани вокруг, у середины вещи,
+    не меньше четырёх на одной прямой. Возвращает середину переда по прямой через них (доля ширины по DRAPE_ROWS строкам)."""
+    H, W = mc.shape
+    g = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    k = max(5, int(W * 0.08) | 1)
+    bg = cv2.medianBlur(np.clip(g, 0, 255).astype(np.uint8), k).astype(np.float32)
+    best = None
+    for sgn in (1, -1):
+        m = (((g - bg) * sgn > 30) & (mc > 0)).astype(np.uint8)
+        n, lab, st, cen = cv2.connectedComponentsWithStats(m, 8)
+        pts = []
+        for i in range(1, n):
+            x, y, w, h, area = st[i]
+            if area < (W * 0.008) ** 2 or area > (W * 0.06) ** 2 or max(w, h) > 2.2 * min(w, h): continue
+            if abs(cen[i][0] / W - cx) > 0.16: continue
+            pts.append(cen[i])
+        if len(pts) < 4: continue
+        P = np.array(pts); keep = np.ones(len(P), bool)
+        for _ in range(3):
+            p = np.polyfit(P[keep, 1], P[keep, 0], 1); r = np.abs(np.polyval(p, P[:, 1]) - P[:, 0]); keep = r < W * 0.02
+            if keep.sum() < 4: break
+        if keep.sum() >= 4 and abs(p[0]) < 0.15 and (best is None or keep.sum() > best[1]): best = (p, int(keep.sum()))
+    if best is None: return None
+    rows = (np.arange(DRAPE_ROWS) + 0.5) / DRAPE_ROWS * H
+    return [round(float(v) / W, 4) for v in np.polyval(best[0], rows)]
 
 
 def overlay(im, m, info, kind):
