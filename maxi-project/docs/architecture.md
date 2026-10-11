@@ -62,5 +62,6 @@
 - `tools/feeds/` — выгрузки товаров магазинов (`import_feed.py`), пакеты примерки (`fitpack.py`), размеры (`sizes.py`), бренды.
 - `tools/wardrobe/` — фабрика вещей из фото: `build.py` (порядок шагов и запуск) → `photo_io.py` (чтение фото), `cutout.py` (вырезание из фона), `parts_top.py` / `parts_bottom.py` (части и мерки), `drape_cut.py` (выкройка для расчёта ткани, молния, пуговицы), `color_balance.py`, `model_photo.py` (фото на человеке), `seg_person.py` (нейросеть), `debug_view.py`, `wardrobe_paths.py`, `items.py` (список вещей). Автопроверка — `tools/wardrobe/qc/`.
 - `tools/test/check.mjs` — проверка сайта в браузере (`npm run check`).
+- `tools/lab/` — лаборатория проверок: снимки вещей на фигуре, автопроверка посадки, анимация и видео, «до/после», полная проверка сайта без Vite (`tools/lab/README.md`).
 - `tools/docs/modules.mjs` — карта модулей (`docs/modules.md`).
 - `tools/deploy/` — выкладка в Яндекс Object Storage.

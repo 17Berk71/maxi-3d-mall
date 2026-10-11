@@ -8,3 +8,9 @@ __pycache__/
 tools/wardrobe/models/
 tools/feeds/cache/
 tools/feeds/qc_out/
+tools/lab/www/
+tools/lab/www-esm/
+tools/lab/shots/
+tools/lab/vid/
+tools/lab/out/
+tools/lab/server.log

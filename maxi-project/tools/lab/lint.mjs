@@ -1,0 +1,13 @@
+// lint.mjs [DIR] — проверка имён в модулях (eslint no-undef): необъявленные переменные после переноса кода между файлами.
+// UNUSED=1 — ещё и неиспользуемые. По умолчанию — maxi-project/src. eslint: npm i -D eslint, ESLINT_PATH=… или облачная песочница.
+import fs from 'node:fs'; import path from 'node:path'; import {ROOT, need} from './common.mjs';
+const {Linter} = need('eslint', 'ESLINT_PATH', ['/opt/node-tools/node_modules/eslint']);
+const dir = process.argv[2] || path.join(ROOT, 'src'), linter = new Linter({configType: 'flat'});
+const G = 'window document self location navigator console performance requestAnimationFrame cancelAnimationFrame setTimeout clearTimeout setInterval clearInterval localStorage sessionStorage indexedDB URL URLSearchParams Blob Worker Image HTMLCanvasElement fetch innerWidth innerHeight devicePixelRatio addEventListener removeEventListener matchMedia getComputedStyle alert ResizeObserver IntersectionObserver Intl structuredClone queueMicrotask screen history scrollTo Event CustomEvent KeyboardEvent PointerEvent TouchEvent FontFace OffscreenCanvas ImageData createImageBitmap atob btoa TextEncoder TextDecoder crypto AbortController Promise Map Set WeakMap Float32Array Uint8Array Uint16Array Uint32Array Int32Array Int16Array Uint8ClampedArray Float64Array ArrayBuffer DataView Symbol Reflect Proxy BigInt globalThis Number Math JSON Date RegExp Error Object Array String Boolean Function isNaN isFinite parseFloat parseInt encodeURIComponent decodeURIComponent Infinity NaN undefined THREE getSelection open scrollY scrollX outerWidth MutationObserver visualViewport CSS DOMParser XMLSerializer Option Audio speechSynthesis SpeechSynthesisUtterance caches WebGLRenderingContext WebGL2RenderingContext HTMLElement Element Node EventTarget MessageChannel BroadcastChannel postMessage onmessage'.split(' ');
+const files = []; (function w(d) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) { if (f !== 'data' && f !== 'assets') w(p); } else if (f.endsWith('.js')) files.push(p); } })(dir);
+let n = 0;
+for (const f of files) {
+  const msgs = linter.verify(fs.readFileSync(f, 'utf8'), [{languageOptions: {ecmaVersion: 'latest', sourceType: 'module', globals: Object.fromEntries(G.map(k => [k, 'writable']))},
+    rules: {'no-undef': 'error', 'no-unused-vars': ['warn', {vars: 'all', args: 'none', caughtErrors: 'none'}]}}], 'file.js');
+  for (const m of msgs) { if (m.ruleId === 'no-unused-vars' && process.env.UNUSED !== '1') continue; n++; console.log(path.relative(dir, f) + ':' + m.line + '  ' + (m.ruleId || '') + '  ' + m.message); } }
+console.log(files.length, 'файлов, замечаний:', n);
