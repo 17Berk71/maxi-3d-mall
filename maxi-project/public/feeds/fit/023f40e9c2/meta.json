@@ -176,7 +176,7 @@
  },
  "front": {
   "len_w": 1.837,
-  "sleeve": 1,
+  "sleeve": 1.0,
   "full_w": 1.613,
   "color": [
    30,
@@ -187,7 +187,7 @@
  },
  "back": {
   "len_w": 1.837,
-  "sleeve": 1,
+  "sleeve": 1.0,
   "full_w": 1.613,
   "color": [
    30,
@@ -198,7 +198,7 @@
  },
  "fit": {
   "len_w": 1.837,
-  "sleeve": 1,
+  "sleeve": 1.0,
   "full_w": 1.613
  },
  "shape": {
@@ -240,7 +240,7 @@
     ]
    },
    "cm": {
-    "chest": 54,
+    "chest": 54.0,
     "len": 68.5
    },
    "est": true
@@ -259,8 +259,8 @@
     ]
    },
    "cm": {
-    "chest": 56,
-    "len": 70
+    "chest": 56.0,
+    "len": 70.0
    },
    "est": true
   },
@@ -278,8 +278,8 @@
     ]
    },
    "cm": {
-    "chest": 60,
-    "len": 73
+    "chest": 60.0,
+    "len": 73.0
    },
    "est": true
   },
@@ -297,7 +297,7 @@
     ]
    },
    "cm": {
-    "chest": 62,
+    "chest": 62.0,
     "len": 74.5
    },
    "est": true
@@ -308,10 +308,5 @@
  "color": "#1e283e",
  "sleeve": true,
  "src": "studio",
- "files": "b8f00e7eb7",
- "qc": {
-  "score": 100,
-  "ok": true,
-  "bad": []
- }
+ "files": "b8f00e7eb7"
 }

@@ -143,7 +143,8 @@ export function drapePrepare(item, d, under) {
     const sK = merged ? 0.3 : 0.62, sUV = ownS ? (u, v) => [u, v] : worn ? (u, v) => [aF.cx + (aF.hw || 0.3) * (0.32 + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.5 + 0.2 * v] : (u, v) => [aF.cx + (aF.hw || 0.3) * (sK + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.3 + 0.45 * v];   // рукава слились с корпусом на фото — ткань ближе к середине (с края там рука и блик)
     let armLen = 0; for (let i = 1; i < arm.length; i++) armLen += Math.hypot(arm[i][0] - arm[i - 1][0], arm[i][1] - arm[i - 1][1]);
     // окат = длине проймы по выкройке (перед + спинка); иначе шов растягивает верх рукава («рожки» на плечах)
-    const hole = Math.max((M.AD + 0.01) * 2.1, armLen * 2 * 0.97), r0 = Math.max(hole / (2 * Math.PI), armRad(d, 0) + 0.015), r1 = Math.max(M.SO / Math.PI, armRad(d, Math.min(1, M.SL / j.L)) + 0.008);
+    // ×1.1 — запас оката, как у настоящего рукава: пройма на теле растягивается, и без запаса верх рукава натянут (автопроверка «натяжение» 3–10% у рукавов)
+    const hole = Math.max((M.AD + 0.01) * 2.1, armLen * 2 * 0.97) * 1.1, r0 = Math.max(hole / (2 * Math.PI), armRad(d, 0) + 0.015), r1 = Math.max(M.SO / Math.PI, armRad(d, Math.min(1, M.SL / j.L)) + 0.008);
     (M.noSleeve ? [] : [-1, 1]).forEach(side => {   // платье без рукавов (сарафан) — пройма остаётся открытой
       const D = new THREE.Vector3(Math.sin(j.th) * side, -Math.cos(j.th), 0);
       // начало рукава — в середине проймы (между плечевой точкой и подмышкой), чтобы шов сошёлся без натяжки
@@ -176,6 +177,8 @@ export function drapePrepare(item, d, under) {
     });
     if (hooded) addHood(C, d, M, fronts, pb, mS, hoodUp, cell, ownS ? null : sUV);
     else if (item.stand) addStand(C, d, yTop, fronts, pb, mF, aF);
+    // отложной воротник (поло, рубашка) — объёмной деталью по горловине на показе (collar3d.js)
+    if (item.collar && !item.stand && !hooded) C.collar = {ring: fronts.concat([pb]).flatMap(P_ => P_.pts.filter(p => p.edge && p.lab === 'neck').map(p => p.g)), a: aF, hs: 0.028 * d.s, fw: 0.044 * d.s};
   } else if (k === 'skirt') {
     // юбка: перед и спинка во всю ширину, сшиты по бокам; пояс на талии, книзу — по ширине на фото (прямая, трапеция, клёш)
     const {yW, WW, Lk, wvis} = skirtProf(item, d);
@@ -238,7 +241,7 @@ export function drapePrepare(item, d, under) {
     const lw = sp.lw.slice(), TW = Math.max(lw[0], HP * 0.55, d.thigh * Math.PI + 0.02);
     // штанина не уже ноги (+ свободное облегание ~3 см по полуобхвату): иначе тесная труба в расчёте соскакивает с ноги вбок
     const legW = t => { const yf = (sp.yW - R - IN * t) / H, r = Math.min(legR(d, Math.max(0, yf)), d.legX - 0.002) + 0.007; return Math.max(interp(lw, t) * (TW / lw[0]), 0.12, Math.PI * r + 0.03); };
-    yPin = sp.yW; info = {WW, HP, R, IN, TW}; fit.BOT_YW = sp.yW;
+    yPin = sp.yW; info = {WW, HP, R, IN, TW, sp}; fit.BOT_YW = sp.yW;
     cover = {y0: sp.yHem + 0.03, y1: sp.yW - 0.005, torso: true, legs: true};
     // выкройка как у настоящих брюк: четыре детали (перед и спинка, левая и правая). Штанина — вокруг своей ноги (ось на legX):
     // у широкой штанины внутренний край заходит за середину — это «шаговый язычок», он уходит между ног вглубь.
@@ -295,7 +298,7 @@ export function drapePrepare(item, d, under) {
     C.sector = []; [1, -1].forEach(sg => { const sp_ = spansOf(polyOf(sg)); ['f', 'b'].forEach(k => parts[k + sg].pts.forEach(p => { if (p.y <= R + cell) return; const iv = sp_(p.y); if (!iv) return;
       const inn = sg > 0 ? iv[0] : iv[1], out = sg > 0 ? iv[1] : iv[0], t = (p.x - inn) / ((out - inn) || 1e-4); C.sector.push([p.g, k === 'f' ? 1 : -1, t < 0.3 ? -sg : t > 0.7 ? sg : 0, sg * (d.legX + 0.01)]); })); });
   }
-  const finish = P => { if (typeof window !== 'undefined' && window.__dbgC) window.__dbgC.push({k, C, P});
+  const finish = P => { if (typeof window !== 'undefined' && window.__dbgC) window.__dbgC.push({k, C, P, item, info, d});
   // окат рукава после расчёта кладём точно на край проймы (между сшитыми точками кольцо рукава иначе отходит — видна щель)
   if (!item.puff) shoulderRound(C, P, chains, push);   // плечевая точка без острого угла (до укладки оката на пройму); у рукава-фонарика сборка на плече — задумана
   chains.forEach(({ring, lf, lb, rings}) => { const segs = ring.length;
@@ -309,6 +312,7 @@ export function drapePrepare(item, d, under) {
     // верх рукава вдоль руки сглаживаем: запас оката иначе встаёт «погоном» над плечом
     const G = rings || []; for (let pass = 0; pass < 4; pass++) for (let i = 1; i < Math.min(4, G.length - 1); i++) for (let j = 0; j < segs; j++) { const a = G[i - 1][j] * 3, b = G[i][j] * 3, c = G[i + 1][j] * 3;
       for (let k = 0; k < 3; k++) P[b + k] += ((P[a + k] + P[c + k]) / 2 - P[b + k]) * 0.6; push(P, b); } });
+  C.ringSewn = chains.flatMap(ch => ch.ring);   // всё верхнее кольцо рукава вшито в пройму (в швах — только часть точек)
   const g = clothMeshes(C, P, H);
   g.userData.measures = info; if (cover) g.userData.cover = Object.assign(cover, {color: base});
   if (typeof window !== 'undefined' && window.__keep) window.__last = {C, P};

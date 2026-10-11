@@ -6,7 +6,7 @@ import numpy as np, cv2
 DRAPE_ROWS = 64
 
 
-def cut_for_drape(im, m, info, kind, od, side, zip_=False):
+def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     """Для симуляции ткани: вырезанное фото (RGBA) по силуэту вещи и грубая сетка силуэта — это «выкройка» перед/спинки.
     Координаты якорей — в долях кадра выреза (0..1)."""
     top, bot = info['top'], info['bot']
@@ -31,6 +31,11 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
         bm = np.zeros(mc.shape, np.uint8)
         for b_ in btn['buttons']: cv2.circle(bm, (int(b_['u'] * W), int(b_['v'] * H)), int(b_['r'] * W * 1.8) + 3, 255, -1)
         filled = cv2.inpaint(filled, bm, 7, cv2.INPAINT_TELEA)
+    # отложной воротник другого цвета (белый у тёмного поло) — в примерочной отдельная объёмная деталь (collar3d.js):
+    # с ткани его убираем (иначе под объёмным воротником виден нарисованный), цвет пишем в выкройку (a.collar)
+    col_ = find_collar(filled, mc, cxa) if collar else None
+    if col_:
+        filled = cv2.inpaint(filled, col_['mask'], 9, cv2.INPAINT_TELEA)
     rgba = np.dstack([filled, (cv2.GaussianBlur(mc.astype(np.float32), (3, 3), 0) * 255).clip(0, 255).astype(np.uint8)])
     k = 720 / H if H > 720 else 1
     if k < 1: rgba = cv2.resize(rgba, (int(W * k), int(H * k)), interpolation=cv2.INTER_AREA)
@@ -47,7 +52,8 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     if not zc and btn and btn['line']: zc = btn['line']
     if zc: a['zipc'] = zc
     if btn and btn['buttons']: a['buttons'] = btn['buttons']
-    return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, list) else round(float(v), 4)) for k_, v in a.items()})
+    if col_: a['collar'] = dict(rgb=col_['rgb'])
+    return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, (list, dict)) else round(float(v), 4)) for k_, v in a.items()})
 
 
 def find_zip(rgb, mc, cx, arm):
@@ -134,3 +140,28 @@ def find_buttons(rgb, mc, cx, kind):
     hexc = '#%02x%02x%02x' % tuple(int(np.clip(c, 0, 255)) for c in col)
     for b_ in btns: b_['rgb'] = hexc
     return dict(line=line, buttons=btns)
+
+
+def find_collar(rgb, mc, cx):
+    """Воротник другого цвета у горловины: в верхней пятой части вещи, у шеи, заметно отличается от ткани корпуса и не темнее
+    её (тени и щели у горловины темнее). Планку посередине не трогаем. Возвращает маску (для заливки тканью) и цвет — или None."""
+    H, W = mc.shape
+    lab = cv2.cvtColor(rgb, cv2.COLOR_BGR2LAB).astype(np.float32)
+    band = (slice(int(H * .35), int(H * .6)), slice(int(W * max(0, cx - .2)), int(W * min(1, cx + .2))))
+    ref = lab[band][mc[band] > 0]
+    if len(ref) < 50: return None
+    c0 = np.median(ref, 0)
+    yy, xx = np.mgrid[0:H, 0:W]
+    zone = (yy < H * .22) & (np.abs(xx / W - cx) < .42) & (np.abs(xx / W - cx) > .045) & (mc > 0)
+    far = (np.linalg.norm(lab - c0, axis=2) > 40) & (lab[..., 0] >= c0[0] * .85) & zone
+    far = cv2.morphologyEx(far.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    if far.sum() < zone.sum() * .08: return None
+    # только куски, что доходят до горловины (верхние 8% вещи): принт на груди — не воротник
+    n, lb, st, _ = cv2.connectedComponentsWithStats(far)
+    keep = np.zeros_like(far)
+    for k in range(1, n):
+        if st[k, cv2.CC_STAT_TOP] < H * .08 and st[k, cv2.CC_STAT_AREA] > zone.sum() * .01: keep[lb == k] = 1
+    if keep.sum() < zone.sum() * .06: return None
+    bgr = np.median(rgb[keep > 0], 0)
+    mask = cv2.dilate(keep, np.ones((7, 7), np.uint8)) * 255
+    return dict(mask=mask, rgb='#%02x%02x%02x' % (int(bgr[2]), int(bgr[1]), int(bgr[0])))

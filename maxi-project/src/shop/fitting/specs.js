@@ -103,7 +103,8 @@ export function bottomSpec(item, d) {
   if (cm.hip) { const f = cm.hip / 100 * 0.55 / lw[0]; lw = lw.map(v => v * f); const n = lw.length; lw[n - 1] = Math.max(lw[n - 1], lw[n - 3] * 0.9); lw[n - 2] = Math.max(lw[n - 2], lw[n - 3] * 0.95); }
   else if (cm.hem) { const n = lw.length, ref = lw.slice(Math.max(0, n - 6), n - 2).sort((a, b) => a - b)[1] || lw[n - 1], f = cm.hem / 100 / ref;
     lw = lw.map(v => v * f); lw[n - 1] = lw[n - 2] = cm.hem / 100; }
-  for (let i = 1; i < lw.length - 1 && cm.hip; i++) lw[i] = Math.min(lw[i], lw[0] * 1.15);
+  // штанина книзу не шире 1.6 ширины у шага (выбросы фото); бочки и клёш расширяются до ~1.4–1.5 — их не срезать
+  for (let i = 1; i < lw.length - 1 && cm.hip; i++) lw[i] = Math.min(lw[i], lw[0] * 1.6);
   // бёдра (полуобхват): по таблице или по фото (середина посадки; ниже на фото лёжа уже расходятся штанины)
   const hip = cm.hip ? cm.hip / 100 : sh.hip && sh.hip.length > 3 ? sh.hip[3] * kk : 0;
   return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip};

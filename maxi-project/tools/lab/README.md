@@ -25,7 +25,8 @@ cp -r /tmp/wardrobe-private/raw /tmp/wardrobe-private/out tools/wardrobe/     # 
 |---|---|
 | Собрать страницу кабины и поднять сервер (порт 8091, `PORT=` — другой) | `./serve.sh` |
 | Снять вещи на фигуре: 3 угла, автопроверка и подсказка посадки | `node shot.mjs skirt sk-pleat` → `shots/w_skirt_*.png` |
-| Только автопроверка списка вещей | `node qc.mjs zolla-tee,polo,sk-pleat` |
+| Только автопроверка списка вещей | `node qc.mjs zolla-tee,polo,sk-pleat` (`PACK=feeds/fit/` — пакеты выгрузки магазинов) |
+| Силуэт вещи против фото по строкам | `node prof.mjs barrel-jeans,cream-shorts` |
 | Кадры анимации надевания | `node anim.mjs dress '["dr-marsala"]'` (`KS=0,40,80` — отдельные кадры) |
 | Видео анимации | `./vid.sh dress '["dr-marsala"]'` → `./mkvid.sh dress dress.mp4` |
 | Текстуры ткани после обработки фото | `node texdump.mjs sk-pleat` |

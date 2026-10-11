@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import {noteAB} from './geometry.js';
 import {buildDecor, decorUpdate} from './decor.js';
+import {buildEdge, edgeUpdate, edgeThickness} from './edges.js';
+import {buildCollar, collarUpdate} from './collar3d.js';
 import {pleatGrid, pleatUpdate, pleatSmooth, liningBand, liningUpdate} from './pleats.js';
 import {clothify, FT} from './cloth-material.js';
 import {LIN} from './common.js';
@@ -75,13 +77,13 @@ export function clothUpdate(g, P) {
     let r = m.verts.length; for (const [i, j] of cm.edges) {
       const dx = pos[j * 3] - pos[i * 3], dy = pos[j * 3 + 1] - pos[i * 3 + 1], dz = pos[j * 3 + 2] - pos[i * 3 + 2], nix = nor[i * 3], niy = nor[i * 3 + 1], niz = nor[i * 3 + 2], njx = nor[j * 3], njy = nor[j * 3 + 1], njz = nor[j * 3 + 2];
       const v_ = 2 * ((dx * (nix + njx) + dy * (niy + njy) + dz * (niz + njz)) / Math.max(1e-9, dx * dx + dy * dy + dz * dz)), hx = nix + njx - v_ * dx, hy = niy + njy - v_ * dy, hz = niz + njz - v_ * dz, hl = Math.hypot(hx, hy, hz) || 1;
-      const off = ((njx - nix) * dx + (njy - niy) * dy + (njz - niz) * dz) / 8;
+      const off = cm.straight && cm.straight.has(r - m.verts.length) ? 0 : ((njx - nix) * dx + (njy - niy) * dy + (njz - niz) * dz) / 8;
       pos[r * 3] = (pos[i * 3] + pos[j * 3]) / 2 + (nix + njx) / 2 * off; pos[r * 3 + 1] = (pos[i * 3 + 1] + pos[j * 3 + 1]) / 2 + (niy + njy) / 2 * off; pos[r * 3 + 2] = (pos[i * 3 + 2] + pos[j * 3 + 2]) / 2 + (niz + njz) / 2 * off;
       nor[r * 3] = hx / hl; nor[r * 3 + 1] = hy / hl; nor[r * 3 + 2] = hz / hl; if (col) col[r * 3] = col[r * 3 + 1] = col[r * 3 + 2] = (col[i * 3] + col[j * 3]) / 2; r++; }
     if (m.relief) pleatRelief(mesh.geometry, m.relief, cm.edges, m.verts.length);
     pa.needsUpdate = true; na.needsUpdate = true; if (ca) ca.needsUpdate = true; mesh.geometry.computeBoundingSphere(); });
   const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); }
-  g.children.forEach(o => { if (o.userData.lining) liningUpdate(o); });
+  g.children.forEach(o => { if (o.userData.lining) liningUpdate(o); if (o.userData.edge) edgeUpdate(o); if (o.userData.collar) collarUpdate(o, P, N); });
   decorUpdate(g, P, N);
 }
 export function clothMeshes(C, P, H) {
@@ -95,12 +97,17 @@ export function clothMeshes(C, P, H) {
   clothNormals(C, P, flips, N);
   // затенение складок (как ambient occlusion): во впадине точка ниже соседей по нормали — темнее, на гребне — чуть светлее
   const AO = clothAO(C, P, N, n), WR = clothWrk(C, P, n);
-  g.userData.cloth = {C, flips};
+  const cl0 = g.userData.cloth = {C, flips};
+  const sewnG = new Set(C.seams.flatMap(([i, j]) => [i, j]).concat(C.ringSewn || [])); cl0.sewnG = sewnG;
   C.meshes.forEach((m, mi) => {
     if (m.relief && m.relief.rc) {   // складки формой (pleats.js): своя мелкая сетка
       if (!m.mat.vertexColors) { m.mat.vertexColors = true; m.mat.needsUpdate = true; }
       const pg = pleatGrid(m, m.relief); const mesh = new THREE.Mesh(pg.geo, m.mat); mesh.castShadow = true; mesh.receiveShadow = true; if (m.role) mesh.userData.role = m.role; mesh.userData.pg = pg; g.add(mesh); return; }
     const pos = [], nor = [], uv = [], col = [], uvm = [], wrk = [], idx = [], mid = new Map();
+    // край детали, пришитый к другой (пройма, бока, плечи): середина ребра — на прямой, без прогиба. Иначе у двух деталей
+    // прогибы разные (свои нормали, своя густота точек) — между ними щель, в ней видна тёмная изнанка
+    const ecnt = new Map(); for (let t = 0; t < m.tris.length; t += 3) for (const [x, y] of [[0, 1], [1, 2], [2, 0]]) { const a = m.tris[t + x], b = m.tris[t + y], key = a < b ? a * 100000 + b : b * 100000 + a; ecnt.set(key, (ecnt.get(key) || 0) + 1); }
+    const straight = new Set(); ecnt.forEach((c, key) => { if (c === 1 && sewnG.has(m.verts[Math.floor(key / 100000)]) && sewnG.has(m.verts[key % 100000])) straight.add(key); });
     m.verts.forEach((v, k) => { pos.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); nor.push(N[v * 3], N[v * 3 + 1], N[v * 3 + 2]); uv.push(m.uv[k][0], 1 - m.uv[k][1]); col.push(AO[v], AO[v], AO[v]);
       const um = m.uvm ? m.uvm[k] : [0, 0]; uvm.push(um[0], um[1]); wrk.push(WR[v * 2], WR[v * 2 + 1]); });
     // середина ребра — по кривой (PN-треугольники): точка сдвинута по нормалям концов, а не лежит на прямой
@@ -108,7 +115,7 @@ export function clothMeshes(C, P, H) {
       const pi = [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]], pj = [pos[j * 3], pos[j * 3 + 1], pos[j * 3 + 2]], ni = [nor[i * 3], nor[i * 3 + 1], nor[i * 3 + 2]], nj = [nor[j * 3], nor[j * 3 + 1], nor[j * 3 + 2]];
       const d = [pj[0] - pi[0], pj[1] - pi[1], pj[2] - pi[2]], v = 2 * ((d[0] * (ni[0] + nj[0]) + d[1] * (ni[1] + nj[1]) + d[2] * (ni[2] + nj[2])) / Math.max(1e-9, d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
       const hn = [ni[0] + nj[0] - v * d[0], ni[1] + nj[1] - v * d[1], ni[2] + nj[2] - v * d[2]], hl = Math.hypot(...hn) || 1;
-      const off = ((nj[0] - ni[0]) * d[0] + (nj[1] - ni[1]) * d[1] + (nj[2] - ni[2]) * d[2]) / 8;   // прогиб дуги над хордой
+      const off = straight.has(key) ? 0 : ((nj[0] - ni[0]) * d[0] + (nj[1] - ni[1]) * d[1] + (nj[2] - ni[2]) * d[2]) / 8;   // прогиб дуги над хордой
       r = pos.length / 3;
       pos.push((pi[0] + pj[0]) / 2 + (ni[0] + nj[0]) / 2 * off, (pi[1] + pj[1]) / 2 + (ni[1] + nj[1]) / 2 * off, (pi[2] + pj[2]) / 2 + (ni[2] + nj[2]) / 2 * off);
       nor.push(hn[0] / hl, hn[1] / hl, hn[2] / hl); uv.push((uv[i * 2] + uv[j * 2]) / 2, (uv[i * 2 + 1] + uv[j * 2 + 1]) / 2); uvm.push((uvm[i * 2] + uvm[j * 2]) / 2, (uvm[i * 2 + 1] + uvm[j * 2 + 1]) / 2); wrk.push((wrk[i * 2] + wrk[j * 2]) / 2, (wrk[i * 2 + 1] + wrk[j * 2 + 1]) / 2); const ao = (col[i * 3] + col[j * 3]) / 2; col.push(ao, ao, ao); mid.set(key, r); return r; };
@@ -118,13 +125,18 @@ export function clothMeshes(C, P, H) {
     if (!m.mat.vertexColors) { m.mat.vertexColors = true; if (!m.mat.userData.ft) aoEmissive(m.mat); m.mat.needsUpdate = true; }
     const mesh = new THREE.Mesh(geo, m.mat); mesh.castShadow = true; mesh.receiveShadow = true; if (m.role) mesh.userData.role = m.role;
     mesh.userData.cm = {mi, edges: [...mid.entries()].sort((a_, b_) => a_[1] - b_[1]).map(([key]) => [Math.floor(key / 100000), key % 100000])}; g.add(mesh);
+    mesh.userData.cm.straight = new Set(mesh.userData.cm.edges.map(([i, j], q) => straight.has(i < j ? i * 100000 + j : j * 100000 + i) ? q : -1).filter(q => q >= 0));
     if (m.relief) pleatRelief(geo, m.relief, mesh.userData.cm.edges, m.verts.length);
+    // толщина на открытых краях (низ, манжеты, горловина): пришитые края — нет
+    const nv = m.verts.length, ce = mesh.userData.cm.edges, sw = k => k < nv ? sewnG.has(m.verts[k]) : sewnG.has(m.verts[ce[k - nv][0]]) && sewnG.has(m.verts[ce[k - nv][1]]);
+    if (!(typeof window !== 'undefined' && window.__noEdge)) { const ed = buildEdge(mesh, sw, edgeThickness(FT, m.mat.userData.ft)); if (ed) g.add(ed); }
   });
   { const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); } }
   // слой для следующих вещей — только корпус (перед, спинка); рукава и капюшон не расширяют «туловище» верхней вещи
   // нижний слой у подола (шорты-подклад, подъюбник) — лента по низу переда и спинки
   if (C.lining) { const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length === 2) { const lm = new THREE.MeshPhysicalMaterial({color: LIN(C.lining.color), roughness: 0.9, side: THREE.DoubleSide, sheen: new THREE.Color(0.1, 0.1, 0.1), envMapIntensity: 0.3, reflectivity: 0.15}); clothify(lm, FT.woven);
     const band = liningBand(pgs, C.lining.len, lm); liningUpdate(band); g.add(band); } }
+  if (C.collar) { const fm = C.meshes.find(m => m.role === 'front'); if (fm) buildCollar(g, C, P, N, fm.mat); }   // отложной воротник объёмом
   buildDecor(g, C, P, N);   // пуговицы — объёмные детали на ткани
   if (fit.UNDER) C.meshes.forEach(m => { if (m.role !== 'front' && m.role !== 'back') return; m.verts.forEach(i => noteAB(P[i * 3 + 1] / H, Math.abs(P[i * 3]) + 0.004, Math.abs(P[i * 3 + 2]) + 0.004)); });
   return g;

@@ -63,7 +63,7 @@ def build(it, out=None, debug=True):
             if sleeve is not None: sleeve = apply_gain(sleeve, g)
             mm['color'] = tuple(int(c) for c in np.clip(np.array(mm['color']) * g, 0, 255))
         cv2.imwrite(os.path.join(od, side + '.webp'), tex, [cv2.IMWRITE_WEBP_QUALITY, 88])
-        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if (not flat and it.get('src') != 'model') else im, m, info, it['kind'], od, side, bool(it.get('zip')))
+        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if (not flat and it.get('src') != 'model') else im, m, info, it['kind'], od, side, bool(it.get('zip')), bool(it.get('collar')) and not it.get('stand'))
         if sleeve is not None and side == 'front': cv2.imwrite(os.path.join(od, 'sleeve.webp'), sleeve, [cv2.IMWRITE_WEBP_QUALITY, 85])
         meta[side] = dict((k, (round(v, 3) if isinstance(v, float) else v)) for k, v in mm.items())
         meta[side]['flat'] = bool(flat)

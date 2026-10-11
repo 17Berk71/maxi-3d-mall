@@ -55,7 +55,44 @@ def segment(im):
     holes = (1 - ff)
     if flat: holes[green] = 0          # просвет ковра между штанинами — не дырка
     m = m | holes
+    m = drop_background_leaks(im, m, (cy0, cy1, cx0, cx1))
     return m, flat
+
+
+def drop_background_leaks(im, m, box):
+    """Куски фона, прилипшие к вещи (светлая дверь у низа штанины, коробка, угол дивана): цвет далёк от ткани,
+    кусок выходит на край маски и за край кадра и по цвету совпадает с фоном сразу за ним. Принт внутри вещи не трогаем
+    (он не на краю), светлые места ткани на краю — тоже (за ними фон другого цвета)."""
+    h, w = m.shape
+    lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+    cy0, cy1, cx0, cx1 = box
+    ref = lab[cy0:cy1, cx0:cx1][m[cy0:cy1, cx0:cx1] > 0].reshape(-1, 3)
+    if len(ref) < 50: return m
+    c0 = np.median(ref, 0); sp = np.median(np.linalg.norm(ref - c0, axis=1))
+    far = ((np.linalg.norm(lab - c0, axis=2) > max(28.0, 4 * sp)) & (m > 0)).astype(np.uint8)
+    far = cv2.morphologyEx(far, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    edge = (m > 0) & (cv2.erode(m, np.ones((5, 5), np.uint8)) == 0)
+    n, lb, st, _ = cv2.connectedComponentsWithStats(far)
+    area = m.sum(); out = m.copy(); dropped = 0
+    for k in range(1, n):
+        if st[k, cv2.CC_STAT_AREA] < area * .004: continue
+        comp = lb == k
+        if (comp & edge).sum() < 25: continue
+        x_, y_, w_, h_ = st[k, :4]
+        mx_, my_ = max(8, int(w * .04)), max(8, int(h * .04))
+        if x_ > mx_ and y_ > my_ and x_ + w_ < w - mx_ and y_ + h_ < h - my_: continue   # кусок фона уходит за край кадра; цветные вставки вещи — нет
+        ring = (cv2.dilate(comp.astype(np.uint8), np.ones((15, 15), np.uint8)) > 0) & (m == 0)
+        if ring.sum() < 40: continue
+        cm_ = np.median(lab[comp], 0)
+        if (np.linalg.norm(lab[ring] - cm_, axis=1) < 16).mean() > .12:   # заметная часть фона рядом (не меньше 12%) — того же цвета
+            out[comp] = 0; dropped += 1
+    if not dropped: return m
+    out = cv2.morphologyEx(out, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    n, lb, st, _ = cv2.connectedComponentsWithStats(out)
+    if n < 2: return m
+    c = lb[(cy0 + cy1) // 2, (cx0 + cx1) // 2]
+    if c == 0: c = 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])
+    return (lb == c).astype(np.uint8)
 
 
 def runs(row):

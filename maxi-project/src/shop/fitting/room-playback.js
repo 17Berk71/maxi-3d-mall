@@ -1,6 +1,7 @@
 // Кадр кабины и проигрывание анимации надевания; виды камеры.
 import * as THREE from 'three';
 import {clothUpdate} from './cloth-mesh.js';
+import {edgeUpdate} from './edges.js';
 import {QC} from './qc.js';
 import {rebuild} from './room-outfit.js';
 import {R, built, el} from './room-scene.js';
@@ -30,6 +31,7 @@ import {fit} from './state.js';
       P_.list.forEach(g => { const A = g.userData.anim, n3 = A.F.length / A.nf; clothUpdate(g, A.F.subarray((A.nf - 1) * n3, A.nf * n3)); });   // последний кадр — итог: складки, подклад, пуговицы
       P_.list.forEach(g => (g.userData.decor || []).forEach(m => { m.position.copy(m.userData.final.p); m.quaternion.copy(m.userData.final.q); }));
       P_.list.forEach((g, gi) => g.children.filter(m => m.userData.cm).forEach((m, mi) => ['position', 'normal', 'color', 'wrk'].forEach((a, ai) => { const src = P_.saved[gi][mi][ai]; if (src) { m.geometry.attributes[a].array.set(src); m.geometry.attributes[a].needsUpdate = true; } })));
+      P_.list.forEach(g => g.children.forEach(m => { if (m.userData.edge) edgeUpdate(m); }));   // толщина краёв — по итоговой сетке
       R.rig.rotation.y = 0; R.rig.position.y = 0; P_.pivots.forEach(p => { p.rotation.z = p.userData.armPivot.rot; }); R.play = null; return; }
     if (k === P_.k) return; P_.k = k;
     P_.list.forEach(g => { const A = g.userData.anim, n3 = A.F.length / A.nf; clothUpdate(g, A.F.subarray(k * n3, (k + 1) * n3)); });

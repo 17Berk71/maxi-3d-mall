@@ -240,8 +240,8 @@
     ]
    },
    "cm": {
-    "chest": 55,
-    "len": 67
+    "chest": 55.0,
+    "len": 67.0
    },
    "est": true
   },
@@ -259,7 +259,7 @@
     ]
    },
    "cm": {
-    "chest": 57,
+    "chest": 57.0,
     "len": 68.5
    },
    "est": true
@@ -278,7 +278,7 @@
     ]
    },
    "cm": {
-    "chest": 61,
+    "chest": 61.0,
     "len": 71.5
    },
    "est": true
@@ -297,8 +297,8 @@
     ]
    },
    "cm": {
-    "chest": 63,
-    "len": 73
+    "chest": 63.0,
+    "len": 73.0
    },
    "est": true
   }
@@ -308,13 +308,5 @@
  "color": "#792636",
  "sleeve": true,
  "src": "studio",
- "files": "2deb75baac",
- "qc": {
-  "score": 84,
-  "ok": true,
-  "bad": [
-   "сквозь тело",
-   "дырки"
-  ]
- }
+ "files": "2deb75baac"
 }
