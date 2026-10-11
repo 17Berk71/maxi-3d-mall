@@ -27,6 +27,8 @@ import {fit} from './state.js';
   function playStep() {
     const P_ = R.play, k = P_.fixedK != null ? Math.min(P_.fixedK, P_.nf - 2) : Math.floor((performance.now() - P_.t0) / (1000 / 30));
     if (k >= P_.nf - 1) { // конец: точная итоговая сетка (после доводки швов и оката), поза манекена — исходная
+      P_.list.forEach(g => { const A = g.userData.anim, n3 = A.F.length / A.nf; clothUpdate(g, A.F.subarray((A.nf - 1) * n3, A.nf * n3)); });   // последний кадр — итог: складки, подклад, пуговицы
+      P_.list.forEach(g => (g.userData.decor || []).forEach(m => { m.position.copy(m.userData.final.p); m.quaternion.copy(m.userData.final.q); }));
       P_.list.forEach((g, gi) => g.children.filter(m => m.userData.cm).forEach((m, mi) => ['position', 'normal', 'color', 'wrk'].forEach((a, ai) => { const src = P_.saved[gi][mi][ai]; if (src) { m.geometry.attributes[a].array.set(src); m.geometry.attributes[a].needsUpdate = true; } })));
       R.rig.rotation.y = 0; R.rig.position.y = 0; P_.pivots.forEach(p => { p.rotation.z = p.userData.armPivot.rot; }); R.play = null; return; }
     if (k === P_.k) return; P_.k = k;

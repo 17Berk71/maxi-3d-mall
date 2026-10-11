@@ -8,7 +8,7 @@ import {TOPK} from './specs.js';
 // Виды ткани (по виду вещи и словам в названии). tile — размер плитки фактуры (м), wAmp — рельеф нитей,
 // nAmp — неровность полотна, rough/sheen — матовость и ворс, wrL — шаг заломов там, где ткань в расчёте сжата (м),
 // wrG — их глубина, cav — темнее во впадинах
-const FT = {
+export const FT = {
   jersey: {weave: 'knit', tile: 0.011, wAmp: 0.22, nAmp: 0.5, rough: 0.9, sheen: 0.22, wrL: 0.042, wrG: 0.45, cav: 0.08},
   rib: {weave: 'rib', tile: 0.014, wAmp: 1.1, nAmp: 0.4, rough: 0.9, sheen: 0.2, wrL: 0.045, wrG: 0.42, cav: 0.08},
   fleece: {weave: 'knit', tile: 0.014, wAmp: 0.15, nAmp: 0.6, rough: 0.96, sheen: 0.32, wrL: 0.05, wrG: 0.39, cav: 0.07},
@@ -102,7 +102,7 @@ vec3 clPerturb(vec3 eye_pos, vec3 N, vec2 sl, vec2 uv, float fd) {
   float det = max(dot(T, T), dot(B, B)); if (det <= 0.0) return N;
   float sc = fd * inversesqrt(det); return normalize(N - T * (sl.x * sc) - B * (sl.y * sc));
 }`;
-function clothify(mat, ft) {
+export function clothify(mat, ft) {
   ft = ft || FT.woven; mat.userData.ft = ft;
   mat.extensions = Object.assign(mat.extensions || {}, {derivatives: true});
   mat.onBeforeCompile = sh => {
@@ -118,12 +118,17 @@ function clothify(mat, ft) {
   return mat;
 }
 // фото — основной цвет ткани (без своей светотени, см. delight); свет кабины даёт объём и складки;
-// немного «свечения» фото — чтобы тёмные ткани в тени не уходили в черноту и цвет оставался как на снимке
-export function photoMat(url, color, ft) {
-  const t = photoTex(url);
+// немного «свечения» фото — чтобы тёмные ткани в тени не уходили в черноту и цвет оставался как на снимке.
+// Белёсый налёт («бледно, засвечено») давали ворс (sheen) и отражение окружения: у ткани они слабые.
+// Сверено по платью: на свету юбка (86,18,35) при цвете на фото (88,19,40). window.__matx — проба настроек
+export function photoMat(url, color, ft, flat) {
+  const t = photoTex(url, flat);
   if (!t) return new THREE.MeshStandardMaterial({color: LIN(color || '#888'), roughness: 0.86, side: THREE.DoubleSide});
   ft = ft || FT.woven;
-  const m = new THREE.MeshPhysicalMaterial({map: t, color: new THREE.Color(0.6, 0.6, 0.6), emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.1, roughness: ft.rough, metalness: 0, side: THREE.DoubleSide,
-    sheen: new THREE.Color(ft.sheen, ft.sheen, ft.sheen), envMapIntensity: 0.7});
+  const X = (typeof window !== 'undefined' && window.__matx) || {};   /* проба настроек материала (отладка) */
+  const c = X.color != null ? X.color : 0.7, sh = ft.sheen * (X.sheenK != null ? X.sheenK : 0.55);
+  const m = new THREE.MeshPhysicalMaterial({map: t, color: new THREE.Color(c, c, c), emissive: 0xffffff, emissiveMap: t, emissiveIntensity: X.emis != null ? X.emis : 0.08, roughness: ft.rough, metalness: 0, side: THREE.DoubleSide,
+    sheen: new THREE.Color(sh, sh, sh), envMapIntensity: X.env != null ? X.env : 0.3, reflectivity: X.refl != null ? X.refl : 0.15});
+  if (X.tm === 0) m.toneMapped = false;
   return clothify(m, ft);
 }

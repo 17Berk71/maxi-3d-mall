@@ -1,6 +1,10 @@
 // Сетка ткани для показа: нормали, затенение складок, сжатие (заломы), рельеф плиссе, кадры.
 import * as THREE from 'three';
 import {noteAB} from './geometry.js';
+import {buildDecor, decorUpdate} from './decor.js';
+import {pleatGrid, pleatUpdate, pleatSmooth, liningBand, liningUpdate} from './pleats.js';
+import {clothify, FT} from './cloth-material.js';
+import {LIN} from './common.js';
 import {fit} from './state.js';
 
 function clothAO(C, P, N, n) {
@@ -76,6 +80,9 @@ export function clothUpdate(g, P) {
       nor[r * 3] = hx / hl; nor[r * 3 + 1] = hy / hl; nor[r * 3 + 2] = hz / hl; if (col) col[r * 3] = col[r * 3 + 1] = col[r * 3 + 2] = (col[i * 3] + col[j * 3]) / 2; r++; }
     if (m.relief) pleatRelief(mesh.geometry, m.relief, cm.edges, m.verts.length);
     pa.needsUpdate = true; na.needsUpdate = true; if (ca) ca.needsUpdate = true; mesh.geometry.computeBoundingSphere(); });
+  const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); }
+  g.children.forEach(o => { if (o.userData.lining) liningUpdate(o); });
+  decorUpdate(g, P, N);
 }
 export function clothMeshes(C, P, H) {
   const g = new THREE.Group(), n = P.length / 3, N = new Float32Array(n * 3);
@@ -90,6 +97,9 @@ export function clothMeshes(C, P, H) {
   const AO = clothAO(C, P, N, n), WR = clothWrk(C, P, n);
   g.userData.cloth = {C, flips};
   C.meshes.forEach((m, mi) => {
+    if (m.relief && m.relief.rc) {   // складки формой (pleats.js): своя мелкая сетка
+      if (!m.mat.vertexColors) { m.mat.vertexColors = true; m.mat.needsUpdate = true; }
+      const pg = pleatGrid(m, m.relief); const mesh = new THREE.Mesh(pg.geo, m.mat); mesh.castShadow = true; mesh.receiveShadow = true; if (m.role) mesh.userData.role = m.role; mesh.userData.pg = pg; g.add(mesh); return; }
     const pos = [], nor = [], uv = [], col = [], uvm = [], wrk = [], idx = [], mid = new Map();
     m.verts.forEach((v, k) => { pos.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); nor.push(N[v * 3], N[v * 3 + 1], N[v * 3 + 2]); uv.push(m.uv[k][0], 1 - m.uv[k][1]); col.push(AO[v], AO[v], AO[v]);
       const um = m.uvm ? m.uvm[k] : [0, 0]; uvm.push(um[0], um[1]); wrk.push(WR[v * 2], WR[v * 2 + 1]); });
@@ -110,7 +120,12 @@ export function clothMeshes(C, P, H) {
     mesh.userData.cm = {mi, edges: [...mid.entries()].sort((a_, b_) => a_[1] - b_[1]).map(([key]) => [Math.floor(key / 100000), key % 100000])}; g.add(mesh);
     if (m.relief) pleatRelief(geo, m.relief, mesh.userData.cm.edges, m.verts.length);
   });
+  { const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); } }
   // слой для следующих вещей — только корпус (перед, спинка); рукава и капюшон не расширяют «туловище» верхней вещи
+  // нижний слой у подола (шорты-подклад, подъюбник) — лента по низу переда и спинки
+  if (C.lining) { const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length === 2) { const lm = new THREE.MeshPhysicalMaterial({color: LIN(C.lining.color), roughness: 0.9, side: THREE.DoubleSide, sheen: new THREE.Color(0.1, 0.1, 0.1), envMapIntensity: 0.3, reflectivity: 0.15}); clothify(lm, FT.woven);
+    const band = liningBand(pgs, C.lining.len, lm); liningUpdate(band); g.add(band); } }
+  buildDecor(g, C, P, N);   // пуговицы — объёмные детали на ткани
   if (fit.UNDER) C.meshes.forEach(m => { if (m.role !== 'front' && m.role !== 'back') return; m.verts.forEach(i => noteAB(P[i * 3 + 1] / H, Math.abs(P[i * 3]) + 0.004, Math.abs(P[i * 3 + 2]) + 0.004)); });
   return g;
 }

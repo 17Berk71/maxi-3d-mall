@@ -71,6 +71,6 @@ export function init() {
 
   // сборка образа: тело сразу, вещи по очереди (снизу вверх — каждая ложится на предыдущие); ткань считается в фоне.
   // Пока считается, виден прежний образ и надпись «Надеваю…»; новая сборка ждёт окончания прежней (слои — общие)
-  disposeObj = o => o.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== R.skinMat) { if (m.material.map && !Object.values(TEX).includes(m.material.map) && !Object.values(PTEX).includes(m.material.map)) m.material.map.dispose(); m.material.dispose(); } });
+  disposeObj = o => o.traverse(m => { if (m.userData.decor) return; if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== R.skinMat) { if (m.material.map && !Object.values(TEX).includes(m.material.map) && !Object.values(PTEX).includes(m.material.map)) m.material.map.dispose(); m.material.dispose(); } });
   built.chain = Promise.resolve(); built.tok = 0;
 }

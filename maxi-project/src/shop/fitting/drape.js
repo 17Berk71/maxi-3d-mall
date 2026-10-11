@@ -13,6 +13,7 @@ import {runCloth} from './sim.js';
 import {itemCm} from './sizes.js';
 import {TOPK, bottomSpec, rowSpans, skirtProf, trueHem} from './specs.js';
 import {seamBend} from './worker.js';
+import {shoulderRound} from './shoulder-round.js';
 import {fit} from './state.js';
 
 // подготовка расчёта ткани: выкройка, швы, начальное положение. Сам расчёт (runCloth) — отдельно: в фоновом потоке
@@ -26,7 +27,9 @@ export function drapePrepare(item, d, under) {
   if (tucked && under && fit.BOT_YW) { const lim = Math.round(fit.BOT_YW / d.H * 100) + 1; under = {a: under.a.map((v, i) => i <= lim ? 0 : v), b: under.b.map((v, i) => i <= lim ? 0 : v)}; }
   const H = d.H, C = makeCloth(), fab = (k === 'skirt' && item.pleats ? FABRIC.skirtP : FABRIC[k]) || FABRIC.tee, push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
-  const ft = fabricType(item), mF = photoMat(item.tex.frontCut || item.tex.front, base, ft), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft);
+  // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
+  C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front'}, b));
+  const ft = fabricType(item), flatT = !!item.pleats, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
   [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
   const zo = 0.21 * d.s, cell = (typeof window !== 'undefined' && window.__cell) || 0.022;
   let yPin = 0, info = {}, cover = null;
@@ -192,7 +195,7 @@ export function drapePrepare(item, d, under) {
     cover = {y0: yW - Lk + 0.03, y1: yW - 0.005, torso: true, legs: true};
     // «подъюбник» в расчёте: расклешённая юбка держит конус жёсткостью ткани (а эта — ещё и подкладом-шортами). Изгиб в расчёте
     // местный (через точку) — лишняя ширина у подола иначе проваливается между ног. Невидимый конус ниже бёдер чуть меньше юбки
-    { const ua = under ? Array.from(under.a) : new Array(101).fill(0), ub = under ? Array.from(under.b) : new Array(101).fill(0), kf = item.pleats ? 0.93 : 0.85;
+    { const ua = under ? Array.from(under.a) : new Array(101).fill(0), ub = under ? Array.from(under.b) : new Array(101).fill(0), kf = item.pleats ? 0.99 : 0.85;   /* плиссе: конус по ширине юбки — лишней ширине некуда уходить «плавником» у боковых швов */
       for (let i = 0; i <= 100; i++) { const yy = i / 100 * H, y = yW - yy; if (y < Lk * 0.35 || y > Lk) continue;
         const r = wvis(y) / Math.PI * kf * Math.min(1, (y - Lk * 0.35) / (Lk * 0.25)); if (r <= 0) continue; ua[i] = Math.max(ua[i] || 0, r * 1.08); ub[i] = Math.max(ub[i] || 0, r * 0.86); }
       under = {a: ua, b: ub, raw: 1}; }
@@ -200,7 +203,7 @@ export function drapePrepare(item, d, under) {
     const tri = x => { const q = Math.abs(x) % (2 * half); return q < half ? q : 2 * half - q; };
     const fold = (x, y) => { const al = alpha(y); return [x * Math.cos(al), tri(x) * Math.sin(al)]; };
     // принт — построчно: видимый край ↔ край вещи в той же строке фото
-    const PRf = rowSpans(dr.front, aF), PRb = rowSpans(dr.back || dr.front, aB);
+    const PRf = rowSpans(dr.front, aF, 4), PRb = rowSpans(dr.back || dr.front, aB, 4);
     // низ на фото может быть «рваным» (концы складок, из-под них подклад): последняя сплошная строка — не уже 85% самой широкой
     const vMax = PR => { if (!PR) return 0.99; let mx = 0; PR.forEach(e => { if (e) mx = Math.max(mx, e[1] - e[0]); }); let r = PR.length - 1; while (r > 0 && (!PR[r] || PR[r][1] - PR[r][0] < 0.85 * mx)) r--; return Math.max(0.5, (r + 0.5) / PR.length); };
     const vmF = vMax(PRf), vmB = vMax(PRb);
@@ -216,13 +219,17 @@ export function drapePrepare(item, d, under) {
     if (pleat) for (let e = e0; e < C.E.length; e += 4) { const kd = C.E[e + 3]; if (kd !== 1 && kd !== 2) continue; const i = C.E[e] * 3, j = C.E[e + 1] * 3;
       C.E[e + 2] = Math.hypot(C.P[j] - C.P[i], C.P[j + 1] - C.P[i + 1], C.P[j + 2] - C.P[i + 2]); }
     // складки (плиссе/заложенные): рельеф на показе — ступенчатый сдвиг по нормали вдоль ткани, у пояса заутюжены (мелко), книзу раскрыты
-    if (item.pleats) [pf, pb].forEach((P_, j) => { const m = C.meshes[C.meshes.length - 2 + j]; m.relief = {px: P_.pts.map(p => p.x), py: P_.pts.map(p => p.y), half: 0.026, L: Lk, amp: 0.011}; });
+    // складки (плиссе/заложенные) — формой на мелкой сетке показа (pleats.js); та же сетка — у юбки с нижним слоем (лента подклада по её низу)
+    if (item.pleats || item.lining) [pf, pb].forEach((P_, j) => { const m = C.meshes[C.meshes.length - 2 + j]; m.relief = {rc: P_.pts.map(p => [p.r, p.c]), px: P_.pts.map(p => p.x), py: P_.pts.map(p => p.y), L: Lk, depth: item.pleats ? 0.013 : 0}; });
+    if (item.lining) C.lining = {color: item.lining, len: 0.032};   // белые шорты-подклад, подъюбник: выглядывает из-под юбки
     // бок: и нижний угол (у подола) — точки без соседа слева или справа; иначе у подола торчат «крылышки»
     // (только у линии бока выкройки: концы короткой нижней строки у скруглённого низа — это низ, не бок)
     const sideSegs = []; for (let i = 0; i < poly.length; i++) if (lab[i] === 'side') sideSegs.push([poly[i], poly[(i + 1) % poly.length]]);
     const nearSide = p => sideSegs.some(([a_, b_]) => segDist(p.x, p.y, a_, b_) < cs * 1.3);
     pf.pts.forEach(p => { if (!p.edge || p.y < cs * 1.1 || (pf.at(p.r, p.c - 1) && pf.at(p.r, p.c + 1)) || !nearSide(p)) return; const q = pb.at(p.r, p.c); if (q && q.edge) C.seams.push([p.g, q.g]); });
     [pf, pb].forEach(P_ => P_.pts.forEach(p => { if (p.y < cs * 1.1) C.pin[p.g] = 1; }));
+    // перед остаётся спереди, спинка — сзади: у боков низ переда и спинки (не шов — скруглённый низ) заходил друг за друга «плавником»
+    C.sector = pf.pts.map(p => [p.g, 1, 0, 0]).concat(pb.pts.map(p => [p.g, -1, 0, 0]));
   } else {
     C.tether = null;   // брюки: висят на поясе, вытягивания нет — привязи только мешали штанинам
     const sp = bottomSpec(item, d), cm = itemCm(item, d.b), sh = item.shape || {};
@@ -290,6 +297,7 @@ export function drapePrepare(item, d, under) {
   }
   const finish = P => { if (typeof window !== 'undefined' && window.__dbgC) window.__dbgC.push({k, C, P});
   // окат рукава после расчёта кладём точно на край проймы (между сшитыми точками кольцо рукава иначе отходит — видна щель)
+  if (!item.puff) shoulderRound(C, P, chains, push);   // плечевая точка без острого угла (до укладки оката на пройму); у рукава-фонарика сборка на плече — задумана
   chains.forEach(({ring, lf, lb, rings}) => { const segs = ring.length;
     // концы проймы (у плеча и под мышкой) у переда и спинки — одна точка: сводим к середине
     [[lf[0], lb[0]], [lf[lf.length - 1], lb[lb.length - 1]]].forEach(([a, b]) => { for (let k = 0; k < 3; k++) { const m = (P[a * 3 + k] + P[b * 3 + k]) / 2; P[a * 3 + k] = m; P[b * 3 + k] = m; } });

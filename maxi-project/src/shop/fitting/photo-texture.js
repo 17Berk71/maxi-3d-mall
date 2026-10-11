@@ -39,9 +39,28 @@ function delight(img) {
   for (let i = 0; i < n; i++) { const q = i * 4; if (a[q + 3] >= 128) continue; a[q] = R0 - 1; a[q + 1] = G0 - 1; a[q + 2] = B0 - 1; a[q + 3] = 255; }
   g.putImageData(D, 0, 0); return cv;
 }
-export function photoTex(url) {
+// flat — ровная ткань: складки, тени и блики с фото убираются совсем (остаются нити и мелкая фактура). Для вещей,
+// у которых рельеф строится формой (плиссе): иначе нарисованные складки поверх настоящих — «смятая» юбка
+export function photoTex(url, flat) {
   if (!url) return null;
-  if (!PTEX[url]) { const t = new THREE.Texture(); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; PTEX[url] = t;
-    const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => { t.image = typeof window !== 'undefined' && window.__noDelight ? im : delight(im); t.needsUpdate = true; }; im.src = url; }
-  return PTEX[url];
+  const key = flat ? url + '|flat' : url;
+  if (!PTEX[key]) { const t = new THREE.Texture(); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; PTEX[key] = t;
+    const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => { let r = typeof window !== 'undefined' && window.__noDelight ? im : delight(im); if (flat) r = flatten(r); t.image = r; t.needsUpdate = true; }; im.src = url; }
+  return PTEX[key];
+}
+// ровная ткань: основной цвет × чуть-чуть мелкой фактуры (отношение яркости к размытой в ~4 px), без светотени и линий сгибов
+function flatten(img) {
+  const w = img.width, h = img.height, cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.drawImage(img, 0, 0);
+  let D; try { D = g.getImageData(0, 0, w, h); } catch (e) { return img; }
+  const a = D.data, n = w * h, L = new Float32Array(n);
+  for (let i = 0; i < n; i++) L[i] = (a[i * 4] + a[i * 4 + 1] + a[i * 4 + 2]) / 3 + 1;
+  const sr = [], sg = [], sb = []; for (let k = 0; k < 4096; k++) { const i = ((k * 2654435761) >>> 0) % n; sr.push(a[i * 4]); sg.push(a[i * 4 + 1]); sb.push(a[i * 4 + 2]); }
+  const med = v => { v.sort((x, y) => x - y); return v[v.length >> 1]; }, R0 = med(sr), G0 = med(sg), B0 = med(sb);
+  const blur = (src, rad) => { const t = new Float32Array(n), o = new Float32Array(n);
+    for (let y = 0; y < h; y++) { let s = 0, c = 0; for (let x = -rad; x < w; x++) { if (x + rad < w) { s += src[y * w + x + rad]; c++; } if (x - rad - 1 >= 0) { s -= src[y * w + x - rad - 1]; c--; } if (x >= 0) t[y * w + x] = s / c; } }
+    for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let y = -rad; y < h; y++) { if (y + rad < h) { s += t[(y + rad) * w + x]; c++; } if (y - rad - 1 >= 0) { s -= t[(y - rad - 1) * w + x]; c--; } if (y >= 0) o[y * w + x] = s / c; } }
+    return o; };
+  const B = blur(L, 4);
+  for (let i = 0; i < n; i++) { const k = Math.max(0.93, Math.min(1.07, Math.pow(L[i] / B[i], 0.35)));   /* слабо: линии сгибов с фото не должны читаться как складки — их дают форма и шейдер ткани */ a[i * 4] = Math.min(255, R0 * k); a[i * 4 + 1] = Math.min(255, G0 * k); a[i * 4 + 2] = Math.min(255, B0 * k); a[i * 4 + 3] = 255; }
+  g.putImageData(D, 0, 0); return cv;
 }

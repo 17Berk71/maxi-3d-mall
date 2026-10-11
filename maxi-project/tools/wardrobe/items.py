@@ -44,7 +44,7 @@ ITEMS = [
 
     # Юбка-шорты (фото пользователя из карточки магазина, модель 173 см, размер 42): складки, высокая посадка, белые шорты-подклад.
     # В таблице — мерки тела (талия, бёдра); вещь: пояс ≈ (талия + 4) / 2, низ — трапеция по фото.
-    dict(id='sk-pleat', name='Юбка-шорты со складками', kind='skirt', src='model', front='sk-front', back='sk-back', worn=[], who='women', pleats=True,
+    dict(id='sk-pleat', name='Юбка-шорты со складками', kind='skirt', src='model', front='sk-front', back='sk-back', worn=[], who='women', pleats=True, lining='#f3f1ec',
          note='таблица магазина — мерки тела; пояс вещи оценён',
          sizes=[dict(name=str(n), ru=str(n), body=dict(waist=[w0, w0 + 4], hips=[h0, h0 + 4]), cm=dict(waist=round((w0 + 4) / 2, 1), len=round(40 + (n - 42) * 0.5, 1)))
                 for n, w0, h0 in ((38, 54, 82), (40, 58, 86), (42, 62, 90), (44, 66, 94), (46, 70, 98), (48, 74, 102))]),

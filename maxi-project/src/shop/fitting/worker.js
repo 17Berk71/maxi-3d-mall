@@ -8,7 +8,7 @@ import {motionAt, runCloth} from './sim.js';
 // Расчёт вещи — 1.5–2.5 с на компьютере и в 2–3 раза дольше на телефоне. В фоне страница не замирает,
 // а готовый результат (точки ткани) хранится: та же вещь на той же фигуре во второй раз надевается сразу.
 // Версия расчёта: менять при любой правке выкроек, швов или расчёта — старый кэш станет недействительным.
-export const CLOTH_VER = 'c45';
+export const CLOTH_VER = 'c46';
 // анимация надевания (FIT.setAnim(false) — выключить, для автопроверок); «без анимации» на сайте и системная настройка — тоже выключают
 export const ANIM = {on: true};
 export function calmNow() { try { const v = localStorage.getItem('maxi-calm'); if (v !== null) return v === '1'; } catch (e) {} try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
@@ -35,8 +35,11 @@ export function seamBend(C) {
   for (let e = 0; e < C.E.length; e += 4) { const k = C.E[e + 3]; if (k === 0 || k === 3) { adj[C.E[e]].push([C.E[e + 1], C.E[e + 2], k]); adj[C.E[e + 1]].push([C.E[e], C.E[e + 2], k]); } }
   // сосед внутрь детали: у бокового шва — по утку (горизонтальный), иначе по основе; ровно один
   const inner = i => { const L = adj[i].filter(([q]) => !inSeam[q]); const w = L.filter(e => e[2] === 3); return (w.length ? w : L).slice(0, 1); };
+  let yMax = -9; for (let i = 0; i < n; i++) if (panel[i]) yMax = Math.max(yMax, C.P[i * 3 + 1]);
   C.seams.forEach(([i, j]) => { if (!panel[i] || !panel[j]) return;
-    for (const [a, la] of inner(i)) for (const [b, lb] of inner(j)) C.link(a, b, (la + lb) * 0.98, 2); });
+    // плечевой шов (верх вещи) гнётся свободнее: ткань перекидывается через плечо, а почти прямой шов держал над плечом «полку» с углом
+    const k = Math.min(C.P[i * 3 + 1], C.P[j * 3 + 1]) > yMax - 0.07 ? 0.9 : 0.98;
+    for (const [a, la] of inner(i)) for (const [b, lb] of inner(j)) C.link(a, b, (la + lb) * k, 2); });
 }
 // точки деталей корпуса (не труб рукавов) — для makeCollider (noArm)
 export function armFlags(C) { const f = new Uint8Array(C.pin.length); C.meshes.forEach(m => { if (!m.local) m.verts.forEach(v => { f[v] = 1; }); }); return f; }

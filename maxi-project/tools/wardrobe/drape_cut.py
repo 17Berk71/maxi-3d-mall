@@ -23,6 +23,14 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     # выкройки, которые ложатся на край фото, видны светлые точки
     inv = (cv2.erode(mc.astype(np.uint8), np.ones((7, 7), np.uint8)) == 0).astype(np.uint8) * 255
     filled = cv2.inpaint(crop, inv, 5, cv2.INPAINT_TELEA)
+    # пуговицы — отдельные объёмные детали в примерочной: на ткани их не рисуем (заливаем тканью вокруг),
+    # а положение, размер и цвет пишем в выкройку (a.buttons)
+    cxa = (info['cx'] - x0) / W
+    btn = find_buttons(filled, mc, cxa, kind) if side == 'front' and not zip_ else None
+    if btn and btn['buttons']:
+        bm = np.zeros(mc.shape, np.uint8)
+        for b_ in btn['buttons']: cv2.circle(bm, (int(b_['u'] * W), int(b_['v'] * H)), int(b_['r'] * W * 1.8) + 3, 255, -1)
+        filled = cv2.inpaint(filled, bm, 7, cv2.INPAINT_TELEA)
     rgba = np.dstack([filled, (cv2.GaussianBlur(mc.astype(np.float32), (3, 3), 0) * 255).clip(0, 255).astype(np.uint8)])
     k = 720 / H if H > 720 else 1
     if k < 1: rgba = cv2.resize(rgba, (int(W * k), int(H * k)), interpolation=cv2.INTER_AREA)
@@ -36,8 +44,9 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False):
     zc = find_zip(filled, mc, a['cx'], a.get('arm', 0.25)) if zip_ and side == 'front' else None
     # без молнии — планка с пуговицами (платье, рубашка): середина переда по линии пуговиц, иначе на фото вполоборота
     # пуговицы в примерочной уезжают вбок от середины
-    if not zc and side == 'front' and kind in ('dress', 'shirt', 'coat', 'jacket'): zc = find_buttons(filled, mc, a['cx'])
+    if not zc and btn and btn['line']: zc = btn['line']
     if zc: a['zipc'] = zc
+    if btn and btn['buttons']: a['buttons'] = btn['buttons']
     return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, list) else round(float(v), 4)) for k_, v in a.items()})
 
 
@@ -69,29 +78,59 @@ def find_zip(rgb, mc, cx, arm):
     return [round(float(v) / W, 4) for v in np.polyval(p3, rows)]
 
 
-def find_buttons(rgb, mc, cx):
-    """Пуговицы на фото переда: небольшие круглые пятна, заметно светлее или темнее ткани вокруг, у середины вещи,
-    не меньше четырёх на одной прямой. Возвращает середину переда по прямой через них (доля ширины по DRAPE_ROWS строкам)."""
+def find_buttons(rgb, mc, cx, kind):
+    """Пуговицы на фото переда: небольшие круглые пятна, заметно светлее или темнее ткани вокруг, у середины вещи.
+    Планка (платье, рубашка, пальто, пиджак): не меньше четырёх на одной прямой — середина переда по ней (line).
+    Низ (юбка, брюки, шорты): пуговица на поясе — у середины в верхней части.
+    Возвращает {line: [доля ширины по DRAPE_ROWS строкам] | None, buttons: [{u, v, r, rgb}]} (доли кадра выреза, r — доля ширины)."""
     H, W = mc.shape
     g = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).astype(np.float32)
     k = max(5, int(W * 0.08) | 1)
     bg = cv2.medianBlur(np.clip(g, 0, 255).astype(np.uint8), k).astype(np.float32)
+    inner = cv2.erode((mc > 0).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0   # не у края силуэта
+    placket = kind in ('dress', 'shirt', 'coat', 'jacket'); waist = kind in ('skirt', 'pants', 'jeans', 'shorts')
+    if not placket and not waist: return None
     best = None
     for sgn in (1, -1):
-        m = (((g - bg) * sgn > 30) & (mc > 0)).astype(np.uint8)
-        n, lab, st, cen = cv2.connectedComponentsWithStats(m, 8)
-        pts = []
-        for i in range(1, n):
-            x, y, w, h, area = st[i]
-            if area < (W * 0.008) ** 2 or area > (W * 0.06) ** 2 or max(w, h) > 2.2 * min(w, h): continue
-            if abs(cen[i][0] / W - cx) > 0.16: continue
-            pts.append(cen[i])
-        if len(pts) < 4: continue
-        P = np.array(pts); keep = np.ones(len(P), bool)
-        for _ in range(3):
-            p = np.polyfit(P[keep, 1], P[keep, 0], 1); r = np.abs(np.polyval(p, P[:, 1]) - P[:, 0]); keep = r < W * 0.02
-            if keep.sum() < 4: break
-        if keep.sum() >= 4 and abs(p[0]) < 0.15 and (best is None or keep.sum() > best[1]): best = (p, int(keep.sum()))
+        for thr in ((30,) if placket else (30, 18)):
+            m = (((g - bg) * sgn > thr) & inner).astype(np.uint8)
+            n, lab, st, cen = cv2.connectedComponentsWithStats(m, 8)
+            pts = []
+            for i in range(1, n):
+                x, y, w, h, area = st[i]
+                if area < (W * 0.008) ** 2 or area > (W * 0.06) ** 2 or max(w, h) > 2.2 * min(w, h): continue
+                if area < 0.45 * w * h: continue                       # пуговица — сплошное круглое пятно, не штрих
+                if abs(cen[i][0] / W - cx) > (0.16 if placket else 0.1): continue
+                if waist and cen[i][1] / H > 0.2: continue
+                col = rgb[lab == i].mean(0)[::-1]
+                pts.append((cen[i][0], cen[i][1], max(w, h) / 2, col))
+            if placket:
+                if len(pts) < 4: continue
+                P = np.array([(p[0], p[1]) for p in pts]); keep = np.ones(len(P), bool)
+                for _ in range(3):
+                    pf = np.polyfit(P[keep, 1], P[keep, 0], 1); r = np.abs(np.polyval(pf, P[:, 1]) - P[:, 0]); keep = r < W * 0.02
+                    if keep.sum() < 4: break
+                if keep.sum() >= 4 and abs(pf[0]) < 0.15 and (best is None or keep.sum() > len(best[1])): best = (pf, [p for p, kk in zip(pts, keep) if kk])
+            elif 1 <= len(pts) <= 2 and best is None:
+                # на тёмной ткани порог берёт только блик пуговицы: сама пуговица — пятно со слабым отличием вокруг блика
+                ref = []
+                for (px, py, pr, pc) in pts:
+                    x0_, y0_, R_ = int(px), int(py), int(max(6, pr * 5))
+                    win = np.abs(g - bg)[max(0, y0_ - R_):y0_ + R_, max(0, x0_ - R_):x0_ + R_] > 8
+                    n2, lab2, st2, cen2 = cv2.connectedComponentsWithStats(win.astype(np.uint8), 8)
+                    ly, lx = min(R_, y0_), min(R_, x0_); kk = lab2[ly, lx] if 0 <= ly < win.shape[0] and 0 <= lx < win.shape[1] else 0
+                    if kk > 0 and st2[kk][4] < (pr * 5) ** 2 * 2:
+                        x_, y_, w_, h_ = st2[kk][:4]; px, py, pr = max(0, x0_ - R_) + x_ + w_ / 2, max(0, y0_ - R_) + y_ + h_ / 2, max(pr, min(w_, h_) / 2)
+                    ref.append((px, py, pr, rgb[int(py), int(px)][::-1].astype(float)))
+                best = (None, ref)
+            if best: break
+        if best and (not placket or len(best[1]) >= 6): break
     if best is None: return None
     rows = (np.arange(DRAPE_ROWS) + 0.5) / DRAPE_ROWS * H
-    return [round(float(v) / W, 4) for v in np.polyval(best[0], rows)]
+    line = [round(float(v) / W, 4) for v in np.polyval(best[0], rows)] if best[0] is not None else None
+    # размер — медиана (у ряда пуговицы одинаковые), цвет — средний
+    rr = float(np.median([p[2] for p in best[1]])); col = np.mean([p[3] for p in best[1]], 0)
+    btns = [dict(u=round(float(p[0]) / W, 4), v=round(float(p[1]) / H, 4), r=round(rr / W, 4)) for p in sorted(best[1], key=lambda p: p[1])]
+    hexc = '#%02x%02x%02x' % tuple(int(np.clip(c, 0, 255)) for c in col)
+    for b_ in btns: b_['rgb'] = hexc
+    return dict(line=line, buttons=btns)

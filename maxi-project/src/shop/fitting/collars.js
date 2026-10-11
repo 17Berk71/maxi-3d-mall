@@ -10,6 +10,7 @@ export function addStand(C, d, yTop, fronts, pb, mat, a) {
   const neck = fronts.concat([pb]).flatMap(P_ => P_.pts.filter(p => p.edge && p.lab === 'neck').map(p => p.g)); if (neck.length < 6) return;
   const segs = 24, h = 0.034 * d.s, r = d.neck + 0.011, yb = yTop - 0.008;
   const tube = addTube(C, new THREE.Vector3(0, yb, 0), new THREE.Vector3(0, 1, 0), h, s => r - s * 0.08, segs, 3, mat, 1, (u, v) => [a.cx + (u - 0.5) * 0.12, 0.01 + v * 0.03]);
+  C.meshes[C.meshes.length - 1].role = 'stand';   // пуговицы, что на фото на стойке, пришиваются к ней (decor.js)
   // шов: каждая точка горловины — к ближайшей по углу точке нижнего кольца стойки
   neck.forEach(g_ => { const x = C.P[g_ * 3], z = C.P[g_ * 3 + 2]; let best = 9, q = null;
     tube.top.forEach(t => { const ax = Math.atan2(C.P[t * 3 + 2], C.P[t * 3]) - Math.atan2(z, x), da = Math.abs(Math.atan2(Math.sin(ax), Math.cos(ax))); if (da < best) { best = da; q = t; } });

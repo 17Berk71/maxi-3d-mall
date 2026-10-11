@@ -24,9 +24,9 @@
 |---|---|
 | Что за вещь, размеры | `classify.js`, `sizes.js`, `specs.js` (мерки по фото), `measures.js` (мерки верха для выкройки) |
 | Фигура | `body.js` (мерки → размеры тела), `mannequin.js` (видимый манекен), `paint-body.js` |
-| Выкройка | `pattern.js` (детали, рукава, пресеты ткани `FABRIC`), `drape.js` (вещь целиком: верх, юбка, брюки), `collars.js` (стойка, капюшон) |
+| Выкройка | `pattern.js` (детали, рукава, пресеты ткани `FABRIC`), `drape.js` (вещь целиком: верх, юбка, брюки), `collars.js` (стойка, капюшон), `shoulder-round.js` (плечевая точка без угла) |
 | Расчёт ткани | `collider.js` (тело для столкновений), `sim.js` (`runCloth`, движение для анимации), `worker.js` (фоновый поток, `CLOTH_VER`), `cache.js` |
-| Показ | `cloth-mesh.js` (сетка, нормали, заломы, плиссе), `cloth-material.js` (ткань как материал, шейдер), `photo-texture.js` (фото без своей светотени) |
+| Показ | `cloth-mesh.js` (сетка, нормали, заломы), `pleats.js` (складки плиссе формой, сглаживание юбки, нижний слой-подклад), `decor.js` (пуговицы — объёмные детали на ткани), `cloth-material.js` (ткань как материал, шейдер), `photo-texture.js` (фото без своей светотени, ровная ткань для плиссе) |
 | Вещь целиком | `garment-async.js` (выкройка → расчёт → сетка), `garment.js` (синхронно, запасной путь), `qc.js` (автопроверка) |
 | Окно примерочной | `ui.js` → `room-*.js`: гардероб, сцена кабины, сборка образа, проигрывание анимации, панель, ползунки фигуры, открытие окна, пакеты примерки, API (`FIT`) |
 | Прежние способы | `simple-garment.js` + `fabric-simple.js` (простые формы, `?drape=0`), `photo-garment.js` (вещь из фото поверхностью), `drape-old.js` (первый прототип ткани) |
@@ -52,7 +52,8 @@
 | Страница товара | `shop/product.js` |
 | Посадка вещи, выкройка | `shop/fitting/drape.js`, `pattern.js`, `specs.js` |
 | Физика ткани | `shop/fitting/sim.js`, `collider.js` (после правки — сменить `CLOTH_VER` в `worker.js`) |
-| Как выглядит ткань | `shop/fitting/cloth-material.js`, `cloth-mesh.js` |
+| Как выглядит ткань | `shop/fitting/cloth-material.js`, `cloth-mesh.js`, `pleats.js` |
+| Пуговицы и другой декор | `shop/fitting/decor.js`, поиск на фото — `tools/wardrobe/drape_cut.py` |
 | Окно примерочной | `shop/fitting/room-*.js` |
 
 ## Инструменты (`tools/`)

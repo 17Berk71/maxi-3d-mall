@@ -131,6 +131,8 @@ def style_of(kind, offer):
     t = ((offer.get('name') or '') + ' ' + (offer.get('desc') or offer.get('description') or '')).lower().replace('ё', 'е')
     out = {}
     if kind in ('skirt', 'dress') and re.search(r'плиссе|складк|гофре', t): out['pleats'] = True
+    # нижний слой у подола: белый подъюбник / шорты-подклад — если так сказано в описании
+    if kind in ('skirt', 'dress') and re.search(r'подъюбник|шорт\w*[- ]подклад|подклад\w*[- ]шорт', t) and re.search(r'бел', t): out['lining'] = '#f3f1ec'
     if kind in ('dress', 'shirt', 'tee') and re.search(r'фонарик|пышн\w* рукав|объемн\w* рукав|буф', t): out['puff'] = True
     if kind in ('dress', 'shirt', 'sweater') and re.search(r'стойк', t): out['stand'] = True
     return out

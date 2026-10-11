@@ -36,6 +36,7 @@ def build(it, out=None, debug=True):
     od = os.path.join(out or OUT, it['id']); os.makedirs(od, exist_ok=True)
     meta = dict(id=it['id'], name=it['name'], kind=it['kind'], states=it.get('states'), zip=it.get('zip', False), collar=it.get('collar', False), hood=it.get('hood', False))
     if it.get('pleats'): meta['pleats'] = True
+    if it.get('lining'): meta['lining'] = it['lining']   # нижний слой у подола (цвет): шорты-подклад, подъюбник
     if it.get('puff'): meta['puff'] = True
     if it.get('stand'): meta['stand'] = True   # воротник-стойка   # рукав-фонарик: окат шире проймы, собран в неё; внизу — манжета
     if it.get('who'): meta['who'] = it['who']
