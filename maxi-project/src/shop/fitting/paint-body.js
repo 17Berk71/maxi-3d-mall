@@ -1,0 +1,29 @@
+// Тело под вещью окрашено в тёмный тон вещи (в просветах не белое).
+import * as THREE from 'three';
+import {LIN} from './common.js';
+
+// тело под одеждой окрашено в цвет изнанки вещи (тёмный тон её цвета): если ткань где-то не легла вплотную
+// (шов, складка у ширинки, плечо), в просвете видна «тень внутри вещи», а не белый манекен
+export function paintBody(g, covers, skin) {
+  if (!covers.length) return;
+  const mat = new THREE.MeshStandardMaterial({color: 0xffffff, vertexColors: true, roughness: 0.6}), cs = covers.map(c => LIN(c.color || '#888').multiplyScalar(0.42));
+  // верх плеча (в стороне от шеи) выше линии горловины — тоже под вещью, иначе на плече белое пятно
+  const pick = (part, y, t, ax) => { for (let i = covers.length - 1; i >= 0; i--) { const c = covers[i];
+    if (part === 'arm') { if (c.arm && t < c.arm - 0.04) return i; continue; }
+    if (part === 'leg' && !c.legs) continue;
+    if ((part === 'torso' || part === 'sh') && !c.torso && !(part === 'sh' && c.arm)) continue;
+    // шея: нижние кольца расширения (к плечам) — под плечевым швом; спереди в вырезе горловины — кожа
+    if (part === 'neck') { if (c.torso && !c.legs && t < -0.035 && ax > (c.nx || 0.07)) return i; continue; }
+    // верх туловища под закрытой вещью — весь: кольца сетки редкие, белая вершина у шеи размазалась бы клином до плеча
+    // (из выреза видна только узкая полоса — как тень внутри воротника)
+    if (y > c.y0 + 0.015 && (y < c.y1 - 0.004 || (c.torso && !c.legs))) return i; } return -1; };
+  g.traverse(m => { const part = m.userData.part; if (!part || !m.isMesh) return;
+    const P = m.geometry.attributes.position, col = new Float32Array(P.count * 3); let any = false;
+    for (let i = 0; i < P.count; i++) {
+      const y = part === 'sh' ? m.position.y + P.getY(i) * m.scale.y : m.position.y + P.getY(i), t = part === 'arm' ? -P.getY(i) / m.userData.L : part === 'neck' ? P.getY(i) / (m.userData.s || 1) : 0;
+      const ax = Math.abs(m.position.x + P.getX(i) * (part === 'sh' ? m.scale.x : 1));
+      const k = pick(part, y, t, ax), c = k >= 0 ? cs[k] : skin; if (k >= 0) any = true;
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    if (!any) return;
+    m.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3)); m.material = mat; });
+}

@@ -1,4 +1,5 @@
-import './fonts.js';
+// Точка входа Vite: шрифты, стили, данные карты обоих этажей → startApp (app.js).
+import './core/fonts.js';
 import './style.css';
 import data from './data/maxi-data.json';
 import floor2 from './data/maxi-floor2.json';

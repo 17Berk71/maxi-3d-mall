@@ -1,5 +1,5 @@
 // Картинки товаров для карточек каталога (рисуются на canvas, без фото)
-import {shade} from '../utils.js';
+import {shade} from '../core/utils.js';
 
 /* ---------- 2D-иконки товаров для карточек ---------- */
 const iconCache={};
