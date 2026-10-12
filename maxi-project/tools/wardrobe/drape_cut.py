@@ -17,7 +17,14 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     # дырки внутри силуэта (пуговицы, блик, принт другого цвета — сеть их не считает вещью) — это вещь: заливаем
     # всё, что не связано с краем кадра (иначе на ткани прозрачные пятна, сквозь них видно тело)
     pad = np.pad((mc > 0).astype(np.uint8), 1); ff = pad.copy() * 0 + (pad == 0).astype(np.uint8) * 255
-    cv2.floodFill(ff, None, (0, 0), 128); mc = ((ff[1:-1, 1:-1] != 128) | (mc > 0)).astype(mc.dtype)
+    cv2.floodFill(ff, None, (0, 0), 128)
+    # только мелкие дырки (до 1.5% площади вещи): большая «дырка» — просвет между штанинами, замкнутый обрезом снизу (фон там
+    # убран намеренно: model_photo.drop_leg_gap), её не заливать
+    holes = ((ff[1:-1, 1:-1] != 128) & (mc == 0)).astype(np.uint8); n_h, lb_h, st_h, _ = cv2.connectedComponentsWithStats(holes)
+    small = np.zeros_like(holes, bool); lim_h = 0.015 * max(1, int((mc > 0).sum()))
+    for k in range(1, n_h):
+        if st_h[k, cv2.CC_STAT_AREA] < lim_h: small |= lb_h == k
+    mc = (small | (mc > 0)).astype(mc.dtype)
     # края маски чуть растянуть цветом вещи, чтобы по краю выкройки не было фона
     # край вещи на фото смешан с фоном (светлый ореол): краевые 3 px тоже заменяем продолжением ткани, иначе по швам
     # выкройки, которые ложатся на край фото, видны светлые точки

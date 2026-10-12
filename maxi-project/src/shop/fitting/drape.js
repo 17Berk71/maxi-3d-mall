@@ -257,7 +257,10 @@ export function drapePrepare(item, d, under) {
     // Раньше бок шёл от пояса сразу к точке бёдер HP на 0.55 посадки и дальше отвесно: у широких брюк (HP намного больше бёдер)
     // это давало резкую «полку» на бёдрах и прямые стенки ниже — надутый каркас
     const hp = sh.hip && sh.hip.length > 2 ? sh.hip : null, hipMin = (HP0 => HP0 / 2)(ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
-    const grow = f => { if (!hp) { const t = Math.min(1, f / 0.7); return t * (2 - t); } const n = hp.length, q = Math.max(0, Math.min(n - 1, (f - 0.02) / 0.96 * (n - 1))), i = Math.min(n - 2, Math.floor(q)), v = hp[i] + (hp[i + 1] - hp[i]) * (q - i);
+    // у прямых брюк прирост ширины к шагу почти нулевой (коричневые: 0.005 пояса) — деление на него превращало шум фото в скачок
+    // (бок то выпрыгивал наружу сразу у пояса, то не двигался): при приросте меньше 5% — плавная кривая, как без профиля
+    const hpGrow = hp ? hp[hp.length - 1] - hp[0] : 0;
+    const grow = f => { if (!hp || hpGrow < 0.05) { const t = Math.min(1, f / 0.7); return t * (2 - t); } const n = hp.length, q = Math.max(0, Math.min(n - 1, (f - 0.02) / 0.96 * (n - 1))), i = Math.min(n - 2, Math.floor(q)), v = hp[i] + (hp[i + 1] - hp[i]) * (q - i);
       return Math.max(0, Math.min(1, (v - hp[0]) / ((hp[n - 1] - hp[0]) || 1))); };
     const xTop = xo(0), sideAt = f => Math.max(WW / 2 + (xTop - WW / 2) * grow(f), f >= 0.45 ? Math.min(xTop, hipMin) : 0);
     // метка hl[i] — отрезок от half[i] к half[i+1] (последний — к half[0]); число меток = числу точек
