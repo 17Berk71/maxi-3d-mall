@@ -63,8 +63,17 @@ export function makeCollider(d, under, margin) {
     { const ex = x / (hr * 0.9 + m), ey = (y - 0.93 * H) / (hr * 1.16 + m), ez = z / (hr + m), q = ex * ex + ey * ey + ez * ez; if (q < 1) { const s = 1 / Math.sqrt(q); x *= s; y = 0.93 * H + (y - 0.93 * H) * s; z *= s; hit = true; } }
     // рука — капсула без шара сверху: выше сустава плечо задаёт эллипсоид (как у видимого тела); шар сустава торчал на ~5 см
     // над видимым плечом — ткань ложилась на невидимый бугор, плечи выходили квадратными
+    // верх руки — торец, сточенный по эллипсу на половину радиуса (как у видимой руки, mannequin.js): плоский торец с острым краем
+    // давал «полку» сверху рукава и резкий обрыв (квадратные плечи, блик на полке). armCap = 0 — прежний плоский торец (для сравнения)
+    const CAPV = d.armCap === 0 ? 0 : 2;
     if (!(noArm && y < j.y - 0.07)) for (const a of arms) {
-      const tt = (x - a.x0) * a.dx + (y - a.y0) * a.dy; if (tt < -0.01) continue;
+      const tt = (x - a.x0) * a.dx + (y - a.y0) * a.dy;
+      if (CAPV) { const r0 = armRad(d, 0) + m, hD = r0 * 0.5, t0 = hD;
+        if (tt < t0) { if (tt < t0 - hD) continue; // купол: эллипсоид с осью вдоль руки (полуось hD), поперёк — r0
+          const cx = a.x0 + a.dx * t0, cy = a.y0 + a.dy * t0, ux = x - cx, uy = y - cy, ua = ux * a.dx + uy * a.dy, rx = ux - a.dx * ua, ry = uy - a.dy * ua, rr = Math.hypot(rx, ry, z), q = (ua / hD) ** 2 + (rr / r0) ** 2;
+          if (q < 1) { const s = 1 / Math.sqrt(Math.max(q, 1e-6)), pa = ua * s, prx = rx * s, pry = ry * s, pz = z * s; x = cx + a.dx * pa + prx; y = cy + a.dy * pa + pry; z = pz; hit = true; }
+          continue; } }
+      else if (tt < -0.01) continue;
       const t = Math.max(0, Math.min(a.L, tt)), px = a.x0 + a.dx * t, py = a.y0 + a.dy * t;
       const dx = x - px, dy = y - py, dd = Math.hypot(dx, dy, z), r = armRad(d, t / a.L) + m;
       if (dd < r) { const s = r / Math.max(dd, 1e-5); x = px + dx * s; y = py + dy * s; z *= s; hit = true; }

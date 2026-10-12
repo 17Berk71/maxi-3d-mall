@@ -1,6 +1,7 @@
 // Манекен: туловище, шея, голова, ноги, руки в плечевых суставах.
 import * as THREE from 'three';
 import {armPose, armX, bodyDims, limb, loft, sx, sz, torsoR} from './body.js';
+import {armRad} from './geometry.js';
 
 // ---------- тело ----------
 export function buildBody(b, skinMat, d0) {
@@ -21,13 +22,16 @@ export function buildBody(b, skinMat, d0) {
     const leg = new THREE.Mesh(loft(prof, 22), skinMat); leg.position.x = side * d.legX; leg.userData.part = 'leg'; g.add(leg);
     const foot = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), skinMat); foot.scale.set(0.045 * d.s, 0.035 * d.s, 0.12 * d.s); foot.position.set(side * d.legX, 0.03 * H, 0.05 * d.s); g.add(foot);
     // рука
-    const a = armPose(d, side), arm = new THREE.Mesh(limb([[0, 0.042 * d.k * d.s], [0.07, 0.05 * d.k * d.s], [0.14, 0.046 * d.k * d.s], [0.47, 0.034 * d.k * d.s], [0.55, 0.036 * d.k * d.s], [1, 0.025 * d.s]], a.L), skinMat);
+    const a = armPose(d, side), capV = typeof window !== 'undefined' && window.__armCap === 0 ? 0 : 2;
+    // верх руки скруглён так же, как в теле для ткани (collider.js): торец сточен по эллипсу на половину радиуса
+    const r0 = armRad(d, 0) + 0.007, hD = r0 * 0.5, topP = capV === 2 ? [0.002, 0.03, 0.1, 0.25, 0.45, 0.7, 1].map(u => [u * hD / a.L, (r0 - 0.009) * Math.sqrt(1 - (1 - u) ** 2)]) : [[0, 0.042 * d.k * d.s]];
+    const arm = new THREE.Mesh(limb(topP.concat([[0.07, 0.05 * d.k * d.s], [0.14, 0.046 * d.k * d.s], [0.47, 0.034 * d.k * d.s], [0.55, 0.036 * d.k * d.s], [1, 0.025 * d.s]]).filter((p, i, A) => i === 0 || p[0] > A[i - 1][0]), a.L), skinMat);
     // рука, купол и кисть — в «плечевом суставе» (pivot): для анимации примерки руку можно отвести (rotation.z)
     const pivot = new THREE.Group(); pivot.position.copy(a.pos); pivot.rotation.z = a.rot; pivot.userData.armPivot = {side, rot: a.rot}; g.add(pivot);
     arm.userData.part = 'arm'; arm.userData.L = a.L; pivot.add(arm);
-    // торец руки у сустава закрыт пологим куполом: иначе край трубы выступал из шара плеча — «шарнир куклы»
+    // торец руки у сустава закрыт пологим куполом: иначе край трубы выступал из шара плеча — «шарнир куклы» (при скруглённом верхе руки купол не нужен)
     { const rr = 0.042 * d.k * d.s, cap = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), skinMat);
-      cap.scale.set(rr, rr * 0.45, rr); cap.userData.part = 'arm'; cap.userData.L = a.L; pivot.add(cap); }
+      cap.scale.set(rr, rr * 0.45, rr); cap.userData.part = 'arm'; cap.userData.L = a.L; if (capV !== 2) pivot.add(cap); }
     const hand = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), skinMat); hand.scale.set(0.022 * d.s, 0.06 * d.s, 0.04 * d.s);
     hand.position.set(0, -(a.L + 0.05 * d.s), 0); pivot.add(hand);
   });

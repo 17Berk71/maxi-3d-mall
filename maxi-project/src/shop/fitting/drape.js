@@ -14,12 +14,14 @@ import {itemCm} from './sizes.js';
 import {TOPK, bottomSpec, rowSpans, skirtProf, trueHem} from './specs.js';
 import {seamBend} from './worker.js';
 import {shoulderRound} from './shoulder-round.js';
+import {relaxStretch} from './relax.js';
 import {fit} from './state.js';
 
 // подготовка расчёта ткани: выкройка, швы, начальное положение. Сам расчёт (runCloth) — отдельно: в фоновом потоке
 // (garmentMeshAsync) или сразу (drapeTemplate). finish(P) — по готовым точкам собирает сетку, слой, автопроверку
 export function drapePrepare(item, d, under) {
   if (!DRAPE_ON || !item.tex) return null;
+  if (typeof window !== 'undefined' && window.__armCap === 0) d = Object.assign({}, d, {armCap: 0});   // прежний плоский верх руки — для сравнения
   const k = item.kind, top = TOPK.has(k), bottom = ['jeans', 'pants', 'shorts', 'skirt'].includes(k);
   if (!top && !bottom) return null;
   const st = item.state || '', open = st === 'open', tucked = st === 'tucked', hoodUp = st === 'hood', hooded = k === 'hoodie' || item.hood;
@@ -308,8 +310,9 @@ export function drapePrepare(item, d, under) {
   }
   const finish = P => { if (typeof window !== 'undefined' && window.__dbgC) window.__dbgC.push({k, C, P, item, info, d});
   // окат рукава после расчёта кладём точно на край проймы (между сшитыми точками кольцо рукава иначе отходит — видна щель)
-  if (!item.puff) shoulderRound(C, P, chains, push);   // плечевая точка без острого угла (до укладки оката на пройму); у рукава-фонарика сборка на плече — задумана
-  chains.forEach(({ring, lf, lb, rings}) => { const segs = ring.length;
+  const W_ = typeof window !== 'undefined' ? window : {};
+  if (!item.puff && !W_.__noSR) shoulderRound(C, P, chains, push);   // плечевая точка без острого угла (до укладки оката на пройму); у рукава-фонарика сборка на плече — задумана
+  if (!W_.__noRing) chains.forEach(({ring, lf, lb, rings}) => { const segs = ring.length;
     // концы проймы (у плеча и под мышкой) у переда и спинки — одна точка: сводим к середине
     [[lf[0], lb[0]], [lf[lf.length - 1], lb[lb.length - 1]]].forEach(([a, b]) => { for (let k = 0; k < 3; k++) { const m = (P[a * 3 + k] + P[b * 3 + k]) / 2; P[a * 3 + k] = m; P[b * 3 + k] = m; } });
     const along = (L, t) => { const f = t * (L.length - 1), i = Math.min(L.length - 2, Math.floor(f)), w = f - i, a = L[i] * 3, b = L[i + 1] * 3; return [0, 1, 2].map(k => P[a + k] * (1 - w) + P[b + k] * w); };
@@ -321,6 +324,8 @@ export function drapePrepare(item, d, under) {
     const G = rings || []; for (let pass = 0; pass < 4; pass++) for (let i = 1; i < Math.min(4, G.length - 1); i++) for (let j = 0; j < segs; j++) { const a = G[i - 1][j] * 3, b = G[i][j] * 3, c = G[i + 1][j] * 3;
       for (let k = 0; k < 3; k++) P[b + k] += ((P[a + k] + P[c + k]) / 2 - P[b + k]) * 0.6; push(P, b); } });
   C.ringSewn = chains.flatMap(ch => ch.ring);   // всё верхнее кольцо рукава вшито в пройму (в швах — только часть точек)
+  // растянутая ткань после расчёта (трение) и доводки — расслабить без трения: очаги на плече и под мышкой (relax.js)
+  if (!W_.__noRelax) relaxStretch(C, P, push, W_.__relaxLim || 1.06);
   const g = clothMeshes(C, P, H);
   g.userData.measures = info; if (cover) g.userData.cover = Object.assign(cover, {color: base});
   if (typeof window !== 'undefined' && window.__keep) window.__last = {C, P};

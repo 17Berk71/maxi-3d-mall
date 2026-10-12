@@ -3,13 +3,14 @@
 // Переменные: V=0,0.8,1.57 (углы поворота, рад) · Z=0.6 (приближение) · ZH=0.5 (высота взгляда) · BODY=m|f|JSON (по умолчанию m)
 //   HIDE=1 — спрятать тело (видны дыры в ткани) · NR=1 — без рельефа складок · PD=0.013 — глубина плиссе (м)
 //   CELL=0.02 — шаг сетки ткани · FAB='{"…"}' — проба параметров ткани · PAGE=other.html — другая сборка (make.mjs OUT=…)
-//   DPR=2 — масштаб снимка · PACK=feeds/fit/ — пакеты выгрузки вместо гардероба (id — номер пакета)
+//   X=__flag1,__flag2=0.5 — window-флаги (отладочные переключатели) · DPR=2 — масштаб снимка · PACK=feeds/fit/ — пакеты выгрузки вместо гардероба (id — номер пакета)
 import {browser, bodyFromEnv, URL0, ensureShots} from './common.mjs';
 const name = process.argv[2], ids = (process.argv[3] || '').split(',').filter(Boolean);
 if (!name || !ids.length) { console.log('shot.mjs NAME id1,id2'); process.exit(1); }
 const dir = ensureShots(), V = (process.env.V || '0,0.6,1.57').split(',').map(Number);
 const b = await browser(), pg = await b.newPage({viewport: {width: 620, height: 920}, deviceScaleFactor: +(process.env.DPR || 2)}); pg.setDefaultTimeout(300000);
 pg.on('pageerror', e => console.log('PAGEERR', e.message)); pg.on('console', m => { if (m.text().startsWith('T ')) console.log(m.text()); });
+await pg.addInitScript(x => { (x || '').split(',').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); window[k] = v == null ? 1 : +v; }); }, process.env.X || '');   // X=__flag1,__flag2=0.5 — отладочные переключатели
 await pg.addInitScript(([h, c, f, n, pd]) => { window.HIDE = h; if (c) window.__cell = c; if (f) window.__fab = JSON.parse(f); window.__noRelief = !!n; if (pd !== '') window.__pd = +pd; },
   [+(process.env.HIDE || 0), +(process.env.CELL || 0), process.env.FAB || '', +(process.env.NR || 0), process.env.PD || '']);
 await pg.goto(URL0 + (process.env.PAGE || 'index.html'));
