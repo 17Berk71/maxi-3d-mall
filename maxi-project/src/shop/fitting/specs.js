@@ -105,6 +105,8 @@ export function bottomSpec(item, d) {
     lw = lw.map(v => v * f); lw[n - 1] = lw[n - 2] = cm.hem / 100; }
   // штанина книзу не шире 1.6 ширины у шага (выбросы фото); бочки и клёш расширяются до ~1.4–1.5 — их не срезать
   for (let i = 1; i < lw.length - 1 && cm.hip; i++) lw[i] = Math.min(lw[i], lw[0] * 1.6);
+  // ширина штанины у колена, измеренная лентой (лёжа): масштаб всех ширин штанины по ней, форма — по фото
+  if (cm.knee) { const i = Math.round(0.42 * (lw.length - 1)), f = cm.knee / 100 / lw[i]; lw = lw.map(v => v * f); }
   // бёдра (полуобхват): по таблице или по фото (середина посадки; ниже на фото лёжа уже расходятся штанины)
   const hip = cm.hip ? cm.hip / 100 : sh.hip && sh.hip.length > 3 ? sh.hip[3] * kk : 0;
   return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip};
