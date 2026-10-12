@@ -24,7 +24,7 @@ export function buildBody(b, skinMat, d0) {
     // рука
     const a = armPose(d, side), capV = typeof window !== 'undefined' && window.__armCap === 0 ? 0 : 2;
     // верх руки скруглён так же, как в теле для ткани (collider.js): торец сточен по эллипсу на половину радиуса
-    const r0 = armRad(d, 0) + 0.007, hD = r0 * 0.5, topP = capV === 2 ? [0.002, 0.03, 0.1, 0.25, 0.45, 0.7, 1].map(u => [u * hD / a.L, (r0 - 0.015) * Math.sqrt(1 - (1 - u) ** 2)]) : [[0, 0.042 * d.k * d.s]];
+    const r0 = armRad(d, 0) + 0.007, hD = r0 * 0.5, topP = capV === 2 ? [0.002, 0.03, 0.1, 0.25, 0.45, 0.7, 1].map(u => [u * hD / a.L, (r0 - 0.02) * Math.sqrt(1 - (1 - u) ** 2)]) : [[0, 0.042 * d.k * d.s]];
     const arm = new THREE.Mesh(limb(topP.concat([[0.07, 0.05 * d.k * d.s], [0.14, 0.046 * d.k * d.s], [0.47, 0.034 * d.k * d.s], [0.55, 0.036 * d.k * d.s], [1, 0.025 * d.s]]).filter((p, i, A) => i === 0 || p[0] > A[i - 1][0]), a.L), skinMat);
     // рука, купол и кисть — в «плечевом суставе» (pivot): для анимации примерки руку можно отвести (rotation.z)
     const pivot = new THREE.Group(); pivot.position.copy(a.pos); pivot.rotation.z = a.rot; pivot.userData.armPivot = {side, rot: a.rot}; g.add(pivot);

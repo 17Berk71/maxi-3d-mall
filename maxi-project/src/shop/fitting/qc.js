@@ -195,7 +195,8 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
     const keep = merged ? o.allK : o.torsoK;
     // у фото на модели низ скруглён, у слившихся рукавов на вешалке внизу рукава кончаются — нижние строки не сравниваем
     // на фото с моделью руки закрывают бока лифа — верхнюю четверть (у подмышек) не сравниваем
-    const tE = front ? 0.85 : 0.96, tS = worn ? 0.25 : 0.04;
+    // слившиеся рукава на вешалке кончаются выше низа корпуса, а на манекене рукава ниже низа — внизу сравнивали бы разное
+    const tE = merged ? 0.6 : front ? 0.85 : 0.96, tS = worn ? 0.25 : 0.04;
     for (let i = 0; i < N; i++) { const t = tS + (tE - tS) * i / (N - 1), y = y0 + (y1 - y0) * t, rr = Math.min(g.gh - 1, Math.floor((v0 + (v1 - v0) * t) * g.gh));
       const pts = slicePts(C, P, y, keep), pw = merged ? ph.full(rr) : ph.center(rr); if (pts.length < 6 || !pw) continue;
       rows.push({t, y, model: front ? xExtent(pts) : hullHalf(pts), px: pw, where: whereTop(t)}); }
