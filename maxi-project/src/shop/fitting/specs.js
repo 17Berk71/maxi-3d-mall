@@ -107,6 +107,9 @@ export function bottomSpec(item, d) {
   for (let i = 1; i < lw.length - 1 && cm.hip; i++) lw[i] = Math.min(lw[i], lw[0] * 1.6);
   // ширина штанины у колена, измеренная лентой (лёжа): масштаб всех ширин штанины по ней, форма — по фото
   if (cm.knee) { const i = Math.round(0.42 * (lw.length - 1)), f = cm.knee / 100 / lw[i]; lw = lw.map(v => v * f); }
+  // ширина штанины по всей длине, измеренная по фото с листом A4 (cm.leg: [доля от шага до низа, см]) — точнее профиля с фото без масштаба
+  if (Array.isArray(cm.leg) && cm.leg.length > 1) lw = lw.map((_, i) => { const t = i / (lw.length - 1) * 0.99, L = cm.leg; let k = 0; while (k < L.length - 2 && L[k + 1][0] < t) k++;
+    const [t0, v0] = L[k], [t1, v1] = L[k + 1], w = Math.max(0, Math.min(1, (t - t0) / ((t1 - t0) || 1))); return (v0 + (v1 - v0) * w) / 100; });
   // бёдра (полуобхват): по таблице или по фото (середина посадки; ниже на фото лёжа уже расходятся штанины)
   const hip = cm.hip ? cm.hip / 100 : sh.hip && sh.hip.length > 3 ? sh.hip[3] * kk : 0;
   return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip};

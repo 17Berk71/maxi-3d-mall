@@ -239,8 +239,8 @@ export function drapePrepare(item, d, under) {
     const WW = Math.max(sp.ww, ellP(bodyAB(d, sp.yW / H).a, bodyAB(d, sp.yW / H).b) / 2 + 0.01), R = sp.yW - sp.yC, IN = sp.legLen + sp.stack;
     const HP = Math.max(sp.hip || WW * 1.15, ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
     const lw = sp.lw.slice(), TW = Math.max(lw[0], HP * 0.55, d.thigh * Math.PI + 0.02);
-    // штанина не уже ноги (+ свободное облегание ~3 см по полуобхвату): иначе тесная труба в расчёте соскакивает с ноги вбок
-    const legW = t => { const yf = (sp.yW - R - IN * t) / H, r = Math.min(legR(d, Math.max(0, yf)), d.legX - 0.002) + 0.007; return Math.max(interp(lw, t) * (TW / lw[0]), 0.12, Math.PI * r + 0.03); };
+    // штанина не уже ноги (+ ~1 см по полуобхвату сверх зазора): иначе тесная труба в расчёте соскакивает с ноги вбок
+    const legW = t => { const yf = (sp.yW - R - IN * t) / H, r = Math.min(legR(d, Math.max(0, yf)), d.legX - 0.002) + 0.007; return Math.max(interp(lw, t) * (TW / lw[0]), 0.12, Math.PI * r + 0.012); };   /* r уже с зазором 7 мм; было +3 см по полуобхвату — у бедра штанина выходила шире настоящей (бочка становилась ромбом) */
     yPin = sp.yW; info = {WW, HP, R, IN, TW, sp}; fit.BOT_YW = sp.yW;
     cover = {y0: sp.yHem + 0.03, y1: sp.yW - 0.005, torso: true, legs: true};
     // выкройка как у настоящих брюк: четыре детали (перед и спинка, левая и правая). Штанина — вокруг своей ноги (ось на legX):

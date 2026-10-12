@@ -22,8 +22,10 @@ ITEMS = [
          states=[('closed', 'Застёгнута'), ('open', 'Расстёгнута'), ('hood', 'Капюшон')], worn_states={'open': '9e374bcc', 'hood': 'f5c93b4f'}),
     dict(id='blazer', name='Пиджак укороченный', kind='jacket', crop=True, front='bc8f4254', back='723787be', worn=['44137c8e', 'f5b54112'],
          states=[('open', 'Нараспашку'), ('closed', 'Застёгнут')]),
-    # мерки (лёжа, см): штанина у колена (~0.42 длины штанины от шага) — 38 рулеткой; пояс ~42 и длина по боку ~106 — по листу A4 на том же фото
-    dict(id='barrel-jeans', name='Джинсы широкие «бочка»', kind='jeans', front='9e18a85c', back='3df4cd22', worn=['28155c96', '02244c91'], cm=dict(knee=38, waist=42, outseam=106)),
+    # мерки (лёжа, см): штанина у колена (~0.42 длины штанины от шага) — 38 рулеткой; пояс ~42, длина по боку ~107 и ширина
+    # штанины по всей длине (leg: [доля длины штанины от шага, см]) — по листу A4 на том же фото, подогнано к рулетке у колена
+    dict(id='barrel-jeans', name='Джинсы широкие «бочка»', kind='jeans', front='9e18a85c', back='3df4cd22', worn=['28155c96', '02244c91'], cm=dict(knee=38, waist=42, outseam=107,
+                 leg=[[0, 32], [0.11, 34], [0.23, 35.7], [0.38, 37.5], [0.54, 37], [0.69, 35], [0.85, 32], [0.92, 30], [1, 29.5]])),
     dict(id='brown-pants', name='Брюки на резинке', kind='pants', elastic=True, front='3ee4d24c', back='65e4e52b', worn=['fdf4f8dd', 'f5b54112x']),
     dict(id='nike-pants', name='Штаны нейлоновые Nike', kind='pants', elastic=True, front='a6435039', back='40f40230', worn=['afdd9abd', '8bb621b4']),
     dict(id='cream-shorts', name='Шорты джинсовые', kind='shorts', front='e7268e0b', back='c8f49e61', worn=['a7529a3a', '9e360828']),
