@@ -248,8 +248,16 @@ export function drapePrepare(item, d, under) {
     // Раньше перед был одной деталью с внутренним швом у самой середины: штанина висела снаружи от ноги, к низу сходилась к ноге
     // конусом и «липла», а по глубине оставалась узкой.
     const cxL = d.legX + 0.01, N = 10, xo = t => Math.max(cxL + legW(t) / 2, t < 0.35 ? HP / 2 * (1 - t / 0.35) + (cxL + legW(t) / 2) * (t / 0.35) : 0), xi = t => cxL - legW(t) / 2;
+    // бок от пояса до шага — по форме вещи на фото (sh.hip: ширина по 8 строкам от пояса к шагу): плавно, как у настоящей выкройки.
+    // Раньше бок шёл от пояса сразу к точке бёдер HP на 0.55 посадки и дальше отвесно: у широких брюк (HP намного больше бёдер)
+    // это давало резкую «полку» на бёдрах и прямые стенки ниже — надутый каркас
+    const hp = sh.hip && sh.hip.length > 2 ? sh.hip : null, hipMin = (HP0 => HP0 / 2)(ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
+    const grow = f => { if (!hp) { const t = Math.min(1, f / 0.7); return t * (2 - t); } const n = hp.length, q = Math.max(0, Math.min(n - 1, (f - 0.02) / 0.96 * (n - 1))), i = Math.min(n - 2, Math.floor(q)), v = hp[i] + (hp[i + 1] - hp[i]) * (q - i);
+      return Math.max(0, Math.min(1, (v - hp[0]) / ((hp[n - 1] - hp[0]) || 1))); };
+    const xTop = xo(0), sideAt = f => Math.max(WW / 2 + (xTop - WW / 2) * grow(f), f >= 0.45 ? Math.min(xTop, hipMin) : 0);
     // метка hl[i] — отрезок от half[i] к half[i+1] (последний — к half[0]); число меток = числу точек
-    const half = [[0, 0], [WW / 2, 0], [HP / 2, R * 0.55]], hl = ['waist', 'side', 'side'];
+    const half = [[0, 0], [WW / 2, 0]], hl = ['waist', 'side'];
+    for (const f of [0.2, 0.4, 0.6, 0.8]) { half.push([sideAt(f), R * f]); hl.push('side'); }
     for (let i = 0; i <= N; i++) { const t = i / N; half.push([xo(t), R + IN * t]); if (i < N) hl.push('side'); }
     hl.push('hem');                                                     // от внешнего угла низа к внутреннему
     for (let i = N; i >= 0; i--) { const t = i / N; half.push([xi(t), R + IN * t]); if (i > 0) hl.push('inner'); }
