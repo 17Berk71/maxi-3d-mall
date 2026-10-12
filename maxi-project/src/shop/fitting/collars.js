@@ -7,14 +7,22 @@ import {addPanel, addTube} from './pattern.js';
 // up — на голове; иначе лежит на спине (боковины сложены, макушка внизу)
 // воротник-стойка: невысокая лента вокруг шеи, низ вшит в горловину (перед и спинка), ткань — с верха переда на фото
 export function addStand(C, d, yTop, fronts, pb, mat, a) {
-  const neck = fronts.concat([pb]).flatMap(P_ => P_.pts.filter(p => p.edge && p.lab === 'neck').map(p => p.g)); if (neck.length < 6) return;
-  const segs = 24, h = 0.034 * d.s, r = d.neck + 0.011, yb = yTop - 0.008;
+  const neck = fronts.concat([pb]).flatMap(P_ => P_.pts.filter(p => p.edge && p.lab === 'neck').map(p => p.g)); if (neck.length < 6) return;   // точки выреза (для проверки, что вырез есть)
+  // длина стойки = длина выреза горловины (по выкройке переда и спинки): кольцо «шея + 1.1 см» было ~44 см при вырезе ~33 —
+  // вырез растягивался вдвое у середины переда и спинки; но не теснее шеи
+  let neckLen = 0; fronts.concat([pb]).forEach(P_ => { const q = P_.pts.filter(p => p.edge && p.lab === 'neck').sort((a_, b_) => a_.x - b_.x); for (let i = 1; i < q.length; i++) neckLen += Math.hypot(q[i].x - q[i - 1].x, q[i].y - q[i - 1].y); });
+  const segs = 24, h = 0.034 * d.s, r = Math.max(d.neck + 0.006, neckLen / (2 * Math.PI)), yb = yTop - 0.008;
   const tube = addTube(C, new THREE.Vector3(0, yb, 0), new THREE.Vector3(0, 1, 0), h, s => r - s * 0.08, segs, 3, mat, 1, (u, v) => [a.cx + (u - 0.5) * 0.12, 0.01 + v * 0.03]);
   C.meshes[C.meshes.length - 1].role = 'stand';   // пуговицы, что на фото на стойке, пришиваются к ней (decor.js)
-  // шов: каждая точка горловины — к ближайшей по углу точке нижнего кольца стойки
-  neck.forEach(g_ => { const x = C.P[g_ * 3], z = C.P[g_ * 3 + 2]; let best = 9, q = null;
-    tube.top.forEach(t => { const ax = Math.atan2(C.P[t * 3 + 2], C.P[t * 3]) - Math.atan2(z, x), da = Math.abs(Math.atan2(Math.sin(ax), Math.cos(ax))); if (da < best) { best = da; q = t; } });
-    if (q != null) C.seams.push([g_, q]); });
+  // шов: точка горловины — к точке нижнего кольца стойки по месту вдоль выреза: передний вырез (слева направо) — на переднюю
+  // половину кольца, задний — на заднюю. Раньше — по углу начального положения: перед и спинка в начале лежат плоско далеко
+  // впереди и позади фигуры, все точки выреза попадали в переднюю/заднюю четверть кольца, бока стойки оставались без пары, а угол
+  // выреза у плеча растягивался вдвое
+  fronts.concat([pb]).forEach(P_ => { const back = P_ === pb, q = P_.pts.filter(p => p.edge && p.lab === 'neck').sort((a_, b_) => a_.x - b_.x); if (q.length < 2) return;
+    const cum = [0]; for (let i = 1; i < q.length; i++) cum.push(cum[i - 1] + Math.hypot(q[i].x - q[i - 1].x, q[i].y - q[i - 1].y)); const tot = cum[cum.length - 1] || 1;
+    q.forEach((p, i) => { const th = Math.PI * (1 - cum[i] / tot), want = back ? -th : th; let best = 9, tq = null;   /* x слева (−) → угол π, справа → 0; спереди z > 0 */
+      tube.top.forEach(t => { const ax = Math.atan2(C.P[t * 3 + 2], C.P[t * 3]) - want, da = Math.abs(Math.atan2(Math.sin(ax), Math.cos(ax))); if (da < best) { best = da; tq = t; } });
+      if (tq != null) C.seams.push([p.g, tq]); }); });
 }
 export function addHood(C, d, M, fronts, pb, mat, up, cell, uvS) {
   const H = d.H, k = Math.pow(H / 1.8, 0.5), Hh = 0.355 * k;

@@ -17,8 +17,10 @@ function buttonGeo(pearl) {
 }
 const MATS = new Map();
 // цвет с фото — среднее по пятну пуговицы вместе с бликом: чуть темнее, блеск дадут свет и лак
-function buttonMat(hex, pearl) {
-  const key = hex + pearl;
+function buttonMat(hex, pearl, covered) {
+  const key = hex + pearl + covered;
+  // обтянутая тканью — матовая, как ткань (без лака и блеска)
+  if (covered) { if (!MATS.has(key)) MATS.set(key, new THREE.MeshPhysicalMaterial({color: LIN(hex).multiplyScalar(0.8), roughness: 0.85, metalness: 0, sheen: new THREE.Color(0.12, 0.1, 0.1), envMapIntensity: 0.1})); return MATS.get(key); }
   if (!MATS.has(key)) MATS.set(key, new THREE.MeshPhysicalMaterial({color: LIN(hex).multiplyScalar(pearl ? 0.72 : 0.85), roughness: pearl ? 0.28 : 0.55, metalness: 0,
     clearcoat: pearl ? 1 : 0.15, clearcoatRoughness: pearl ? 0.2 : 0.45, sheen: pearl ? new THREE.Color(0.25, 0.22, 0.26) : null, envMapIntensity: pearl ? 0.45 : 0.15}));
   return MATS.get(key);
@@ -57,8 +59,13 @@ export function buildDecor(g, C, P, N) {
       let yMin = 9, yMax = -9, rMax = 0; stand.verts.forEach(v => { yMin = Math.min(yMin, P[v * 3 + 1]); yMax = Math.max(yMax, P[v * 3 + 1]); rMax = Math.max(rMax, Math.hypot(P[v * 3], P[v * 3 + 2])); });
       if (py > yMin - d.r && Math.hypot(px, pz) < rMax + d.r) { let best = 9, bi = -1; stand.verts.forEach(v => { const yy = Math.min(yMax - d.r * 1.3, Math.max(yMin + d.r * 1.3, py)), dd = Math.hypot(P[v * 3] - px, P[v * 3 + 1] - yy, P[v * 3 + 2] - pz); if (dd < best) { best = dd; bi = v; } });
         if (bi < 0) continue; d.v = [bi, bi, bi]; d.w = [1, 0, 0]; } }
-    const hsl = {}; new THREE.Color(b.rgb || '#e8e4dc').getHSL(hsl); const pearl = hsl.l > 0.55; d.pearl = pearl;
-    const mesh = new THREE.Mesh(buttonGeo(pearl), buttonMat(b.rgb || '#e8e4dc', pearl)); mesh.scale.setScalar(d.r); mesh.castShadow = false; mesh.receiveShadow = false; mesh.userData.decor = d;   /* мелочь: своя тень на шарике давала «полумесяцы» */
+    const hsl = {}; new THREE.Color(b.rgb || '#e8e4dc').getHSL(hsl);
+    // пуговица того же оттенка, что ткань, только светлее — обтянута тканью: на фото светлая от блика на выпуклости
+    // (платье марсала: #c4a2a6 при ткани #4c0e21 выходило белым «жемчугом»). Цвет — от ткани, чуть светлее, матовая
+    const fh = {}; if (b.fabric) new THREE.Color(b.fabric).getHSL(fh); const dh = Math.abs(hsl.h - (fh.h || 0)), sameHue = b.fabric && Math.min(dh, 1 - dh) < 0.05 && fh.s > 0.2 && hsl.s > 0.12;
+    const covered = !!sameHue, pearl = !covered && hsl.l > 0.55; d.pearl = pearl || covered;
+    const hex = covered ? '#' + new THREE.Color(b.fabric).offsetHSL(0, 0, 0.06).getHexString() : (b.rgb || '#e8e4dc');
+    const mesh = new THREE.Mesh(buttonGeo(pearl || covered), buttonMat(hex, pearl, covered)); mesh.scale.setScalar(d.r); mesh.castShadow = false; mesh.receiveShadow = false; mesh.userData.decor = d;   /* мелочь: своя тень на шарике давала «полумесяцы» */
     place(mesh, d, P, N); mesh.userData.final = {p: mesh.position.clone(), q: mesh.quaternion.clone()}; g.add(mesh); list.push(mesh); }
   g.userData.decor = list;
 }

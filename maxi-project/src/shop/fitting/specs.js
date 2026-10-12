@@ -40,9 +40,12 @@ export function topSpec(item, d) {
   const sh = item.shape || {}, cm = itemCm(item, d.b), k = item.kind, H = d.H;
   let L = cm.len ? cm.len / 100 : (LEN0[k] || 0.7) * (sh.crop ? 0.84 : 1) * Math.pow(H / 1.8, 0.6);
   // вещь снята на модели: длину берём с фото — где низ относительно пояса брюк (hem_waist), разница размеров — по таблице
-  if (sh.worn && sh.hem_waist != null) {
+  // но если в таблице есть длина выбранного размера — она точнее: на карточке магазина кадр часто обрезан, низ вещи не виден или
+  // закрыт (td-tee: «низ у пояса» по фото — 49 см при 72 по таблице)
+  const lenPhoto = !!(sh.worn && sh.hem_waist != null && !cm.len);
+  if (lenPhoto) {
     const yW = 0.595 * H, yN = 0.858 * H, yHemPhoto = yW - sh.hem_waist * (yN - yW) - 0.012 * H;
-    L = 0.848 * H - yHemPhoto + (cm.len && sh.ref_len ? (cm.len - sh.ref_len) / 100 : 0);
+    L = 0.848 * H - yHemPhoto;
   }
   // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
   const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
@@ -57,14 +60,18 @@ export function topSpec(item, d) {
     // талия — последняя узкая строка перед расширением юбки (не первая под рукавом)
     let mn = 9; for (let i = 1; i < 10; i++) mn = Math.min(mn, gp[i]); let iw = 1; for (let i = 1; i < 10; i++) if (gp[i] <= mn * 1.04) iw = i; iw = Math.max(2, iw);
     const sz = sizeOf(item, d.b), bw = sz && sz.body, mid = r => (r[0] + r[1]) / 2;
-    const tr = bw && bw.chest && bw.waist ? (mid(bw.waist) + 6) / (mid(bw.chest) + 8) : Math.pow(gp[iw] / gp[0], 1.6);
+    // свобода приталенного лифа: по талии ~3 см, по груди ~6 (было 6 и 8 — талия платья с отрезной талией выходила прямой, не затянутой, как на фото)
+    const tr = bw && bw.chest && bw.waist ? (mid(bw.waist) + 3) / (mid(bw.chest) + 6) : Math.pow(gp[iw] / gp[0], 1.6);
     const sm = t => t * t * (3 - 2 * t);
     // грудь — строка под рукавом (в строке подмышки на фото ещё рукава); юбка книзу не сужается (скруглённый край фото — не силуэт)
     const c1 = gp[1]; let prev = 0;
     Fs = gp.map((v, i) => { let w = i === 0 ? Math.max(gp[0], c1) : i <= iw ? c1 * (1 - (1 - tr) * sm((i - 1) / Math.max(1, iw - 1))) : c1 * tr * (v / gp[iw]);
       if (i > iw) w = Math.max(w, prev); prev = w; return w / hk * L; });
   }
-  if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); }
+  // замер ширины по груди: ширины по нему; а если длины в замерах нет и фото не на модели и не со слившимися рукавами —
+  // и длину по пропорции фото (типовая длина вида у футболки Zolla давала 72 см при ~69 по фото и замеру ширины; поправка
+  // вешалки hk подобрана как раз по ней)
+  if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); if (!cm.len && !sh.worn && !sh.merged) L *= f; }
   const yHPS = 0.848 * H, yHem = yHPS - L, yN = 0.858 * H;
   const bc = bodyAB(d, 0.72), Fbody = ellP(bc.a, bc.b) / 2;
   const loose = clamp((Fs[1] - Fbody) / (0.24 * Fbody), 0, 1.5);
@@ -75,7 +82,7 @@ export function topSpec(item, d) {
   const Sx = Math.max(d.chest * d.shX * 0.98, armX(d) + 0.02), aFree = solve(x => ellP(x, x * 0.6), 0.01, 1.2, 2 * F(yArm - 0.03));
   const xS = Math.max(Sx * 0.92 + ease, aFree * 0.98, armX(d) - 0.005);   // плечо вещи накрывает плечевой сустав
   const ySh = xS < Sx ? 0.8 * H + d.chest * 0.42 * Math.sqrt(1 - (xS / Sx) ** 2) + ease : 0.8 * H - (xS - Sx) * 1.1 + ease;
-  return {L, Fs, F, yHPS, yHem, yN, yArm, loose, ease, xS, ySh: Math.max(ySh, yArm + 0.05), aFree, hk};
+  return {L, Fs, F, yHPS, yHem, yN, yArm, loose, ease, xS, ySh: Math.max(ySh, yArm + 0.05), aFree, hk, lenPhoto};
 }
 export function bottomSpec(item, d) {
   const sh = item.shape || {}, cm = itemCm(item, d.b), k = item.kind, H = d.H;
@@ -95,6 +102,9 @@ export function bottomSpec(item, d) {
   let lw = (sh.leg || [0.6]).slice();
   // хвост с резким сужением — шум фото (тень, обувь, загнутый край): дальше первой такой точки держим ширину
   for (let i = Math.max(1, lw.length >> 1); i < lw.length; i++) if (lw[i] < lw[i - 1] * 0.8) { for (let j = i; j < lw.length; j++) lw[j] = lw[i - 1] * 0.97; break; }
+  // последние точки — скруглённый край выреза у самого низа: провал больше 10% за шаг — тоже шум (у шорт низ сужался с 38 до 30.5 см
+  // — «манжета»); настоящее сужение книзу (бочка, зауженные) идёт плавно по многим точкам
+  for (let i = Math.max(1, lw.length - 3); i < lw.length; i++) if (lw[i] < lw[i - 1] * 0.9) { for (let j = i; j < lw.length; j++) lw[j] = lw[i - 1] * 0.98; break; }
   lw = lw.map(v => v * kk);
   // мерки таблицы: низ штанины и бёдра точные, профиль между ними — по фото
   // низ на фото шумный (обувь, тень): опора — медиана нижней трети без двух последних точек; последние две = мерка низа
@@ -119,7 +129,11 @@ export function bottomSpec(item, d) {
 // спереди видно ≈ диаметр — книзу (круглое сечение) ширина лёжа больше видимой (до ×1.16); книзу не сужается (скруглённый край фото)
 export function skirtProf(item, d) {
   const H = d.H, sp = bottomSpec(item, d), cm = itemCm(item, d.b), sh = item.shape || {};
-  const yW = Math.max(sp.yW, 0.585 * H), abW = bodyAB(d, yW / H), WW = Math.max(sp.ww, ellP(abW.a, abW.b) / 2 + 0.01);
+  // пояс юбки — там, где тело в него помещается: на постоянной высоте 0.595H у женской фигуры тело уже шире пояса по таблице
+  // (талия — на 0.625H), и пояс растягивался (юбка-шорты: 41 см при 38.3 по таблице); выше талии не поднимаем
+  let yW = Math.max(sp.yW, 0.585 * H); const bodyHalfAt = y => { const ab = bodyAB(d, y / H); return ellP(ab.a, ab.b) / 2; };
+  if (cm.waist) while (yW < 0.625 * H && bodyHalfAt(yW) + 0.006 > cm.waist / 100) yW += 0.002 * H;
+  const WW = Math.max(sp.ww, bodyHalfAt(yW) + 0.01);
   const Lk = cm.len ? cm.len / 100 : (LEN0.skirt) * Math.pow(H / 1.8, 0.6), HPb = ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03;
   let prof = sh.hip && sh.hip.length ? sh.hip.slice() : [1, 1.15, 1.2]; for (let i = 1; i < prof.length; i++) prof[i] = Math.max(prof[i], prof[i - 1]);
   if (sh.worn) prof = prof.map((v, i) => v * (1 + 0.16 * i / Math.max(1, prof.length - 1)));

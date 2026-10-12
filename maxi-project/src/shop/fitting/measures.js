@@ -5,7 +5,8 @@ import {itemCm} from './sizes.js';
 import {topSpec} from './specs.js';
 import {fit} from './state.js';
 
-// мерки верха (м): ширина лёжа W, длина L, плечи S, пройма AD, рукав SL/SO, горловина
+// мерки верха (м): ширина лёжа W, длина L, плечи S, пройма AD, рукав SL/SO, горловина (у стойки вырез спереди неглубокий:
+// стойка — ровное кольцо у шеи, при глубине 6 см она тянула вырез вверх, ткань у середины переда растягивалась вдвое)
 export function topMeasures(item, d) {
   const sp = topSpec(item, d), sh = item.shape || {}, k = item.kind, cm = itemCm(item, d.b);
   // рукава: у платья — по фото (длинные, короткие или без рукавов), у остальных — по виду вещи
@@ -20,7 +21,7 @@ export function topMeasures(item, d) {
   const SL = cm.sleeve ? cm.sleeve / 100 : long ? 0.335 * d.H * 0.98 + 0.03 - (S / 2 - armX(d)) : Math.max(0.16, Math.min(0.3, (sh.sl_len ? sh.sl_len * L * 0.6 : 0.2) + loose * 0.4));
   const SO = long ? (k === 'jacket' || k === 'coat' ? 0.15 : k === 'puffer' ? 0.17 : 0.11) : Math.max(0.15, 0.17 + loose * 0.5);
   const HW = sp.Fs[sp.Fs.length - 3] || W;
-  return {W, L, S, AD, SL, SO, HW: long && (k === 'sweater' || k === 'hoodie') ? Math.max(bodyHalf * 1.02, W * 0.86) : Math.max(HW, W * 0.95), NW: 0.155 * Math.pow(d.H / 1.8, 0.5), ND: item.collar ? 0.035 : 0.06, NDb: 0.018, sp, noSleeve};
+  return {W, L, S, AD, SL, SO, HW: long && (k === 'sweater' || k === 'hoodie') ? Math.max(bodyHalf * 1.02, W * 0.86) : Math.max(HW, W * 0.95), NW: 0.155 * Math.pow(d.H / 1.8, 0.5), ND: item.stand ? 0.03 : item.collar ? 0.035 : 0.06, NDb: 0.018, sp, noSleeve};
 }
 // пояс надетых брюк (для заправленного верха); сбрасывается при каждой сборке образа
 fit.BOT_YW = 0;

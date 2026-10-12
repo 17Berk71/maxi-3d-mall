@@ -20,7 +20,7 @@ const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
 const med = arr => { const s = arr.filter(v => v != null && isFinite(v)).sort((x, y) => x - y); return s.length ? s[s.length >> 1] : null; };
 // предельное растяжение связи по виду ткани: трикотаж тянется, тканое — почти нет
 const KNIT = new Set(['knit', 'rib', 'chunky']);
-const stretchLim = ft => (ft && KNIT.has(ft.weave) ? 1.1 : 1.05);
+const stretchLim = ft => (ft && KNIT.has(ft.weave) ? 1.1 : 1.06);   /* тканое — 6%, как порог расслабления (relax.js): по косой тканое тянется на несколько процентов */
 
 // сечение ткани плоскостью y: точки пересечения рёбер сетки (основа, уток, диагонали) [x, z]; keep — маска вершин
 function slicePts(C, P, y, keep) {
@@ -128,8 +128,11 @@ export function qcCloth(C, P, d, item, dr, info, top, aF, aB) {
       {mode, prof: {t: rows.map(r => +r.t.toFixed(2)), model: rows.map(r => +(r.model * 100).toFixed(1)), photo: rows.map(r => +(r.want * 100).toFixed(1))}});
   }
 
-  if (sil && sil.aspect) { const A = sil.aspect, e = A.model / A.photo - 1, dL = e * A.lM * 100;
-    add('длина', Math.abs(e) < 0.08, 'длина/ширина ' + A.model.toFixed(2) + ', на фото ' + A.photo.toFixed(2) + ' (' + (e > 0 ? 'длиннее' : 'короче') + ' на ~' + Math.abs(dL).toFixed(0) + ' см)', 12 * ramp(Math.abs(e), 0.06, 0.2),
+  if (sil && sil.aspect) { const A = sil.aspect, e = A.lM / A.want - 1, dL = (A.lM - A.want) * 100, cm0 = itemCm(item, d.b);
+    // на вешалке вещь уже, чем лёжа, на сколько — зависит от ткани (поправка hk подобрана по одной футболке): без замера длины или
+    // ширины пропорция фото на вешалке ненадёжна — только к сведению
+    const sure = !sh.hang || cm0.chest || cm0.len;
+    add('длина', !sure || Math.abs(e) < 0.06, (A.lM * 100).toFixed(1) + ' см, по пропорции фото ' + (A.want * 100).toFixed(1) + ' (' + (e > 0 ? 'длиннее' : 'короче') + ' на ' + Math.abs(dL).toFixed(1) + ' см)' + (sure ? '' : ' — на вешалке без замеров, оценка'), sure ? 12 * ramp(Math.abs(e), 0.04, 0.16) : 0,
       'вещь ' + (e > 0 ? 'длиннее' : 'короче') + ', чем на фото, примерно на ' + Math.abs(dL).toFixed(0) + ' см'); }
   // 6б. форма спереди у брюк: ромб и «каркас» у шага. Там фото лёжа ничего не говорит (штанины расходятся «домиком»), а обхват
   // почти не меняется — меняется ширина спереди. Ожидаемая ширина спереди: посадка — эллипс по обхвату с фото (глубина 0.7 ширины),
@@ -191,8 +194,9 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
     const v1 = Math.max(v0 + 0.2, (r + 0.5) / g.gh), y0 = 0.858 * H + 0.012 - info.AD - 0.02, y1 = o.yMin + 0.015, N = 20;
     const keep = merged ? o.allK : o.torsoK;
     // у фото на модели низ скруглён, у слившихся рукавов на вешалке внизу рукава кончаются — нижние строки не сравниваем
-    const tE = front ? 0.85 : 0.96;
-    for (let i = 0; i < N; i++) { const t = 0.04 + (tE - 0.04) * i / (N - 1), y = y0 + (y1 - y0) * t, rr = Math.min(g.gh - 1, Math.floor((v0 + (v1 - v0) * t) * g.gh));
+    // на фото с моделью руки закрывают бока лифа — верхнюю четверть (у подмышек) не сравниваем
+    const tE = front ? 0.85 : 0.96, tS = worn ? 0.25 : 0.04;
+    for (let i = 0; i < N; i++) { const t = tS + (tE - tS) * i / (N - 1), y = y0 + (y1 - y0) * t, rr = Math.min(g.gh - 1, Math.floor((v0 + (v1 - v0) * t) * g.gh));
       const pts = slicePts(C, P, y, keep), pw = merged ? ph.full(rr) : ph.center(rr); if (pts.length < 6 || !pw) continue;
       rows.push({t, y, model: front ? xExtent(pts) : hullHalf(pts), px: pw, where: whereTop(t)}); }
     if (rows.length < 8) return null;
@@ -201,9 +205,11 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
     const s = front || !Fs ? med(rows.map(r => r.model / r.px)) : med(rows.map(r => fsAt(r.t) / r.px));
     rows.forEach(r => { r.want = r.px * s; if (!front) r.want = Math.max(r.want, o.bodyHalf(r.y) + 0.006); });
     // пропорция «длина / ширина по груди» — без масштаба: короткая вещь, «укороченный топ» вместо футболки (на вешалке вещь уже, ×hk)
+    // ожидаемая длина: длина вещи на фото (от плечевой точки до низа, в столбцах) × тот же масштаб фото, что у силуэта (медиана по
+    // строкам, ×hk: на вешалке уже только ширина). Пропорция по одной строке у подмышки обманывала у спущенного плеча (там уже рукав)
     let aspect = null;
-    if (!front) { let rT = 0; while (rT < g.gh && !g.grid[rT].includes('1')) rT++; const wP = ph.center(r0 + 1) / (info.sp.hk || 1), lP = (v1 * g.gh - rT) * ph.ar;
-      const wM = hullHalf(slicePts(C, P, y0 - 0.01, o.torsoK)), lM = o.yMax - o.yMin; if (wP > 0 && lP > 0 && wM > 0) aspect = {photo: lP / wP, model: lM / wM, lM}; }
+    if (!front && Fs) { let rT = 0; while (rT < g.gh && !g.grid[rT].includes('1')) rT++; const lP = (v1 * g.gh - rT) * ph.ar, lM = backLen(C, P, info) || o.yMax - o.yMin;
+      if (lP > 0) aspect = {lM, want: lP * s * (info.sp.hk || 1)}; }
     return {rows, mode: front ? 'front' : 'girth', aspect};
   }
   // низ: масштаб — по поясу (ширина пояса выкройки ↔ ширина верхних строк фото)
@@ -234,7 +240,10 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
   // перспективы — ромб); выше — с фабрики (у шага на фото развилка), в тех же единицах (подгонка по строкам 0.3–0.5)
   const gL1 = t => { const lg = ph.legs(Math.round(rC + (rB - rC) * t)); return lg ? (lg[0] + lg[1]) / 2 : null; };
   const gL = t => med([t - 0.04, t - 0.02, t, Math.min(0.88, t + 0.02)].map(gL1));   /* по соседним строкам: клапан, загнутый край */
-  const kF = med([0.3, 0.35, 0.4, 0.45, 0.5].map(t => { const v = gL(t); return v ? v / at(t) : null; })) || 1, truth = t => (t >= 0.3 && gL(Math.min(t, 0.84))) || at(Math.min(t, 0.84)) * kF;   /* последние строки фото — скруглённый край выреза */
+  const kF = med([0.3, 0.35, 0.4, 0.45, 0.5].map(t => { const v = gL(t); return v ? v / at(t) : null; })) || 1, TS = []; for (let t = 0.3; t <= 0.8401; t += 0.03) TS.push(gL(t) || at(t) * kF);
+  // низ — та же очистка, что у выкройки (specs.js bottomSpec): провал больше 10% за шаг у самого низа — скруглённый край выреза
+  for (let i = Math.max(1, TS.length - 4); i < TS.length; i++) if (TS[i] < TS[i - 1] * 0.9) { for (let j = i; j < TS.length; j++) TS[j] = TS[i - 1] * 0.98; break; }
+  const truth = t => { if (t < 0.3) return at(t) * kF; const f = Math.min(TS.length - 1, (Math.min(t, 0.84) - 0.3) / 0.03), i = Math.min(TS.length - 2, Math.floor(f)); return TS[i] + (TS[i + 1] - TS[i]) * (f - i); };
   const IN = sp.legLen + (sp.stack || 0), legs = [];
   for (let i = 0; i < 16; i++) { const t = 0.1 + 0.87 * i / 15, y = yC - IN * t; if (y < sp.yHem + 0.02) continue;   // часть на полу (гармошка) — не сравниваем
     const pts = slicePts(C, P, y, o.allK), L = pts.filter(p => p[0] < 0), R = pts.filter(p => p[0] > 0); if (L.length < 4 || R.length < 4) continue;
@@ -248,14 +257,32 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
   return {rows, mode: worn ? 'front' : 'girth'};
 }
 
+// длина ткани по кругу в сечении y (половина — как ширина лёжа): сумма отрезков пересечения треугольников с плоскостью; side — только
+// штанина с этой стороны (знак x). Для сверки с рулеткой: выпуклая оболочка «срезает» складки и впадины широкой штанины
+function clothHalf(C, P, y, keep, side) {
+  let L = 0; const cut = (a, b) => { const ya = P[a * 3 + 1], yb = P[b * 3 + 1]; if ((ya - y) * (yb - y) > 0 || ya === yb) return null; const t = (y - ya) / (yb - ya); return [P[a * 3] + (P[b * 3] - P[a * 3]) * t, P[a * 3 + 2] + (P[b * 3 + 2] - P[a * 3 + 2]) * t]; };
+  C.meshes.forEach(m => { for (let t = 0; t < m.tris.length; t += 3) { const v = [m.verts[m.tris[t]], m.verts[m.tris[t + 1]], m.verts[m.tris[t + 2]]]; if (keep && !v.every(q => keep[q])) continue;
+    const q = [cut(v[0], v[1]), cut(v[1], v[2]), cut(v[2], v[0])].filter(Boolean); if (q.length < 2) continue; if (side && Math.sign(q[0][0] + q[1][0]) !== side) continue;
+    L += Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]); } });
+  return L / 2;
+}
+// длина по спинке по самой ткани: средний столбец выкройки спинки сверху вниз + вырез горловины сзади (как меряют лёжа — от плечевой
+// точки у шеи); null — нет спинки
+function backLen(C, P, info) {
+  const bm = C.meshes.find(m_ => m_.role === 'back'); if (!bm || !bm.uvm) return null; const mn = Math.min(...bm.uvm.map(u => Math.abs(u[0])));
+  const col = bm.verts.map((v, k) => [v, bm.uvm[k]]).filter(([, u]) => Math.abs(Math.abs(u[0]) - mn) < 1e-4).sort((a, b) => a[1][1] - b[1][1]); if (col.length < 4) return null;
+  let L = 0; for (let k = 1; k < col.length; k++) { const a = col[k - 1][0] * 3, b = col[k][0] * 3; L += Math.hypot(P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]); }
+  return L + (info.NDb || 0);
+}
 // замеры надетой вещи: [{name, got, want}] в метрах (половина обхвата — как лёжа)
 function measures(C, P, d, info, top, cm, o) {
-  const H = d.H, res = [], half = (y, keep) => hullHalf(slicePts(C, P, y, keep));
-  const legs = y => { const pts = slicePts(C, P, y, o.allK); return (hullHalf(pts.filter(p => p[0] < 0)) + hullHalf(pts.filter(p => p[0] > 0))) / 2; };
+  const H = d.H, res = [], half = (y, keep) => clothHalf(C, P, y, keep);
+  const legs = y => (clothHalf(C, P, y, o.allK, -1) + clothHalf(C, P, y, o.allK, 1)) / 2;
   if (top) {
     // ширина по груди лёжа — чуть ниже проймы; меньше тела вещь быть не может (это «размер мал», а не ошибка посадки)
     if (cm.chest) { const y = 0.858 * H + 0.012 - info.AD - 0.03; res.push({name: 'грудь', got: half(y, o.torsoK), want: Math.max(cm.chest / 100, o.bodyHalf(y) + 0.006)}); }
-    if (cm.len && !o.tuck) res.push({name: 'длина', got: 0.848 * H - o.yMin, want: cm.len / 100});
+    // длина по спинке — по ткани (на теле по вертикали вещь короче: ткань огибает лопатки и плечи)
+    if (cm.len && !o.tuck) { const L = backLen(C, P, info); if (L) res.push({name: 'длина по спинке', got: L, want: cm.len / 100}); }
     return res;
   }
   const sp = info.sp; if (!sp) { const g = cm.waist && info.WW ? half(Math.min(info.yW || o.yMax, o.yMax) - 0.008, o.allK) : 0; if (g) res.push({name: 'пояс', got: g, want: Math.max(cm.waist / 100, info.WW)}); return res; }

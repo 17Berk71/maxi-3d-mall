@@ -30,7 +30,7 @@ export function drapePrepare(item, d, under) {
   const H = d.H, C = makeCloth(), fab = (k === 'skirt' && item.pleats ? FABRIC.skirtP : FABRIC[k]) || FABRIC.tee, push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
   // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
-  C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front'}, b));
+  C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front', fabric: item.color}, b));
   const ft = fabricType(item), flatT = !!item.pleats, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
   [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
   const zo = 0.21 * d.s, cell = (typeof window !== 'undefined' && window.__cell) || 0.022;
@@ -38,7 +38,7 @@ export function drapePrepare(item, d, under) {
   if (top) {
     const M = topMeasures(item, d), yTop = 0.858 * H + 0.012; info = M;
     // длина в мерках считается от 0.848H (старая геометрия), а верх выкройки — выше: низ вещи с фото на модели должен остаться на своём месте
-    if (item.shape && item.shape.worn && item.shape.hem_waist != null) M.L += yTop - 0.848 * H;
+    if (M.sp && M.sp.lenPhoto) M.L += yTop - 0.848 * H;
     // утеплитель съедает длину (ткань идёт в обход груди и плеч на толщине): выкройке — запас, проверке — длина из каталога
     M.L0 = M.L; if (fab.margin) M.L += fab.margin * 2.5;
     // заправлена: низ уходит под пояс брюк, сверху небольшой напуск (низ закреплён на поясе)
@@ -242,7 +242,10 @@ export function drapePrepare(item, d, under) {
     const HP = Math.max(sp.hip || WW * 1.15, ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
     const lw = sp.lw.slice(), TW = Math.max(lw[0], HP * 0.55, d.thigh * Math.PI + 0.02);
     // штанина не уже ноги (+ ~1 см по полуобхвату сверх зазора): иначе тесная труба в расчёте соскакивает с ноги вбок
-    const legW = t => { const yf = (sp.yW - R - IN * t) / H, r = Math.min(legR(d, Math.max(0, yf)), d.legX - 0.002) + 0.007; return Math.max(interp(lw, t) * (TW / lw[0]), 0.12, Math.PI * r + 0.012); };   /* r уже с зазором 7 мм; было +3 см по полуобхвату — у бедра штанина выходила шире настоящей (бочка становилась ромбом) */
+    // ширины штанины замерены (рулетка, лист A4: cm.leg или колено) — точные: общий множитель «не уже бедра» (TW / lw[0]) не нужен,
+    // он растягивал всю штанину до низа (у бочки низ выходил на 2 см шире замера); не уже ноги — и так на каждой высоте
+    const cmL = itemCm(item, d.b), sc = Array.isArray(cmL.leg) || cmL.knee ? 1 : TW / lw[0];
+    const legW = t => { const yf = (sp.yW - R - IN * t) / H, r = Math.min(legR(d, Math.max(0, yf)), d.legX - 0.002) + 0.007; return Math.max(interp(lw, t) * sc, 0.12, Math.PI * r + 0.012); };   /* r уже с зазором 7 мм; было +3 см по полуобхвату — у бедра штанина выходила шире настоящей (бочка становилась ромбом) */
     yPin = sp.yW; info = {WW, HP, R, IN, TW, sp}; fit.BOT_YW = sp.yW;
     cover = {y0: sp.yHem + 0.03, y1: sp.yW - 0.005, torso: true, legs: true};
     // выкройка как у настоящих брюк: четыре детали (перед и спинка, левая и правая). Штанина — вокруг своей ноги (ось на legX):
