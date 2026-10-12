@@ -25,7 +25,8 @@ cp -r /tmp/wardrobe-private/raw /tmp/wardrobe-private/out tools/wardrobe/     # 
 |---|---|
 | Собрать страницу кабины и поднять сервер (порт 8091, `PORT=` — другой) | `./serve.sh` |
 | Снять вещи на фигуре: 3 угла, автопроверка и подсказка посадки | `node shot.mjs skirt sk-pleat` → `shots/w_skirt_*.png` |
-| Только автопроверка списка вещей | `node qc.mjs zolla-tee,polo,sk-pleat` (`PACK=feeds/fit/` — пакеты выгрузки магазинов) |
+| Только автопроверка списка вещей | `node qc.mjs zolla-tee,polo,sk-pleat` (`ALL=1` — все пункты с цифрами, `X=__qcProf` — ещё и строки силуэта; `PACK=feeds/fit/` — пакеты выгрузки магазинов) |
+| Старая версия вещей с текущей автопроверкой (эталон «плохих» версий) | `./rev-qc.sh a30cedb v_karkas.html`, затем `PAGE=v_karkas.html ALL=1 node qc.mjs barrel-jeans` |
 | Силуэт вещи против фото по строкам | `node prof.mjs barrel-jeans,cream-shorts` |
 | Кадры анимации надевания | `node anim.mjs dress '["dr-marsala"]'` (`KS=0,40,80` — отдельные кадры) |
 | Видео анимации | `./vid.sh dress '["dr-marsala"]'` → `./mkvid.sh dress dress.mp4` |
@@ -52,7 +53,7 @@ cp -r /tmp/wardrobe-private/raw /tmp/wardrobe-private/out tools/wardrobe/     # 
 ## Как проверять правку примерочной
 
 1. После правки выкройки, расчёта или тела для столкновений сменить `CLOTH_VER` в `src/shop/fitting/worker.js`, иначе в браузере останется старый кэш. Проверочный браузер каждый раз запускается с чистым кэшем.
-2. Прогнать `node qc.mjs` по всему гардеробу и сравнить баллы с прошлой версией: `./make-rev.sh HEAD base.html`, потом `PAGE=base.html node qc.mjs …`.
+2. Прогнать `ALL=1 node qc.mjs` по всему гардеробу и сравнить с прошлой версией: `./make-rev.sh HEAD base.html`, потом `PAGE=base.html ALL=1 node qc.mjs …`. Балл — не приговор: что именно не так, пишет каждый пункт; спорное смотреть на снимке рядом с фото.
 3. Снять затронутые вещи (`shot.mjs`, при необходимости с `HIDE=1`) и посмотреть снимки глазами.
 4. Прогнать `node lint.mjs` и `node bundle-site.mjs`. Перед коммитом крупной правки — ещё и `./site-check.sh`.
 

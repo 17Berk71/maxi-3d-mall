@@ -194,7 +194,7 @@ export function drapePrepare(item, d, under) {
     labs[labs.length - 1] = 'hem'; for (let i = 1; i <= 3; i++) { const t = i / 4, [hx, hy] = pts[pts.length - 1]; pts.push([hx * (1 - t), hy + (Lk - hy) * Math.sin(t * Math.PI / 2)]); labs.push('hem'); }
     pts.push([0, Lk]); labs.push('hem');
     const {P: poly, L: lab} = mirrorPoly(pts, labs);
-    yPin = yW; fit.BOT_YW = yW; info = {WW, L: Lk};
+    yPin = yW; fit.BOT_YW = yW; info = {WW, L: Lk, yW};
     cover = {y0: yW - Lk + 0.03, y1: yW - 0.005, torso: true, legs: true};
     // «подъюбник» в расчёте: расклешённая юбка держит конус жёсткостью ткани (а эта — ещё и подкладом-шортами). Изгиб в расчёте
     // местный (через точку) — лишняя ширина у подола иначе проваливается между ног. Невидимый конус ниже бёдер чуть меньше юбки
