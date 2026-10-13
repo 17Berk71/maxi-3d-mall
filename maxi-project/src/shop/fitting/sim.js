@@ -18,7 +18,20 @@ export function runCloth(C, push, fab, yPin, opt) {
   // капюшон на голове: касающиеся точки не скользят (держится на волосах), иначе тяжесть стаскивает его назад
   const STK = C.stickyIds ? new Uint8Array(n) : null; if (STK) C.stickyIds.forEach(i => { STK[i] = 1; });
   const DBG = typeof window !== 'undefined' ? window : {};   // __dsteps — остановить расчёт раньше (отладка)
-  const REC = opt && opt.rec, base = DBG.__dsteps || 320, MOT = REC ? 144 : 0, steps = base + (REC ? MOT + 84 : 0), iters = 7, dt = 1 / 90, sewEnd = 128;
+  // C.hq — «офлайн-качество» для проб (лаборатория, флаг __hq): больше проходов и шагов, ткань сталкивается сама с собой
+  const HQ = C.hq || null;
+  const REC = opt && opt.rec, base = (HQ && HQ.steps) || DBG.__dsteps || 320, MOT = REC ? 144 : 0, steps = base + (REC ? MOT + 84 : 0), iters = (HQ && HQ.iters) || 7, dt = 1 / 90, sewEnd = 128;
+  // самостолкновение: точки разных мест ткани не ближе selfR (соседи по выкройке и сшитые пары — не в счёт)
+  const SR = HQ && HQ.selfR, SR2 = SR ? SR * SR : 0, sewnP = SR ? new Set(S.map(([i, j]) => i < j ? i * 1e6 + j : j * 1e6 + i)) : null, P0 = SR ? new Float32Array(C.P) : null;
+  const selfCollide = () => { const cs = SR * 2, H = new Map(), key = (x, y, z) => ((Math.floor(x / cs) * 73856093) ^ (Math.floor(y / cs) * 19349663) ^ (Math.floor(z / cs) * 83492791));
+    for (let i = 0; i < n; i++) { const k = key(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); let L = H.get(k); if (!L) H.set(k, L = []); L.push(i); }
+    for (let i = 0; i < n; i++) { const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], cx = Math.floor(x / cs), cy = Math.floor(y / cs), cz = Math.floor(z / cs);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) { const L = H.get(((cx + a) * 73856093) ^ ((cy + b) * 19349663) ^ ((cz + c) * 83492791)); if (!L) continue;
+        for (const j of L) { if (j <= i) continue; const dx = P[j * 3] - x, dy = P[j * 3 + 1] - y, dz = P[j * 3 + 2] - z, d2 = dx * dx + dy * dy + dz * dz; if (d2 >= SR2 || d2 < 1e-12) continue;
+          // соседи по выкройке (были рядом в начале — та же деталь) и сшитые пары не отталкиваются
+          const ex = P0[j * 3] - P0[i * 3], ey = P0[j * 3 + 1] - P0[i * 3 + 1], ez = P0[j * 3 + 2] - P0[i * 3 + 2]; if (ex * ex + ey * ey + ez * ez < SR2 * 9) continue;
+          if (sewnP.has(i < j ? i * 1e6 + j : j * 1e6 + i)) continue;
+          const d = Math.sqrt(d2), c_ = (SR - d) / d * 0.5; if (!C.pin[i]) { P[i * 3] -= dx * c_; P[i * 3 + 1] -= dy * c_; P[i * 3 + 2] -= dz * c_; } if (!C.pin[j]) { P[j * 3] += dx * c_; P[j * 3 + 1] += dy * c_; P[j * 3 + 2] += dz * c_; } } } } };
   const frames = REC ? [] : null, fmeta = REC ? [] : null; let yawPrev = 0, dyPrev = 0, still = null;   // still — покой до движения (итог)
   // доводка точек для показа (итог и каждый кадр анимации): сглаживание «лесенки» сетки (2 прохода) с повторной проверкой
   // столкновений и сведение сшитых точек (остаток зазора после расчёта — иначе виден просвет по шву). Без неё кадры анимации
@@ -64,6 +77,7 @@ export function runCloth(C, push, fab, yPin, opt) {
         if (P[q + 2] * fz < -0.005) P[q + 2] += (-0.005 * fz - P[q + 2]) * 0.3;
         if (sx_ && (P[q] - cx) * sx_ < 0) P[q] += (cx - P[q]) * 0.3; }
       if (C.half && s > sewEnd * 0.6) for (const [i, sg] of C.half) if (P[i * 3] * sg < 0.004) P[i * 3] += (sg * 0.004 - P[i * 3]) * 0.3;
+      if (SR && s >= sewEnd && it % 2 === 0) selfCollide();
       for (let i = 0; i < n; i++) { if (push(P, i * 3, NA && NA[i])) hit[i] = 1; if (C.pin[i]) { P[i * 3 + 1] = yPin; if (FIX) { P[i * 3] = FIX[i * 3]; P[i * 3 + 2] = FIX[i * 3 + 2]; } } }
     }
     // трение о тело: касающаяся точка почти не скользит (иначе тяжёлые рукава стаскивают вещь с плеч)

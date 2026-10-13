@@ -338,6 +338,7 @@ export function drapePrepare(item, d, under) {
   try { QC[item.id] = qcCloth(C, P, d, item, dr, info, top, aF, aB); g.userData.qc = QC[item.id]; } catch (e) { QC[item.id] = null; }
   return g; };
   seamBend(C);
+  if (typeof window !== 'undefined' && window.__hq) C.hq = {iters: window.__hqIt || 20, steps: window.__hqSt || 640, selfR: window.__hqSR == null ? 0.006 : window.__hqSR};   // офлайн-качество для проб
   return {C, fab, yPin, d, under, margin: fab.margin || 0, finish, run: () => finish(runCloth(C, makeCollider(d, under, fab.margin), fab, yPin))};
 }
 export function drapeTemplate(item, d, under) { const j = drapePrepare(item, d, under); return j ? j.run() : null; }
