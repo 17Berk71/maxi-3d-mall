@@ -18,6 +18,15 @@ export function paintBody(g, covers, skin) {
     // (из выреза видна только узкая полоса — как тень внутри воротника)
     if (y > c.y0 + 0.015 && (y < c.y1 - 0.004 || (c.torso && !c.legs))) return i; } return -1; };
   g.traverse(m => { const part = m.userData.part; if (!part || !m.isMesh) return;
+    // манекен по сетке: часть тела — у каждой точки (0 туловище, 1 голова, 2 рука, 3 нога), доля длины руки — от плечевого сустава
+    if (part === 'mh') { const P = m.geometry.attributes.position, pa = m.geometry.attributes.mhpart.array, U = m.userData.mh, col = new Float32Array(P.count * 3); let any = false;
+      for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), q = pa[i]; let k = -1;
+        if (q === 2) { const j = x > 0 ? U.jL : U.jR; k = pick('arm', y, Math.hypot(x - j[0], y - j[1], z - j[2]) / U.L, 0); }
+        else if (q === 3) k = pick('leg', y, 0, 0);
+        else if (q === 0) k = y > U.yNb ? pick('neck', y, y - U.yNb - 0.04, Math.abs(x)) : pick('torso', y, 0, Math.abs(x));
+        const c = k >= 0 ? cs[k] : skin; if (k >= 0) any = true; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      if (any) { m.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3)); const sm = mat.clone(); sm.skinning = true; m.material = sm; }
+      return; }
     const P = m.geometry.attributes.position, col = new Float32Array(P.count * 3); let any = false;
     for (let i = 0; i < P.count; i++) {
       const y = part === 'sh' ? m.position.y + P.getY(i) * m.scale.y : m.position.y + P.getY(i), t = part === 'arm' ? -P.getY(i) / m.userData.L : part === 'neck' ? P.getY(i) / (m.userData.s || 1) : 0;

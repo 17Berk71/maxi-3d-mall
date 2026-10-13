@@ -15,6 +15,6 @@ startApp(d, d2);
 `);
 fs.copyFileSync(path.join(LAB, 'three-shim.js'), path.join(D, 'three-shim.js'));
 const three = path.join(WWW, 'three.min.js'); if (fs.existsSync(three)) fs.copyFileSync(three, path.join(D, 'three.min.js')); else console.log('сначала node make.mjs (кладёт three.min.js)');
-for (const [name, to] of [['src', path.join(ROOT, 'src')], ['feeds', path.join(ROOT, 'public/feeds')], ['wardrobe', path.join(ROOT, 'tools/wardrobe/out')]]) {
+for (const [name, to] of [['src', path.join(ROOT, 'src')], ['feeds', path.join(ROOT, 'public/feeds')], ['body', path.join(ROOT, 'public/body')], ['wardrobe', path.join(ROOT, 'tools/wardrobe/out')]]) {
   const p = path.join(D, name); try { fs.lstatSync(p); } catch (e) { fs.symlinkSync(to, p); } }
 console.log(D);

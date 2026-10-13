@@ -103,9 +103,9 @@ export function qcCloth(C, P, d, item, dr, info, top, aF, aB) {
   add('сквозь тело', ins < 0.015, (ins * 100).toFixed(1) + '% точек глубже 3 мм', 15 * ramp(ins, 0.005, 0.05), 'тело проходит сквозь ткань');
 
   // 4. на месте: верх — плечи на плечах и низ на задуманной высоте (±2.5 см без штрафа); низ — пояс на поясе
-  if (top) { const want = 0.858 * H + 0.012 - (info.L0 || info.L), tuck = item.state === 'tucked', dv = tuck ? 0 : yMin - want, shOk = yMax > 0.815 * H;
+  if (top) { const want = d.fN * H + 0.012 - (info.L0 || info.L), tuck = item.state === 'tucked', dv = tuck ? 0 : yMin - want, shOk = yMax > (d.fHPS - 0.033) * H;
     add('на месте', shOk && Math.abs(dv) < 0.04, 'верх ' + (yMax / H).toFixed(2) + 'H, низ ' + (dv * 100).toFixed(1) + ' см от задуманного', (shOk ? 0 : 25) + 15 * ramp(Math.abs(dv), 0.025, 0.08), 'вещь сползла или длина не та'); }
-  else { const yW = info.sp ? info.sp.yW : info.yW || 0.595 * H, dv = yMax - yW;
+  else { const yW = info.sp ? info.sp.yW : info.yW || d.fW * H, dv = yMax - yW;
     add('на месте', Math.abs(dv) < 0.03, 'пояс ' + (dv * 100).toFixed(1) + ' см от талии', 15 * ramp(Math.abs(dv), 0.02, 0.07), 'брюки сползли или сидят выше пояса'); }
 
   // 5. дырки: доля треугольников переда/спинки, чья середина на фото — вне вещи (прозрачно)
@@ -191,7 +191,7 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
     if (tuck) return null;
     // от проймы до низа; на фото — от подмышки (a.arm) до низа корпуса (у длинных рукавов на вешалке рукава свисают ниже)
     const v0 = (a.arm || 0.3) + 0.03, r0 = Math.floor(v0 * g.gh), w0 = ph.center(r0); let r = r0; while (r + 1 < g.gh && ph.center(r + 1) > w0 * 0.75) r++;
-    const v1 = Math.max(v0 + 0.2, (r + 0.5) / g.gh), y0 = 0.858 * H + 0.012 - info.AD - 0.02, y1 = o.yMin + 0.015, N = 20;
+    const v1 = Math.max(v0 + 0.2, (r + 0.5) / g.gh), y0 = d.fN * H + 0.012 - info.AD - 0.02, y1 = o.yMin + 0.015, N = 20;
     const keep = merged ? o.allK : o.torsoK;
     // у фото на модели низ скруглён, у слившихся рукавов на вешалке внизу рукава кончаются — нижние строки не сравниваем
     // на фото с моделью руки закрывают бока лифа — верхнюю четверть (у подмышек) не сравниваем
@@ -281,7 +281,7 @@ function measures(C, P, d, info, top, cm, o) {
   const legs = y => (clothHalf(C, P, y, o.allK, -1) + clothHalf(C, P, y, o.allK, 1)) / 2;
   if (top) {
     // ширина по груди лёжа — чуть ниже проймы; меньше тела вещь быть не может (это «размер мал», а не ошибка посадки)
-    if (cm.chest) { const y = 0.858 * H + 0.012 - info.AD - 0.03; res.push({name: 'грудь', got: half(y, o.torsoK), want: Math.max(cm.chest / 100, o.bodyHalf(y) + 0.006)}); }
+    if (cm.chest) { const y = d.fN * H + 0.012 - info.AD - 0.03; res.push({name: 'грудь', got: half(y, o.torsoK), want: Math.max(cm.chest / 100, o.bodyHalf(y) + 0.006)}); }
     // длина по спинке — по ткани (на теле по вертикали вещь короче: ткань огибает лопатки и плечи)
     if (cm.len && !o.tuck) { const L = backLen(C, P, info); if (L) res.push({name: 'длина по спинке', got: L, want: cm.len / 100}); }
     return res;

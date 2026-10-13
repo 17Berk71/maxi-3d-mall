@@ -6,7 +6,8 @@ import {DRAPE_ON} from './collider.js';
 import {LIN} from './common.js';
 import {TEX} from './fabric-simple.js';
 import {garmentMeshAsync} from './garment-async.js';
-import {buildBody} from './mannequin.js';
+import {buildBody, mhPrepDims} from './mannequin.js';
+import {mhLoad} from './mh-body.js';
 import {paintBody} from './paint-body.js';
 import {PTEX} from './photo-texture.js';
 import {commitLayer} from './simple-garment.js';
@@ -38,9 +39,11 @@ let disposeObj;
     // у вещей из выгрузки сначала скачать пакеты примерки; после этого меняются состояние и размеры — образ соберётся заново со следующего кадра
     if (wn.some(i => i.pack && !i.tex)) { await Promise.all(wn.map(loadPack)); if (alive()) { built.key = ''; render(); } return; }
     // широкая вещь отводит руки: они лежат на ткани, а не проходят сквозь неё
-    const d0 = bodyDims(b); d0.armA = armSpread(wn, d0);
+    // манекен по сетке MakeHuman: данные своего пола (~0.9 МБ, один раз); не загрузились — прежняя фигура
+    await mhLoad(b.sex); if (!alive()) return;
+    const d0 = bodyDims(b); { const dm = bodyDims(b); dm.armA = 0.16; d0.armA = armSpread(wn, mhPrepDims(b, dm) ? dm : d0); }   // руки отводятся по телу, на которое надевают
     const body = buildBody(b, R.skinMat, d0), next = new THREE.Group(); body.g.traverse(o => { if (o.isMesh) { o.castShadow = true; } }); next.add(body.g);
-    const order = {shoes: 0, bottom: 1, dress: 2, top: 3, outer: 4}, bodyKey = JSON.stringify(b) + '|' + d0.armA.toFixed(3);
+    const order = {shoes: 0, bottom: 1, dress: 2, top: 3, outer: 4}, bodyKey = JSON.stringify(b) + '|' + d0.armA.toFixed(3) + (d0.mh ? '|mh' : '');
     const busy = setTimeout(() => { if (alive()) setBusy(true); }, 120);
     // анимация надевания: вещь ложится на тело, манекен чуть поворачивается и отводит руки (не в режиме «без анимации»)
     const anim = ANIM.on && !calmNow(), fresh = built.fresh; built.fresh = false;

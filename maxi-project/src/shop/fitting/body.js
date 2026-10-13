@@ -13,7 +13,9 @@ export function sizeHint(b) {
 // телосложение: если задан вес — по индексу массы тела (18 → худощавое, 30 → плотное), иначе ползунок
 const buildOf = b => b.weight ? Math.max(0, Math.min(1, (b.weight / Math.pow(b.height / 100, 2) - 18) / 12)) : (b.build == null ? 0.5 : b.build);
 export function bodyDims(b) {
-  const d = bodyDims0(b); d.legX = Math.max(d.hips * 0.55, d.thigh + 0.013); return d;   // зазор между бёдрами ~2.5 см — для шагового шва
+  const d = bodyDims0(b); d.legX = Math.max(d.hips * 0.55, d.thigh + 0.013);
+  // уровни (доли роста): верх выкройки у шеи сзади, плечевая точка у шеи, пояс брюк; у манекена по сетке — по нему (mannequin.js)
+  d.fN = 0.858; d.fHPS = 0.848; d.fW = 0.595; return d;   // зазор между бёдрами ~2.5 см — для шагового шва
 }
 function bodyDims0(b) {
   b = Object.assign({}, b, {build: buildOf(b)});
@@ -31,6 +33,8 @@ function bodyDims0(b) {
 }
 // радиус туловища на высоте yf (доля роста)
 export function torsoR(d, yf) {
+  // манекен по сетке (mhTables): радиус круга того же периметра, что эллипс полуширины A и полуглубины B строки
+  if (d.mh) { const T = d.mh; let k = Math.max(0, Math.min(T.N - 1, Math.floor(yf * T.N))); while (k < T.N - 1 && !T.A[k]) k++; return T.G[k] / (2 * Math.PI); }
   const T = [[0.465, d.hips * 0.8], [0.5, d.hips * 0.97], [0.53, d.hips], [0.585, d.hips * 0.45 + d.waist * 0.55], [0.625, d.waist],
     [0.67, d.waist * 0.4 + d.chest * 0.6], [0.72, d.chest], [0.765, d.chest * 0.97], [0.8, d.chest * 0.86], [0.826, d.chest * 0.58], [0.842, d.neck * 1.5], [0.852, d.neck]];
   if (yf <= T[0][0]) return T[0][1];
@@ -40,11 +44,14 @@ export function torsoR(d, yf) {
 // туловище не круглое: шире, чем глубже; плечи шире груди
 // у мужской фигуры грудная клетка шире и площе (V-силуэт), таз уже; у женской — как было
 export function sx(d, yf) {
+  if (d.mh) { const T = d.mh; let k = Math.max(0, Math.min(T.N - 1, Math.floor(yf * T.N))); while (k < T.N - 1 && !T.A[k]) k++; const a = T.A[k], b = T.B[k] || a * 0.7; return a / (Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))) / (2 * Math.PI)); }
   const base = d.m ? 1.15 + 0.15 * Math.max(0, Math.min(1, (yf - 0.6) / 0.1)) : 1.2;
   const t = Math.max(0, Math.min(1, (yf - 0.72) / 0.08)); return base + (d.shX - base) * t * (yf < 0.82 ? 1 : Math.max(0, 1 - (yf - 0.82) / 0.03));
 }
 // плавно, без ступенек: ступенька между узлами профиля проступала сквозь ткань щелью
-export function sz(d, yf) { const ss = (a, b, y) => { const t = Math.max(0, Math.min(1, (y - a) / (b - a))); return t * t * (3 - 2 * t); };
+export function sz(d, yf) {
+  if (d.mh) { const T = d.mh; let k = Math.max(0, Math.min(T.N - 1, Math.floor(yf * T.N))); while (k < T.N - 1 && !T.A[k]) k++; const a = T.A[k], b = T.B[k] || a * 0.7; return b / (Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))) / (2 * Math.PI)); }
+  const ss = (a, b, y) => { const t = Math.max(0, Math.min(1, (y - a) / (b - a))); return t * t * (3 - 2 * t); };
   const t = ss(d.m ? 0.6 : 0.62, d.m ? 0.66 : 0.68, yf) * (1 - ss(d.m ? 0.77 : 0.75, d.m ? 0.83 : 0.81, yf)); return 0.78 + ((d.m ? 0.7 : 0.84) - 0.78) * t; }
 
 // лофт вдоль оси Y по профилю [[y, r], ...] (y по возрастанию), с эллиптическим сечением
@@ -61,6 +68,7 @@ export function limb(prof, L, segs) {
 }
 // плечевой сустав: рука висит вплотную к боку, но не входит в грудную клетку (иначе ткань не может сойтись под рукой)
 export function armX(d) {
+  if (d.mh) return d.mh.jL[0];
   const th = d.armA || 0.16, dy = 0.08 * d.H, aCh = torsoR(d, 0.72) * sx(d, 0.72);
   return Math.max(d.chest * d.shX * 0.86, aCh + 0.012 + armRad(d, dy / (0.335 * d.H)) - dy * Math.tan(th));
 }

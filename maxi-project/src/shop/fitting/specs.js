@@ -1,6 +1,6 @@
 // Мерки вещи по фото: длина и ширина, профиль силуэта, юбка, отведение рук.
 import {armX} from './body.js';
-import {armJ, armRad, bodyAB, clamp, ellP, interp, solve} from './geometry.js';
+import {armJ, armRad, bodyAB, clamp, ellP, interp, shTopAt, solve} from './geometry.js';
 import {EASE} from './simple-garment.js';
 import {itemCm, sizeOf} from './sizes.js';
 
@@ -44,8 +44,8 @@ export function topSpec(item, d) {
   // закрыт (td-tee: «низ у пояса» по фото — 49 см при 72 по таблице)
   const lenPhoto = !!(sh.worn && sh.hem_waist != null && !cm.len);
   if (lenPhoto) {
-    const yW = 0.595 * H, yN = 0.858 * H, yHemPhoto = yW - sh.hem_waist * (yN - yW) - 0.012 * H;
-    L = 0.848 * H - yHemPhoto;
+    const yW = d.fW * H, yN = d.fN * H, yHemPhoto = yW - sh.hem_waist * (yN - yW) - 0.012 * H;
+    L = d.fHPS * H - yHemPhoto;
   }
   // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
   const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
@@ -72,7 +72,7 @@ export function topSpec(item, d) {
   // и длину по пропорции фото (типовая длина вида у футболки Zolla давала 72 см при ~69 по фото и замеру ширины; поправка
   // вешалки hk подобрана как раз по ней)
   if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); if (!cm.len && !sh.worn && !sh.merged) L *= f; }
-  const yHPS = 0.848 * H, yHem = yHPS - L, yN = 0.858 * H;
+  const yHPS = d.fHPS * H, yHem = yHPS - L, yN = d.fN * H;
   const bc = bodyAB(d, 0.72), Fbody = ellP(bc.a, bc.b) / 2;
   const loose = clamp((Fs[1] - Fbody) / (0.24 * Fbody), 0, 1.5);
   const yArm = Math.min(yHPS - (0.25 + 0.07 * loose) * L, 0.758 * H);
@@ -81,12 +81,12 @@ export function topSpec(item, d) {
   // плечевая точка: у свободной вещи плечо «спущено» — шов ниже по руке
   const Sx = Math.max(d.chest * d.shX * 0.98, armX(d) + 0.02), aFree = solve(x => ellP(x, x * 0.6), 0.01, 1.2, 2 * F(yArm - 0.03));
   const xS = Math.max(Sx * 0.92 + ease, aFree * 0.98, armX(d) - 0.005);   // плечо вещи накрывает плечевой сустав
-  const ySh = xS < Sx ? 0.8 * H + d.chest * 0.42 * Math.sqrt(1 - (xS / Sx) ** 2) + ease : 0.8 * H - (xS - Sx) * 1.1 + ease;
+  const ySh = d.mh ? shTopAt(d, xS) + ease : xS < Sx ? 0.8 * H + d.chest * 0.42 * Math.sqrt(1 - (xS / Sx) ** 2) + ease : 0.8 * H - (xS - Sx) * 1.1 + ease;   // манекен по сетке — верх плеча по точкам тела
   return {L, Fs, F, yHPS, yHem, yN, yArm, loose, ease, xS, ySh: Math.max(ySh, yArm + 0.05), aFree, hk, lenPhoto};
 }
 export function bottomSpec(item, d) {
   const sh = item.shape || {}, cm = itemCm(item, d.b), k = item.kind, H = d.H;
-  let yW = 0.595 * H; const bw = bodyAB(d, 0.595), Fw = ellP(bw.a, bw.b) / 2;
+  let yW = d.fW * H; const bw = bodyAB(d, d.fW), Fw = ellP(bw.a, bw.b) / 2;
   // масштаб: пояс садится на талию (на резинке лёжа собран ~в 1.2 раза); у длинных брюк ещё и длина «до пола» — берём среднее
   const kW = (cm.waist ? cm.waist / 100 : (Fw + 0.012) / (sh.elastic ? 1.1 : 1));
   const tot = (sh.rise || 0.75) + (sh.leg_len || 1.6), full = k !== 'shorts' && !/укороч|кюлот|капри/i.test(item.name || '');
@@ -147,7 +147,7 @@ export function armSpread(items, d) {
   items.forEach(it => {
     if (!it.tex || !it.shape) return;
     const tops = TOPK.has(it.kind);
-    const ys = tops ? [0.7, 0.64, 0.58] : it.kind === 'skirt' ? [0.55, 0.5, 0.46, 0.42] : [0.55, 0.5];
+    const ys = it.kind === 'dress' ? [0.7, 0.64, 0.58, 0.53, 0.49] : tops ? [0.7, 0.64, 0.58] : it.kind === 'skirt' ? [0.55, 0.5, 0.46, 0.42] : [0.55, 0.5];
     let sp = null; if (tops) sp = topSpec(it, d); else sp = bottomSpec(it, d);
     ys.forEach(yf => {
       const y = yf * d.H; let a;

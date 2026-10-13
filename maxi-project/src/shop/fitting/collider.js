@@ -14,10 +14,12 @@ export function setDrape(v) { DRAPE_ON = !!v; }
 // фигура для столкновений: туловище — эллипсы по высоте, ноги — круги, руки — капсулы, шея и голова, пол
 // радиус ноги манекена на высоте yf (как у видимой ноги)
 export function legR(d, yf) {
+  if (d.mh) { const T = d.mh, k = Math.max(0, Math.min(T.N - 1, Math.floor(yf * T.N))); return T.LEQ[k] || 0; }
   const legTab = [[0.04, 0.032], [0.07, 0.036], [0.15, 0.056 * d.k], [0.24, 0.047 * d.k], [0.28, 0.05 * d.k], [0.38, d.thigh * 0.86], [0.47, d.thigh], [0.5, d.thigh * 0.98]];
   if (yf > 0.5) return 0; for (let i = 1; i < legTab.length; i++) if (yf <= legTab[i][0]) { const t = (yf - legTab[i - 1][0]) / (legTab[i][0] - legTab[i - 1][0]); return (legTab[i - 1][1] + (legTab[i][1] - legTab[i - 1][1]) * t) * (yf > 0.3 ? 1 : d.s); } return legTab[0][1] * d.s;
 }
 export function makeCollider(d, under, margin) {
+  if (d.mh) return meshCollider(d, under, margin);
   const H = d.H, N = 400, A = new Float32Array(N), B = new Float32Array(N), LR = new Float32Array(N);
   // нижний слой (пояс брюк, юбка) — ступенька: ткань выше неё не должна сразу прыгать наружу («как под ремнём»).
   // Над ступенькой — пологий скат (как ткань ложится поверх пояса): ширина спадает не быстрее ~0.45 по высоте
@@ -78,6 +80,56 @@ export function makeCollider(d, under, margin) {
       const dx = x - px, dy = y - py, dd = Math.hypot(dx, dy, z), r = armRad(d, t / a.L) + m;
       if (dd < r) { const s = r / Math.max(dd, 1e-5); x = px + dx * s; y = py + dy * s; z *= s; hit = true; }
     }
+    P[i] = x; P[i + 1] = y; P[i + 2] = z; return hit;
+  };
+  push.setArm = setArm; return push;
+}
+
+// тело для ткани по сетке манекена MakeHuman (mh-body.js → mhTables): туловище, шея и голова — полярный профиль по строкам
+// (выталкивание по нормали к профилю), ноги — свой профиль у каждой, руки — два звена с радиусом по длине.
+// Нижние слои (пояс брюк, юбка) — эллипсы по 1% роста, как раньше: профиль строки = max(тело, эллипс слоя)
+export function meshCollider(d, under, margin) {
+  const T = d.mh, H = d.H, N = T.N, NB = T.NB, NBL = T.NBL, TP = T.TP, LC = T.LC, LP = T.LP, TAU = Math.PI * 2, m = 0.007 + (margin || 0);
+  if (under && !under.raw) { const ra = Float32Array.from(under.a), rb = Float32Array.from(under.b), st = 0.45 * H / 100;
+    for (let i = 1; i < ra.length; i++) { ra[i] = Math.max(ra[i] || 0, (ra[i - 1] || 0) - st); rb[i] = Math.max(rb[i] || 0, (rb[i - 1] || 0) - st); }
+    under = {a: ra, b: rb}; }
+  // радиус профиля строки k в направлении th (линейно между углами) и производная по углу
+  const prof = (k, th) => { const u = ((th % TAU) + TAU) % TAU / TAU * NB - 0.5, i0 = Math.floor(u), f = u - i0, a = TP[k * NB + ((i0 % NB) + NB) % NB], b = TP[k * NB + ((i0 + 1) % NB + NB) % NB]; return [a + (b - a) * f, (b - a) * NB / TAU]; };
+  const undR = (yf, th) => { if (!under) return 0; const i = Math.round(yf * 100), a = under.a[i] || 0, b = under.b[i] || 0; if (!a) return 0; const c = Math.cos(th), s_ = Math.sin(th); return a * b / Math.sqrt((b * c) ** 2 + (a * s_) ** 2); };
+  const kc = Math.ceil(T.crotch / H * N), ka = Math.floor(T.armpit / H * N);
+  let arms = [];
+  const setArm = delta => { arms = T.arms.map(A => { const sg = A.side, c = Math.cos(delta * sg), s_ = Math.sin(delta * sg), s0 = A.segs[0], x0 = s0.x0, y0 = s0.y0;
+    const rot = (x, y) => [x0 + (x - x0) * c - (y - y0) * s_, y0 + (x - x0) * s_ + (y - y0) * c];
+    return A.segs.map(g => { const [ox, oy] = rot(g.x0, g.y0), dx = g.dx * c - g.dy * s_, dy = g.dx * s_ + g.dy * c; return {x0: ox, y0: oy, z0: g.z0, dx, dy, dz: g.dz, L: g.L, rad: g.rad}; }); }); };
+  setArm(0);
+  const jy = T.jL[1];
+  const push = function (P, i, noArm) {
+    let x = P[i], y = P[i + 1], z = P[i + 2], hit = false;
+    if (y < 0.004) { y = 0.004; hit = true; }
+    const k = Math.max(0, Math.min(N - 1, Math.floor(y / H * N))), yf = y / H;
+    // туловище / шея / голова
+    if (k >= kc - 1 && TP[k * NB]) { const th = Math.atan2(z, x), r = Math.hypot(x, z); let [R, dR] = prof(k, th); const ru = undR(yf, th); if (ru > R) { R = ru; dR = 0; }
+      if (r < R + m) {
+        // нормаль к поверхности r = R(θ, y): по горизонтали — к профилю строки, по вертикали — по наклону профиля между
+        // строками (на скате плеч, на макушке, под подбородком ткань уходит вверх/вниз, а не вбок)
+        const ka_ = Math.max(0, k - 2), kb_ = Math.min(N - 1, k + 2), Ra = TP[ka_ * NB] ? prof(ka_, th)[0] : 0, Rb = TP[kb_ * NB] ? prof(kb_, th)[0] : 0;
+        const Ry = Math.max(-8, Math.min(8, (Rb - Ra) / ((kb_ - ka_) * H / N)));
+        const c = Math.cos(th), s_ = Math.sin(th), Rm = R + m; let hx = Rm * c + dR * s_, hz = Rm * s_ - dR * c; const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
+        // наименьший сдвиг, после которого точка на поверхности: зазор g(u, v) = r + u·er − (R + m) − Ry·v, u — вдоль h, v — вверх
+        const er = Math.max(0.2, hx * c + hz * s_), q = (Rm - r) / (er * er + Ry * Ry), u = q * er, v = -q * Ry; x += hx * u; z += hz * u; y += v;
+        hit = true; } }
+    else if (under && k < kc) { const th = Math.atan2(z, x), r = Math.hypot(x, z), ru = undR(yf, th); if (ru && r < ru + m) { const f = (ru + m) / Math.max(r, 1e-5); x *= f; z *= f; hit = true; } }
+    // ноги
+    if (k <= kc + 8) for (let si = 0; si < 2; si++) { const cx = LC[k * 4 + si * 2], cz = LC[k * 4 + si * 2 + 1], o = (k * 2 + si) * NBL; if (!LP[o]) continue;
+      const dx = x - cx, dz = z - cz, r = Math.hypot(dx, dz), th = Math.atan2(dz, dx), u = ((th % TAU) + TAU) % TAU / TAU * NBL - 0.5, i0 = Math.floor(u), f = u - i0;
+      let R = LP[o + ((i0 % NBL) + NBL) % NBL] * (1 - f) + LP[o + ((i0 + 1) % NBL + NBL) % NBL] * f; const sg = si ? -1 : 1, c = Math.cos(th);
+      if (c * sg < 0) R = Math.min(R, (Math.abs(cx) - 0.002) / Math.max(0.2, -c * sg));   // к середине — не дальше средней линии (шаговому шву нужен зазор)
+      if (r < R + m) { const s_ = (R + m) / Math.max(r, 1e-5); x = cx + dx * s_; z = cz + dz * s_; hit = true; } }
+    // руки: ниже подмышки рука толкает только рукава (бок вещи лежит под рукой)
+    if (!(noArm && y < jy - 0.07)) for (const segs of arms) for (let gi = 0; gi < 2; gi++) { const g = segs[gi], qx = x - g.x0, qy = y - g.y0, qz = z - g.z0, tt = qx * g.dx + qy * g.dy + qz * g.dz;
+      if (gi === 0 && tt < 0) continue; if (tt > g.L + 0.03 || tt < -0.03) continue;
+      const t = Math.max(0, Math.min(g.L, tt)), bi = Math.min(15, Math.floor(t / g.L * 16)), r = g.rad[bi] + m, px = g.x0 + g.dx * t, py = g.y0 + g.dy * t, pz = g.z0 + g.dz * t, dx = x - px, dy = y - py, dz = z - pz, dd = Math.hypot(dx, dy, dz);
+      if (dd < r) { const s_ = r / Math.max(dd, 1e-5); x = px + dx * s_; y = py + dy * s_; z = pz + dz * s_; hit = true; } }
     P[i] = x; P[i + 1] = y; P[i + 2] = z; return hit;
   };
   push.setArm = setArm; return push;

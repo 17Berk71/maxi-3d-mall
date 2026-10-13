@@ -5,7 +5,7 @@ import {fabricType, photoMat} from './cloth-material.js';
 import {clothMeshes} from './cloth-mesh.js';
 import {addHood, addStand} from './collars.js';
 import {DRAPE_ON, legR, makeCollider} from './collider.js';
-import {armJ, armRad, bodyAB, ellP, interp, solve} from './geometry.js';
+import {armJ, armRad, bodyAB, ellP, interp, shTopAt, solve} from './geometry.js';
 import {topMeasures} from './measures.js';
 import {FABRIC, addPanel, addTube, makeCloth, mirrorPoly, segDist} from './pattern.js';
 import {QC, qcCloth} from './qc.js';
@@ -16,6 +16,9 @@ import {seamBend} from './worker.js';
 import {shoulderRound} from './shoulder-round.js';
 import {relaxStretch} from './relax.js';
 import {fit} from './state.js';
+// рисунок «пятнами» (тай-дай, распыление, градиент, камуфляж, фигуры): светотень с фото снимается мягко (прежним способом) —
+// точный способ принял бы плавные пятна рисунка за тени складок и стёр бы их
+const DYE = /тай.?дай|tie.?dye|варён|градиент|омбре|камуфл|распыл|пятн|фигур|разводы|акварел/i;
 
 // подготовка расчёта ткани: выкройка, швы, начальное положение. Сам расчёт (runCloth) — отдельно: в фоновом потоке
 // (garmentMeshAsync) или сразу (drapeTemplate). finish(P) — по готовым точкам собирает сетку, слой, автопроверку
@@ -31,25 +34,27 @@ export function drapePrepare(item, d, under) {
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
   // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
   C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front', fabric: item.color}, b));
-  const ft = fabricType(item), flatT = !!item.pleats, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
+  const ft = fabricType(item), flatT = item.pleats ? true : DYE.test((item.name || '') + ' ' + (item.desc || '')) || item.dye ? 'gentle' : false, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
   [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
   const zo = 0.21 * d.s, cell = (typeof window !== 'undefined' && window.__cell) || 0.022;
   let yPin = 0, info = {}, cover = null;
   if (top) {
-    const M = topMeasures(item, d), yTop = 0.858 * H + 0.012; info = M;
+    const M = topMeasures(item, d), yTop = d.fN * H + 0.012; info = M;
     // длина в мерках считается от 0.848H (старая геометрия), а верх выкройки — выше: низ вещи с фото на модели должен остаться на своём месте
-    if (M.sp && M.sp.lenPhoto) M.L += yTop - 0.848 * H;
+    if (M.sp && M.sp.lenPhoto) M.L += yTop - d.fHPS * H;
     // утеплитель съедает длину (ткань идёт в обход груди и плеч на толщине): выкройке — запас, проверке — длина из каталога
     M.L0 = M.L; if (fab.margin) M.L += fab.margin * 2.5;
     // заправлена: низ уходит под пояс брюк, сверху небольшой напуск (низ закреплён на поясе)
-    const yTuck = (fit.BOT_YW || 0.595 * H) - 0.035;   // ниже пояса брюк: край внутри
+    const yTuck = (fit.BOT_YW || d.fW * H) - 0.035;   // ниже пояса брюк: край внутри
     if (tucked) { M.L = Math.min(M.L, yTop - yTuck + 0.045); yPin = yTuck; }
     // скат плеча по фигуре: плечевая точка выкройки ложится на плечо (верх руки), а не висит над ним — иначе у плеча «погоны»
     { const xs = M.S / 2, ax = armX(d), r = armRad(d, 0) + 0.004, SXb = Math.max(d.chest * d.shX * 0.98, ax + 0.02), SYb = d.chest * 0.42;
-      const yArmTop = Math.abs(xs - ax) < r ? 0.8 * H + Math.sqrt(r * r - (xs - ax) ** 2) : xs < ax ? 0.8 * H + SYb * Math.sqrt(Math.max(0, 1 - (xs / SXb) ** 2)) : 0.8 * H;
-      M.SD = Math.max(0.04, Math.min(0.11, yTop - yArmTop - 0.006)); M.AD = Math.max(M.AD, M.SD + 0.16); }
+      const yArmTop = d.mh ? shTopAt(d, xs) : Math.abs(xs - ax) < r ? 0.8 * H + Math.sqrt(r * r - (xs - ax) ** 2) : xs < ax ? 0.8 * H + SYb * Math.sqrt(Math.max(0, 1 - (xs / SXb) ** 2)) : 0.8 * H;
+      M.SD = Math.max(0.04, Math.min(0.11, yTop - yArmTop - 0.006)); M.AD = Math.max(M.AD, M.SD + 0.16);
+      // манекен по сетке: низ проймы не выше подмышки тела (иначе рука давит в шов снизу — растяжение под мышкой)
+      if (d.mh) M.AD = Math.max(M.AD, yTop - d.mh.armpit + 0.015); }
     // что закрывает вещь на теле (для окраски тела под ней, см. paintBody): корпус от низа до шеи, рука — на длину рукава
-    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, arm: M.noSleeve ? 0 : ((M.S / 2 - armX(d)) + M.SL) / (0.335 * H)};
+    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, arm: M.noSleeve ? 0 : ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L};
     // контур половины (x ≥ 0) и метки отрезков; зеркалим
     const arm = [], nA = 6; for (let i = 0; i <= nA; i++) { const t = i / nA, x = M.S / 2 + (M.W / 2 - M.S / 2) * Math.pow(t, 2.2) - 0.012 * Math.sin(t * Math.PI), y = M.SD + (M.AD - M.SD) * t; arm.push([x, y]); }
     // бок от проймы до низа — по ширине вещи на фото (приталенная, прямая, расклешённая книзу — у платья, пальто),
@@ -141,22 +146,24 @@ export function drapePrepare(item, d, under) {
     // нет отдельного фото рукава — ткань берём с бока корпуса на фото (узкая полоса): цвет и фактура как у корпуса
     // на фото с человеком «рукав» с бока корпуса — это рука, фон и край вещи (пятна и треугольник на рукаве): ткань рукава
     // берём с чистого места переда — между серединой (планка, пуговицы) и боком, ниже груди
-    const merged = item.shape && item.shape.merged, worn = item.shape && item.shape.worn, ownS = item.tex.sleeve && !merged && !worn, j = armJ(d), sTex = ownS ? item.tex.sleeve : item.tex.frontCut || item.tex.front, mS = photoMat(sTex, base, ft); mS.side = THREE.DoubleSide;
+    const merged = item.shape && item.shape.merged, worn = item.shape && item.shape.worn, ownS = item.tex.sleeve && !merged && !worn, j = armJ(d), sTex = ownS ? item.tex.sleeve : item.tex.frontCut || item.tex.front, mS = photoMat(sTex, base, ft, flatT === 'gentle' ? 'gentle' : false); mS.side = THREE.DoubleSide;
     const sK = merged ? 0.3 : 0.62, sUV = ownS ? (u, v) => [u, v] : worn ? (u, v) => [aF.cx + (aF.hw || 0.3) * (0.32 + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.5 + 0.2 * v] : (u, v) => [aF.cx + (aF.hw || 0.3) * (sK + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.3 + 0.45 * v];   // рукава слились с корпусом на фото — ткань ближе к середине (с края там рука и блик)
     let armLen = 0; for (let i = 1; i < arm.length; i++) armLen += Math.hypot(arm[i][0] - arm[i - 1][0], arm[i][1] - arm[i - 1][1]);
     // окат = длине проймы по выкройке (перед + спинка); иначе шов растягивает верх рукава («рожки» на плечах)
     // ×1.1 — запас оката, как у настоящего рукава: пройма на теле растягивается, и без запаса верх рукава натянут (автопроверка «натяжение» 3–10% у рукавов)
     const hole = Math.max((M.AD + 0.01) * 2.1, armLen * 2 * 0.97) * 1.1, r0 = Math.max(hole / (2 * Math.PI), armRad(d, 0) + 0.015), r1 = Math.max(M.SO / Math.PI, armRad(d, Math.min(1, M.SL / j.L)) + 0.008);
     (M.noSleeve ? [] : [-1, 1]).forEach(side => {   // платье без рукавов (сарафан) — пройма остаётся открытой
-      const D = new THREE.Vector3(Math.sin(j.th) * side, -Math.cos(j.th), 0);
+      const D = new THREE.Vector3(Math.sin(j.th) * side, -Math.cos(j.th), j.dz || 0).normalize();   // манекен по сетке: рука чуть сзади и вперёд по глубине
       // начало рукава — в середине проймы (между плечевой точкой и подмышкой), чтобы шов сошёлся без натяжки
-      const S0 = new THREE.Vector3(side * Math.max(j.x * 0.9, (M.S / 2 + M.W / 2) / 2), yTop - (M.SD + M.AD) / 2, 0);
+      const yS = yTop - (M.SD + M.AD) / 2, S0 = new THREE.Vector3(side * Math.max(j.x * 0.9, (M.S / 2 + M.W / 2) / 2), yS, j.z || 0);
+      // манекен по сетке: рука ближе к боку и толще прежней — ось рукава по оси руки (иначе рука оставалась вне рукава)
+      if (d.mh) { const t = (j.y - yS) / Math.max(0.3, -D.y); S0.set(side * j.x + D.x * t, yS, (j.z || 0) + D.z * t); }
       // окат: эллипс в плоскости проймы — по высоте от плеча до подмышки, по глубине — чтобы длина совпала с проймой
       // окат лежит вдоль линии проймы — от плечевой точки вниз к подмышке (наклонно), а не стоит вертикально снаружи от плеча:
       // иначе верх рукава оставался на высоте плеча над опущенной рукой — плечо выходило квадратным («погоны»)
       const aU = new THREE.Vector2(side * (M.S / 2 - M.W / 2), M.AD - M.SD), aLen = aU.length(); aU.normalize();
       const ry = aLen / 2 + 0.008, rz = solve(z => ellP(ry, z), 0.02, 0.3, hole);
-      const cap = {center: new THREE.Vector3(side * (M.S / 2 + M.W / 2) / 2, yTop - (M.SD + M.AD) / 2, 0), ry, rz, up: new THREE.Vector3(aU.x, aU.y, 0)};
+      const cap = {center: new THREE.Vector3(side * (M.S / 2 + M.W / 2) / 2, yTop - (M.SD + M.AD) / 2, j.z || 0), ry, rz, up: new THREE.Vector3(aU.x, aU.y, 0)};
       // окат широкий (= пройме), но сразу под ним рукав сужается до ширины по бицепсу (как у настоящего рукава): иначе лишняя ткань
       // стоит над плечом колом («погоны», у жёсткого пуховика — особенно)
       const sB = Math.min(0.1, M.SL * 0.4), rB = Math.min(r0, Math.max(r1, armRad(d, 0.12) + 0.022 + (fab.margin || 0), r0 * 0.8));
@@ -338,6 +345,7 @@ export function drapePrepare(item, d, under) {
   try { QC[item.id] = qcCloth(C, P, d, item, dr, info, top, aF, aB); g.userData.qc = QC[item.id]; } catch (e) { QC[item.id] = null; }
   return g; };
   seamBend(C);
+  if (typeof window !== 'undefined' && window.__dsteps && !window.__hq) C.hq = {steps: window.__dsteps};   // отладка: остановить расчёт раньше (и в фоне)
   if (typeof window !== 'undefined' && window.__hq) C.hq = {iters: window.__hqIt || 20, steps: window.__hqSt || 640, selfR: window.__hqSR == null ? 0.006 : window.__hqSR};   // офлайн-качество для проб
   return {C, fab, yPin, d, under, margin: fab.margin || 0, finish, run: () => finish(runCloth(C, makeCollider(d, under, fab.margin), fab, yPin))};
 }

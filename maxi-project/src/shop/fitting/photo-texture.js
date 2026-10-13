@@ -41,11 +41,72 @@ function delight(img) {
 }
 // flat — ровная ткань: складки, тени и блики с фото убираются совсем (остаются нити и мелкая фактура). Для вещей,
 // у которых рельеф строится формой (плиссе): иначе нарисованные складки поверх настоящих — «смятая» юбка
+// Точнее (вторая версия, по умолчанию): светотень снимка = плавная часть яркости. Перепады яркости между соседними
+// пикселями делятся на «свет» (мягкие, тот же цвет — складка, тень, блик) и «рисунок» (резкие или со сменой цвета — принт,
+// шов, пуговица, край вставки). Из мягких перепадов собирается карта света (уравнение Пуассона, 256 px по большей стороне),
+// размывается на ~1% ширины (фактура нитей остаётся в фото) и делится. Тени складок уходят, принт и фактура остаются.
+// Заодно — рельеф: средние по размеру складки той же карты света (без самых крупных пятен) → наклоны → карта рельефа
+// (R, G — наклон по u, v; B — высота): в 3D мелкие заломы со снимка освещаются нашим светом и движутся при повороте.
+export const PREL = {};
+// пока снимок грузится — ровный рельеф (наклон 0)
+let FLATR = null; function flatRelief() { if (!FLATR) { FLATR = document.createElement('canvas'); FLATR.width = FLATR.height = 2; const g = FLATR.getContext('2d'); g.fillStyle = 'rgb(128,128,128)'; g.fillRect(0, 0, 2, 2); } return FLATR; }
+function delight2(img) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height; if (!w || !h) return null;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.drawImage(img, 0, 0);
+  let D; try { D = g.getImageData(0, 0, w, h); } catch (e) { return null; }
+  const a = D.data, n = w * h;
+  // основной цвет ткани — медиана по непрозрачным
+  const sr = [], sg = [], sb = []; for (let k = 0; k < 4096; k++) { const i = ((k * 2654435761) >>> 0) % n; if (a[i * 4 + 3] < 200) continue; sr.push(a[i * 4]); sg.push(a[i * 4 + 1]); sb.push(a[i * 4 + 2]); }
+  if (sr.length < 200) return null;
+  const med = v => { v.sort((x, y) => x - y); return v[v.length >> 1]; }, R0 = med(sr), G0 = med(sg), B0 = med(sb);
+  // рабочее разрешение
+  const sc = Math.min(1, 256 / Math.max(w, h)), W = Math.max(8, Math.round(w * sc)), Hh = Math.max(8, Math.round(h * sc)), N = W * Hh;
+  const LL = new Float32Array(N), CR = new Float32Array(N), CG = new Float32Array(N), M = new Uint8Array(N), cnt = new Float32Array(N), sR = new Float32Array(N), sG = new Float32Array(N), sB = new Float32Array(N);
+  for (let y = 0; y < h; y++) { const yy = Math.min(Hh - 1, Math.floor(y * sc)); for (let x = 0; x < w; x++) { const q = (y * w + x) * 4; if (a[q + 3] < 200) continue; const i = yy * W + Math.min(W - 1, Math.floor(x * sc)); sR[i] += a[q]; sG[i] += a[q + 1]; sB[i] += a[q + 2]; cnt[i]++; } }
+  for (let i = 0; i < N; i++) { if (cnt[i] < 1) continue; const r = sR[i] / cnt[i] + 2, gg = sG[i] / cnt[i] + 2, b = sB[i] / cnt[i] + 2, l = (r + gg + b) / 3; M[i] = 1; LL[i] = Math.log(l); CR[i] = r / l; CG[i] = gg / l; }
+  // мягкие перепады (свет): не больше 0.12 за пиксель и без смены цвета; остальное — рисунок (0)
+  // перепады — по чуть размытой яркости (σ ≈ 1 px): контрастная фактура (деним, вязка) не должна выглядеть «резким краем»
+  const LB = new Float32Array(N); for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!M[i]) continue; let s_ = 0, ww = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= Hh) continue; const j = yy * W + xx; if (!M[j]) continue; const k = dx || dy ? (dx && dy ? 0.37 : 0.6) : 1; s_ += LL[j] * k; ww += k; } LB[i] = s_ / ww; }
+  const GX = new Float32Array(N), GY = new Float32Array(N), soft = (i, j) => { if (!M[i] || !M[j]) return 0; const d = LB[j] - LB[i], dc = Math.abs(CR[j] - CR[i]) + Math.abs(CG[j] - CG[i]); return Math.abs(d) < 0.12 && dc < 0.07 ? d : 0; };
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (x < W - 1) GX[i] = soft(i, i + 1); if (y < Hh - 1) GY[i] = soft(i, i + W); }
+  // уравнение Пуассона (Гаусс–Зейдель с перерелаксацией), граница маски — свободная
+  const S = new Float32Array(N); for (let i = 0; i < N; i++) S[i] = M[i] ? LL[i] : 0;
+  { let m0 = 0, c0 = 0; for (let i = 0; i < N; i++) if (M[i]) { m0 += LL[i]; c0++; } m0 /= c0; for (let i = 0; i < N; i++) S[i] = m0; }
+  for (let it = 0; it < 400; it++) for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!M[i]) continue; let s_ = 0, k = 0;
+    if (x > 0 && M[i - 1]) { s_ += S[i - 1] + GX[i - 1]; k++; } if (x < W - 1 && M[i + 1]) { s_ += S[i + 1] - GX[i]; k++; }
+    if (y > 0 && M[i - W]) { s_ += S[i - W] + GY[i - W]; k++; } if (y < Hh - 1 && M[i + W]) { s_ += S[i + W] - GY[i]; k++; }
+    if (k) S[i] += 1.93 * (s_ / k - S[i]); }
+  // размытие по маске (нормированное): σ1 — карта света без фактуры, σ2 — самые крупные пятна (для рельефа их убираем)
+  const blurM = (src, r) => { const t = new Float32Array(N), tw = new Float32Array(N), o = new Float32Array(N), ow = new Float32Array(N);
+    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { let s_ = 0, ww = 0; for (let d = -r; d <= r; d++) { const xx = x + d; if (xx < 0 || xx >= W) continue; const j = y * W + xx; if (!M[j]) continue; const k = Math.exp(-d * d / (2 * r * r / 4)); s_ += src[j] * k; ww += k; } t[y * W + x] = s_; tw[y * W + x] = ww; }
+    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { let s_ = 0, ww = 0; for (let d = -r; d <= r; d++) { const yy = y + d; if (yy < 0 || yy >= Hh) continue; const j = yy * W + x, k = Math.exp(-d * d / (2 * r * r / 4)); s_ += t[j] * k; ww += tw[j] * k; } o[y * W + x] = ww > 1e-6 ? s_ / ww : 0; ow[y * W + x] = ww; }
+    return o; };
+  const r1 = Math.max(2, Math.round(Math.max(W, Hh) * (typeof window !== 'undefined' && window.__dlR || 0.008))), S1 = blurM(S, r1), S2 = blurM(S, Math.max(6, Math.round(Math.max(W, Hh) * 0.08)));
+  let mean = 0, c0 = 0; for (let i = 0; i < N; i++) if (M[i]) { mean += S1[i]; c0++; } mean /= c0;
+  const F = new Float32Array(N); for (let i = 0; i < N; i++) F[i] = M[i] ? Math.max(0.6, Math.min(1.7, Math.exp(-(S1[i] - mean) * 0.9))) : 1;
+  if (typeof window !== 'undefined' && window.__dlDbg) { let f0 = 9, f1 = 0, s0 = 9, s1 = -9, l0 = 9, l1 = -9; for (let i = 0; i < N; i++) if (M[i]) { f0 = Math.min(f0, F[i]); f1 = Math.max(f1, F[i]); s0 = Math.min(s0, S1[i]); s1 = Math.max(s1, S1[i]); l0 = Math.min(l0, LL[i]); l1 = Math.max(l1, LL[i]); } let sd = 0; for (let i = 0; i < N; i++) if (M[i]) sd += (S1[i] - mean) ** 2; sd = Math.sqrt(sd / c0); (window.__dlStats = window.__dlStats || []).push({W, Hh, f0, f1, sd, l0, l1, mean}); }
+  // поправка — на полное разрешение (билинейно)
+  const at = (A_, fx, fy) => { fx = Math.max(0, Math.min(W - 1.001, fx)); fy = Math.max(0, Math.min(Hh - 1.001, fy)); const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0; return (A_[y0 * W + x0] * (1 - tx) + A_[y0 * W + x0 + 1] * tx) * (1 - ty) + (A_[(y0 + 1) * W + x0] * (1 - tx) + A_[(y0 + 1) * W + x0 + 1] * tx) * ty; };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const q = (y * w + x) * 4; if (a[q + 3] < 8) continue; const f = at(F, (x + 0.5) * sc - 0.5, (y + 0.5) * sc - 0.5); a[q] = Math.min(255, a[q] * f); a[q + 1] = Math.min(255, a[q + 1] * f); a[q + 2] = Math.min(255, a[q + 2] * f); }
+  for (let i = 0; i < n; i++) { const q = i * 4; if (a[q + 3] >= 128) continue; a[q] = R0; a[q + 1] = G0; a[q + 2] = B0; a[q + 3] = 255; }
+  g.putImageData(D, 0, 0);
+  // рельеф: высота = (S1 − S2) (средние складки; светлое — выпуклое), наклоны по пикселям рабочей сетки
+  const rc = document.createElement('canvas'); rc.width = W; rc.height = Hh; const rg = rc.getContext('2d'), RD = rg.createImageData(W, Hh), HT = new Float32Array(N);
+  for (let i = 0; i < N; i++) HT[i] = M[i] ? Math.max(-0.5, Math.min(0.5, S1[i] - S2[i])) : 0;
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) { const i = y * W + x, q = i * 4, hx = (HT[y * W + Math.min(W - 1, x + 1)] - HT[y * W + Math.max(0, x - 1)]) / 2, hy = (HT[Math.min(Hh - 1, y + 1) * W + x] - HT[Math.max(0, y - 1) * W + x]) / 2;
+    RD.data[q] = Math.max(0, Math.min(255, 128 + hx * W * 2)); RD.data[q + 1] = Math.max(0, Math.min(255, 128 + hy * Hh * 2));   /* наклон на единицу координаты фото ×2 */ RD.data[q + 2] = 128 + HT[i] * 255; RD.data[q + 3] = 255; }
+  rg.putImageData(RD, 0, 0);
+  return {img: cv, relief: rc, res: W};
+}
 export function photoTex(url, flat) {
   if (!url) return null;
-  const key = flat ? url + '|flat' : url;
-  if (!PTEX[key]) { const t = new THREE.Texture(); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; PTEX[key] = t;
-    const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => { let r = typeof window !== 'undefined' && window.__noDelight ? im : delight(im); if (flat) r = flatten(r); t.image = r; t.needsUpdate = true; }; im.src = url; }
+  const key = flat ? url + '|' + (flat === true ? 'flat' : flat) : url;   // flat: true — ровная ткань (плиссе), 'gentle' — рисунок пятнами (мягкое снятие света)
+  if (!PTEX[key]) { const t = new THREE.Texture(); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; PTEX[key] = t; const rt = new THREE.Texture(flatRelief()); rt.needsUpdate = true; PREL[key] = rt; t.relief = rt;   // у Texture в r128 нет userData
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => { const W_ = typeof window !== 'undefined' ? window : {}; let r = im, rel = null;
+      if (!W_.__noDelight) { const o = !W_.__delight1 && flat !== 'gentle' && delight2(im); if (o) { r = o.img; rel = o.relief; } else r = delight(im); }
+      if (flat === true) { r = flatten(r); rel = null; }
+      t.image = r; t.needsUpdate = true; if (rel && !W_.__noRelief2) { rt.image = rel; rt.needsUpdate = true; } }; im.src = url; }
   return PTEX[key];
 }
 // ровная ткань: основной цвет × чуть-чуть мелкой фактуры (отношение яркости к размытой в ~4 px), без светотени и линий сгибов

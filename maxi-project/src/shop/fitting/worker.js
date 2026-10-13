@@ -1,6 +1,6 @@
 // Расчёт ткани в фоновом потоке (Web Worker) и версия расчёта CLOTH_VER.
 import {armX, sx, sz, torsoR} from './body.js';
-import {legR, makeCollider} from './collider.js';
+import {legR, makeCollider, meshCollider} from './collider.js';
 import {armJ, armRad} from './geometry.js';
 import {motionAt, runCloth} from './sim.js';
 
@@ -8,7 +8,7 @@ import {motionAt, runCloth} from './sim.js';
 // Расчёт вещи — 1.5–2.5 с на компьютере и в 2–3 раза дольше на телефоне. В фоне страница не замирает,
 // а готовый результат (точки ткани) хранится: та же вещь на той же фигуре во второй раз надевается сразу.
 // Версия расчёта: менять при любой правке выкроек, швов или расчёта — старый кэш станет недействительным.
-export const CLOTH_VER = 'c54';
+export const CLOTH_VER = 'c60';
 // анимация надевания (FIT.setAnim(false) — выключить, для автопроверок); «без анимации» на сайте и системная настройка — тоже выключают
 export const ANIM = {on: true};
 export function calmNow() { try { const v = localStorage.getItem('maxi-calm'); if (v !== null) return v === '1'; } catch (e) {} try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
@@ -17,7 +17,7 @@ function clothWorker() {
   if (WORKER !== null) return WORKER;
   try {
     // код расчёта берём из этих же функций (toString): отдельный файл не нужен ни Vite, ни сборке артефакта
-    const src = [torsoR, sx, sz, armRad, armX, armJ, legR, makeCollider, motionAt, runCloth].map(f => { const t = f.toString(); return /^function[\s*(]/.test(t) ? t : 'const ' + f.name + ' = ' + t + ';'; }).join('\n')
+    const src = [torsoR, sx, sz, armRad, armX, armJ, legR, makeCollider, meshCollider, motionAt, runCloth].map(f => { const t = f.toString(); return /^function[\s*(]/.test(t) ? t : 'const ' + f.name + ' = ' + t + ';'; }).join('\n')
       + '\nself.onmessage = e => { const {id, C, d, under, fab, yPin, margin, rec} = e.data; try { const o = {rec}; const P = runCloth(C, makeCollider(d, under, margin), fab, yPin, o); self.postMessage({id, P, F: o.frames, M: o.meta, nf: o.nf}, o.frames ? [P.buffer, o.frames.buffer] : [P.buffer]); } catch (err) { self.postMessage({id, err: String(err && err.message || err)}); } };';
     WORKER = new Worker(URL.createObjectURL(new Blob([src], {type: 'text/javascript'})));
     WORKER.onmessage = e => { const j = WJOBS.get(e.data.id); if (!j) return; WJOBS.delete(e.data.id); if (e.data.err) { console.warn('расчёт ткани в фоне не удался, считаю здесь:', e.data.err); WORKER = false; j.reject(new Error(e.data.err)); } else { if (e.data.F) e.data.P.anim = {F: e.data.F, M: e.data.M, nf: e.data.nf}; j.resolve(e.data.P); } };

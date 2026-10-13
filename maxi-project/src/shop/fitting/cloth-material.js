@@ -85,7 +85,7 @@ function noiseTex2() {
 // мелкие заломы там, где расчёт сжал ткань (атрибут wrk: √сжатия по утку и по основе). Всё считается один раз (3 выборки
 // текстур) — на телефоне и в слабой графике кадр не тяжелеет. Затенение складок (цвет вершин) действует и на «свечение» фото
 const CLOTH_GLSL = `
-uniform sampler2D clWeave; uniform sampler2D clNoise; uniform sampler2D clNoise2; uniform float clTile; uniform float clWAmp; uniform float clNAmp; uniform float clWrL; uniform float clWrG; uniform float clCav;
+uniform sampler2D clWeave; uniform sampler2D clRel; uniform float clRelAmp; uniform sampler2D clNoise; uniform sampler2D clNoise2; uniform float clTile; uniform float clWAmp; uniform float clNAmp; uniform float clWrL; uniform float clWrG; uniform float clCav;
 varying vec2 vUvm; varying vec2 vWrk;
 vec2 clSl; float clCv;
 void clEval(vec2 u) {
@@ -104,17 +104,20 @@ vec3 clPerturb(vec3 eye_pos, vec3 N, vec2 sl, vec2 uv, float fd) {
 }`;
 export function clothify(mat, ft) {
   ft = ft || FT.woven; mat.userData.ft = ft;
+  // рельеф со снимка (photo-texture.js delight2): мелкие заломы фото — наклоны нормали в координатах фото (vUv)
+  const relT = mat.map && mat.map.relief, rel = !!relT, X = (typeof window !== 'undefined' && window.__relAmp != null) ? window.__relAmp : 0.03;
   mat.extensions = Object.assign(mat.extensions || {}, {derivatives: true});
   mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, {clWeave: {value: weaveTex(ft.weave)}, clNoise: {value: noiseTex()}, clNoise2: {value: noiseTex2()}, clTile: {value: ft.tile}, clWAmp: {value: ft.wAmp}, clNAmp: {value: ft.nAmp}, clWrL: {value: ft.wrL}, clWrG: {value: ft.wrG}, clCav: {value: ft.cav}});
+    Object.assign(sh.uniforms, {clWeave: {value: weaveTex(ft.weave)}, clNoise: {value: noiseTex()}, clNoise2: {value: noiseTex2()}, clTile: {value: ft.tile}, clWAmp: {value: ft.wAmp}, clNAmp: {value: ft.nAmp}, clWrL: {value: ft.wrL}, clWrG: {value: ft.wrG}, clCav: {value: ft.cav}, clRel: {value: relT || null}, clRelAmp: {value: X}});
+    if (rel) mat.userData.relU = sh.uniforms;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 uvm; attribute vec2 wrk; varying vec2 vUvm; varying vec2 vWrk;')
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvUvm = uvm; vWrk = wrk;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + CLOTH_GLSL)
       .replace('#include <color_fragment>', '#include <color_fragment>\nclEval(vUvm); diffuseColor.rgb *= clCv;')
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = clPerturb(-vViewPosition, normal, clSl, vUvm, faceDirection);')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = clPerturb(-vViewPosition, normal, clSl, vUvm, faceDirection);' + (rel ? '\n{ vec2 rs = (texture2D(clRel, vUv).xy - 128.0 / 255.0) * 127.5 * clRelAmp; normal = clPerturb(-vViewPosition, normal, rs, vUv, faceDirection); }' : ''))
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n totalEmissiveRadiance *= vColor;\n#endif\ntotalEmissiveRadiance *= clCv;');
   };
-  mat.customProgramCacheKey = () => 'cloth:' + ft.weave + ft.tile + ft.wAmp + ft.wrL;
+  mat.customProgramCacheKey = () => 'cloth:' + ft.weave + ft.tile + ft.wAmp + ft.wrL + (rel ? 'r' : '');
   return mat;
 }
 // фото — основной цвет ткани (без своей светотени, см. delight); свет кабины даёт объём и складки;

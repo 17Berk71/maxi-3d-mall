@@ -22,6 +22,9 @@ export const lerp = (a, b, t) => a + (b - a) * t;
 export function interp(arr, t) { t = clamp(t, 0, 1) * (arr.length - 1); const i = Math.min(arr.length - 2, Math.floor(t)), f = t - i; return arr[i] + (arr[i + 1] - arr[i]) * f; }
 // сечение тела на высоте yf: полуширина a и полуглубина b (как у фигуры), с плечевым «шаром»
 export function bodyAB(d, yf) {
+  if (d.mh) { const T = d.mh, k = Math.max(0, Math.min(T.N - 1, Math.floor(yf * T.N)));
+    if (T.A[k]) { const a = T.A[k], b = T.B[k], f = T.G[k] / ellP(a, b); return {a: a * f, b: b * f}; }   // тот же обхват, что у тела (по ленте)
+    const l = T.LEQ[k] || d.thigh; return {a: Math.abs(T.LC[k * 4]) + l, b: l}; }
   let r = yf < 0.53 ? Math.max(torsoR(d, Math.max(0.47, yf)), d.hips * (yf < 0.5 ? 0.99 : 0.97)) : torsoR(d, yf);
   let a = r * (sx(d, Math.max(0.6, yf)) * 0.98 + 0.02), b = r * (sz(d, yf) + (yf < 0.6 ? 0.04 : 0));
   const dy = (yf - 0.8) * d.H / (d.chest * 0.42);
@@ -29,9 +32,16 @@ export function bodyAB(d, yf) {
   if (yf < 0.47) { a = Math.max(a, d.legX + d.thigh); b = Math.max(b, d.thigh); }
   return {a, b};
 }
+// верх плеч на расстоянии x от середины (манекен по сетке — по точкам тела, иначе — по прежней фигуре: шар плеч и рука)
+export function shTopAt(d, x) {
+  const T = d.mh, ax = Math.abs(x); if (!T) return null;
+  const f = ax / T.shBin - 0.5, i = Math.max(0, Math.min(T.shTop.length - 2, Math.floor(f))), a = T.shTop[i], b = T.shTop[i + 1];
+  if (!b) { let j = i; while (j > 0 && !T.shTop[j]) j--; return T.shTop[j] - Math.max(0, ax - (j + 0.5) * T.shBin) * 1.2; }
+  return a + (b - a) * Math.max(0, Math.min(1, f - i));
+}
 // рука: ось от плечевого сустава под углом armA, радиус по длине
-export const armJ = d => ({x: armX(d), y: 0.8 * d.H, L: 0.335 * d.H, th: d.armA || 0.16});
-export const armRad = (d, t) => (t < 0.12 ? 0.052 : t < 0.47 ? 0.046 - (t - 0.12) * 0.034 : 0.035 - (t - 0.47) * 0.018) * d.k * d.s;
+export const armJ = d => d.mh ? (g => ({x: g.x0, y: g.y0, z: g.z0, dz: g.dz, L: d.mh.arms[0].Lu + d.mh.arms[0].Ll, th: Math.atan2(Math.abs(g.dx), -g.dy)}))(d.mh.arms[0].segs[0]) /* по оси плечевого звена (подогнана по сечениям руки) */ : {x: armX(d), y: 0.8 * d.H, L: 0.335 * d.H, th: d.armA || 0.16};
+export const armRad = (d, t) => d.mh ? (A => { const s = Math.max(0, Math.min(1, t)) * (A.Lu + A.Ll), g = s < A.Lu ? A.segs[0] : A.segs[1], u = s < A.Lu ? s / A.Lu : (s - A.Lu) / g.L; return g.rad[Math.min(15, Math.floor(u * 16))]; })(d.mh.arms[0]) : (t < 0.12 ? 0.052 : t < 0.47 ? 0.046 - (t - 0.12) * 0.034 : 0.035 - (t - 0.47) * 0.018) * d.k * d.s;
 export function armInner(d, y) {
   const j = armJ(d), dy = j.y - y; if (dy < 0.05 || dy > j.L * Math.cos(j.th) + 0.08) return 9;
   return j.x + dy * Math.tan(j.th) - armRad(d, dy / (j.L * Math.cos(j.th))) / Math.cos(j.th) - 0.004;
