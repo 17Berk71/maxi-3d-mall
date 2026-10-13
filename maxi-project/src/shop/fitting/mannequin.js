@@ -6,6 +6,10 @@ import {armRad} from './geometry.js';
 // ---------- тело ----------
 export function buildBody(b, skinMat, d0) {
   const d = d0 || bodyDims(b), g = new THREE.Group(), H = d.H;
+  // проба: тело из MakeHuman (tools/body/mh_body.py → JSON {p, i}), только для показа в лаборатории
+  if (typeof window !== 'undefined' && window.__mhBody) { const M = window.__mhBody, geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(M.p, 3)); geo.setIndex(M.i); if (M.n) geo.setAttribute('normal', new THREE.Float32BufferAttribute(M.n, 3)); else geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, skinMat); m.userData.part = 'mh'; m.castShadow = true; g.add(m); return {g, d}; }
   const yProf = []; for (let yf = 0.465; yf <= 0.8521; yf += 0.0129) yProf.push([yf * H, torsoR(d, yf)]);
   // верх туловища закрыт пологим скатом к шее: открытый край кольца выступал из шара плеч волнистой «кокеткой»
   { const [y0, r0] = yProf[yProf.length - 1], rn = d.neck * 0.85 / Math.max(0.5, sx(d, 0.86)); /* верх ската — внутри шеи: иначе кольцо вокруг шеи видно над воротом */ [[0.003, 0.8], [0.0055, 0.55], [0.0075, 0.3]].forEach(([dy, k]) => yProf.push([y0 + dy * H, Math.max(rn, r0 * k)])); }
