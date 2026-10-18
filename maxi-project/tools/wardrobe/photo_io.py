@@ -44,4 +44,23 @@ def studio_load(key):
         n, lab_, st, _ = cv2.connectedComponentsWithStats(am)
         if n > 1: am = (lab_ == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
         return im, am
-    return im, studio_mask(im)
+    return im, trim_bg_edge(im, studio_mask(im))
+
+
+def trim_bg_edge(im, m, band=18):
+    """Студийное фото: у края маски прилипают клинья фона и тени (между рукавом и капюшоном, у манжеты). Пиксели в полосе
+    у края, близкие по цвету к фону и далёкие от ткани, — не вещь. Внутри вещи (принт, светлые вставки) не трогаем."""
+    if m.sum() < 1000: return m
+    lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+    bgc = np.median(np.concatenate([lab[:6].reshape(-1, 3), lab[-6:].reshape(-1, 3), lab[:, :6].reshape(-1, 3), lab[:, -6:].reshape(-1, 3)]), 0)
+    core = cv2.erode(m, np.ones((2 * band + 1, 2 * band + 1), np.uint8))
+    cloth = np.median(lab[core > 0], 0) if core.sum() > 500 else np.median(lab[m > 0], 0)
+    if np.linalg.norm(cloth - bgc) < 25: return m                    # светлая вещь на светлом фоне — не различить
+    edge = (m > 0) & (core == 0)
+    d_bg = np.linalg.norm(lab - bgc, axis=2); d_cl = np.linalg.norm(lab - cloth, axis=2)
+    drop = edge & (d_bg < 0.5 * d_cl)
+    if not drop.any(): return m
+    out = m.copy(); out[drop] = 0
+    out = cv2.morphologyEx(out, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lb, st, _ = cv2.connectedComponentsWithStats(out)
+    return (lb == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8) if n > 1 else out
