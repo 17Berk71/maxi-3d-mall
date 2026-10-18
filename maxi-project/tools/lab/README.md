@@ -25,6 +25,8 @@ cp -r /tmp/wardrobe-private/raw /tmp/wardrobe-private/out tools/wardrobe/     # 
 |---|---|
 | Собрать страницу кабины и поднять сервер (порт 8091, `PORT=` — другой) | `./serve.sh` |
 | Снять вещи на фигуре: 3 угла, автопроверка и подсказка посадки | `node shot.mjs skirt sk-pleat` → `shots/w_skirt_*.png` |
+| Пакет вещей: каждая отдельно, 3 ракурса + автопроверка → `OUTD/qc.jsonl` | `BODY=f OUTD=shots/wb node batch.mjs wb-1,wb-2` |
+| Отчёт для глаз по пакету (один HTML с картинками) | `python3 wb_report.py report.html shots/wb` |
 | Только автопроверка списка вещей | `node qc.mjs zolla-tee,polo,sk-pleat` (`ALL=1` — все пункты с цифрами, `X=__qcProf` — ещё и строки силуэта; `PACK=feeds/fit/` — пакеты выгрузки магазинов) |
 | Старая версия вещей с текущей автопроверкой (эталон «плохих» версий) | `./rev-qc.sh a30cedb v_karkas.html`, затем `PAGE=v_karkas.html ALL=1 node qc.mjs barrel-jeans` |
 | Силуэт вещи против фото по строкам | `node prof.mjs barrel-jeans,cream-shorts` |

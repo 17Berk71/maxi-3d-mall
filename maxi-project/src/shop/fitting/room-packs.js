@@ -6,7 +6,7 @@ let PACKS;
   // набор вещей с текстурами из фабрики (index.json + папки с front/back/sleeve.webp)
   // поля вещи из пакета примерки (фабрика tools/wardrobe или конвейер выгрузок tools/feeds/fitpack.py)
   function packFields(mt, dir) {
-    return {kind: mt.kind, fit: mt.fit, shape: mt.shape, sizesT: mt.sizes || null, states: mt.states, zip: mt.zip, collar: mt.collar, hood: !!mt.hood, pleats: !!mt.pleats, lining: mt.lining || null, puff: !!mt.puff, stand: !!mt.stand, drape: mt.drape || null,
+    return {kind: mt.kind, fit: mt.fit, shape: mt.shape, sizesT: mt.sizes || null, states: mt.states, zip: mt.zip, collar: mt.collar, hood: !!mt.hood, pleats: !!mt.pleats, lining: mt.lining || null, puff: !!mt.puff, stand: !!mt.stand, puffer: !!mt.puffer, drape: mt.drape || null,
       tex: {front: dir + 'front.webp', back: dir + 'back.webp', sleeve: mt.sleeve ? dir + 'sleeve.webp' : null, frontCut: dir + 'front_cut.webp', backCut: dir + 'back_cut.webp'}};
   }
   export async function loadPack(it) {

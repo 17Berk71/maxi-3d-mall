@@ -9,7 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RAW, OUT = os.path.join(HERE, 'raw'), os.path.join(HERE, 'out')
 
 
-TOPS = {'tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress'}
+TOPS = {'tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress', 'vest'}
 
 
 TEX_W, TEX_H = 512, 640

@@ -58,3 +58,9 @@ ITEMS = [
          sizes=[dict(name=nm, ru=ru, body=dict(chest=[c0, c0 + 4], waist=[w0, w0 + 4], hips=[h0, h0 + 4]), cm=dict(chest=round((c0 + 8) / 2, 1), len=ln))
                 for nm, ru, c0, w0, h0, ln in (('XS', '40', 78, 62, 88, 82), ('S', '42', 82, 62, 90, 83), ('M', '44', 86, 66, 94, 84))]),
 ]
+
+# Вещи из карточек Wildberries (только для внутренней проверки): список собирает wb_items.py в raw/wb_items.json,
+# raw/ в .gitignore — если файла нет, гардероб прежний.
+import json as _json, os as _os
+_wb = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'raw', 'wb_items.json')
+if _os.path.exists(_wb): ITEMS += _json.load(open(_wb, encoding='utf-8'))

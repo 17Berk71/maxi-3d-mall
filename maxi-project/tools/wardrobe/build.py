@@ -38,6 +38,7 @@ def build(it, out=None, debug=True):
     if it.get('pleats'): meta['pleats'] = True
     if it.get('lining'): meta['lining'] = it['lining']   # нижний слой у подола (цвет): шорты-подклад, подъюбник
     if it.get('puff'): meta['puff'] = True
+    if it.get('puffer'): meta['puffer'] = True   # стёганый жилет: объём утеплителя, как у пуховика
     if it.get('stand'): meta['stand'] = True   # воротник-стойка   # рукав-фонарик: окат шире проймы, собран в неё; внизу — манжета
     if it.get('who'): meta['who'] = it['who']
     ovs = []

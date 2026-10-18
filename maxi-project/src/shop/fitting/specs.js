@@ -7,7 +7,7 @@ import {itemCm, sizeOf} from './sizes.js';
 // длина вещи по спинке (м), если мерок нет: типичная для своего размера, чуть зависит от роста
 const LEN0 = {tee: 0.71, sweater: 0.68, hoodie: 0.68, jacket: 0.68, shirt: 0.76, coat: 1.0, puffer: 0.74, dress: 0.95, skirt: 0.62};
 // вещи «верха» в расчёте ткани (корпус + рукава): к ним относятся и пальто, пуховик, платье
-export const TOPK = new Set(['tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress']);
+export const TOPK = new Set(['tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress', 'vest']);
 function cleanTail(arr) {
   const a = arr.slice(), med = a.slice(2, -3).sort((x, y) => x - y)[Math.floor((a.length - 5) / 2)] || a[0];
   for (let i = a.length - 1; i > a.length - 5; i--) if (a[i] < med * 0.86) a[i] = Math.max(a[i], (a[i - 1] || med) * 0.97);

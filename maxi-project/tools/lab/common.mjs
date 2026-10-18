@@ -14,11 +14,11 @@ export function need(name, envVar, extra = []) {
   for (const p of [process.env[envVar], name, ...extra].filter(Boolean)) { try { return req(p); } catch (e) { /* дальше */ } }
   throw new Error(`нет модуля ${name}: npm install в maxi-project или ${envVar}=путь`);
 }
-export const esbuild = () => need('esbuild', 'ESBUILD_PATH', ['/home/claude/.npm-global/lib/node_modules/tsx/node_modules/esbuild', '/opt/node-tools/node_modules/esbuild']);
+export const esbuild = () => need('esbuild', 'ESBUILD_PATH', ['/home/claude/.npm-global/lib/node_modules/tsx/node_modules/esbuild', '/opt/node-tools/node_modules/esbuild', '/opt/npm-tools/node_modules/esbuild']);
 
 // Chromium без видеокарты (swiftshader). Своя сборка браузера — PW_CHROMIUM=путь
 export async function browser() {
-  const {chromium} = need('playwright', 'PLAYWRIGHT_PATH', ['/home/claude/.npm-global/lib/node_modules/playwright']);
+  const {chromium} = need('playwright', 'PLAYWRIGHT_PATH', ['/home/claude/.npm-global/lib/node_modules/playwright', '/opt/npm-tools/node_modules/playwright']);
   const exe = process.env.PW_CHROMIUM || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
   return chromium.launch({executablePath: exe, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']});
 }
