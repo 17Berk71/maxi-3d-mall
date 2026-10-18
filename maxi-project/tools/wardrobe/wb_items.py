@@ -35,7 +35,7 @@ def flags(kind, name):
         if has(n, r'стеган|дут|пухов|утепл'): out['puffer'] = True
     if kind not in ('hoodie',) and has(n, r'капюш'): out['hood'] = True
     if kind in ('shirt', 'tee', 'sweater', 'dress', 'jacket', 'coat') and has(n, r'рубашк|поло|воротник|отложн'): out['collar'] = True
-    if kind in ('dress', 'shirt', 'sweater', 'jacket', 'puffer', 'vest') and has(n, r'стойк'): out['stand'] = True
+    if kind in ('dress', 'shirt', 'sweater', 'jacket', 'puffer', 'vest', 'tee') and has(n, r'стойк|горл|водолазк|воротник-труб'): out['stand'] = True
     if kind in ('skirt', 'dress') and has(n, r'плиссе|складк|гофре'): out['pleats'] = True
     if kind in ('dress', 'shirt', 'tee') and has(n, r'фонарик|буф'): out['puff'] = True
     if has(n, r'укороч|кроп'): out['crop'] = True
@@ -70,6 +70,10 @@ def sizes_of(g, kind):
             cm['outseam'] = cm['inseam'] + cm['rise']                     # чинос Tom Tailor: длины по боку нет, есть шаг и посадка
         if kind == 'skirt' and 'waist' not in cm and t.get('body_waist'):  # юбка с одной меркой тела: пояс садится по ней
             lo, hi = rng(t['body_waist']); cm['waist'] = round((lo + hi) / 4, 1)
+        # «длина рукава» у реглана и спущенного плеча в таблицах часто меряется от горловины: 74–80 см у женской вещи не бывает
+        # от плеча — тогда рукав от плеча ≈ значение − полплеча (~19 см у женской фигуры, ~21 у мужской)
+        if cm.get('sleeve') and 'shoulder' not in cm and cm['sleeve'] > (66 if g.get('body_for_check') == 'f' else 70):
+            cm['sleeve'] = round(cm['sleeve'] - (19 if g.get('body_for_check') == 'f' else 21), 1)
         cm = {k: v for k, v in cm.items() if k in keys and isinstance(v, (int, float))}
         if not cm: continue
         e = dict(name=s['name'], cm=cm)

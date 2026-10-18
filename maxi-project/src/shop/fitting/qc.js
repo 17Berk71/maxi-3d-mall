@@ -221,8 +221,10 @@ function silhouette(C, P, d, item, info, top, a, g, o) {
     const yW = o.yMax, y1 = o.yMin + 0.015, N = 18;
     for (let i = 0; i < N; i++) { const t = 0.08 + 0.84 * i / (N - 1), y = yW - (yW - y1) * t, rr = Math.round(rT + (rB - rT) * t), pts = slicePts(C, P, y, o.allK), pw = ph.full(rr);
       if (pts.length < 6 || !pw) continue; rows.push({t, y, model: worn ? xExtent(pts) : hullHalf(pts), want: pw * s, px: pw, where: t < 0.35 ? 'в бёдрах' : t < 0.7 ? 'посередине' : 'у подола'}); }
-    if (worn) { const sc = med(rows.map(r => r.model / r.px)); rows.forEach(r => { r.want = r.px * sc; }); }
-    return rows.length >= 8 ? {rows, mode: worn ? 'front' : 'girth'} : null;
+    // на модели: верх юбки закрыт кофтой или руками — выкройка берёт до бёдер фигуру/таблицу, по фото только расширение книзу
+    // (skirtProf robust) — и сравниваем только его: строки ниже бёдер, масштаб по самой вещи
+    if (worn) { for (let i = rows.length - 1; i >= 0; i--) if (rows[i].t < 0.3) rows.splice(i, 1); const sc = med(rows.map(r => r.model / r.px)); rows.forEach(r => { r.want = r.px * sc; }); }
+    return rows.length >= (worn ? 6 : 8) ? {rows, mode: worn ? 'front' : 'girth'} : null;
   }
   const sp = info.sp; if (!sp) return null;
   const rC = Math.round(rT + (a.crotch || 0.4) * (rB - rT)), yW = sp.yW, yC = sp.yC;

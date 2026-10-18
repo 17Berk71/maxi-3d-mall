@@ -145,6 +145,7 @@ def load_model_photo(key, kind):
             if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
         if kind != 'skirt': m = drop_leg_gap(im, m)
     im = paint_over_skin(im, m)
+    im = paint_over_hair(im, m)
     return im, m
 
 
@@ -193,3 +194,27 @@ def person_scale(im, model_h):
 def garment_len_cm(m, scale):
     ys = np.where(m.any(1))[0]
     return round(float(ys[-1] - ys[0]) * scale, 1) if len(ys) and scale else None
+
+
+def paint_over_hair(im, m):
+    """Волосы модели на плечах и груди поверх однотонной вещи: тёмные куски у верхнего края вещи, далёкие по цвету
+    от ткани, — закрасить тканью вокруг. Только у однотонных вещей (у принта тёмные места — рисунок) и только в верхней трети."""
+    ys = np.where(m.any(1))[0]
+    if len(ys) < 50: return im
+    y0, y1 = ys[0], ys[-1]; top = y0 + (y1 - y0) // 3
+    lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+    inside = m > 0; core = lab[top:y1][inside[top:y1]]
+    if len(core) < 500: return im
+    med = np.median(core, 0); spread = np.percentile(np.linalg.norm(core - med, axis=1), 80)
+    if spread > 36: return im                                                   # пёстрая ткань — не трогаем
+    d = np.linalg.norm(lab - med, axis=2)
+    cand = inside & (d > max(30, spread * 1.4)) & (lab[..., 0] < med[0] - 20)   # заметно темнее и другого цвета
+    cand[top:] = False
+    cand = cv2.morphologyEx(cand.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lb, st, _ = cv2.connectedComponentsWithStats(cand)
+    keep = np.zeros_like(cand)
+    for k in range(1, n):
+        x, y, w_, h_, a = st[k]
+        if a >= 80 and y <= y0 + (top - y0) * 0.6: keep[lb == k] = 1           # кусок начинается у верха вещи (волосы падают сверху)
+    if not keep.any(): return im
+    return cv2.inpaint(im, cv2.dilate(keep, np.ones((7, 7), np.uint8)), 9, cv2.INPAINT_TELEA)

@@ -21,7 +21,8 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     # только мелкие дырки (до 1.5% площади вещи): большая «дырка» — просвет между штанинами, замкнутый обрезом снизу (фон там
     # убран намеренно: model_photo.drop_leg_gap), её не заливать
     holes = ((ff[1:-1, 1:-1] != 128) & (mc == 0)).astype(np.uint8); n_h, lb_h, st_h, _ = cv2.connectedComponentsWithStats(holes)
-    small = np.zeros_like(holes, bool); lim_h = 0.015 * max(1, int((mc > 0).sum()))
+    # у верха (не штаны и не шорты) просвет между рукой и корпусом на фото с человеком — тоже «дырка»: ткань там есть, заливаем любые
+    small = np.zeros_like(holes, bool); lim_h = 0.015 * max(1, int((mc > 0).sum())) if kind in ('pants', 'jeans', 'shorts') else 1e12
     for k in range(1, n_h):
         if st_h[k, cv2.CC_STAT_AREA] < lim_h: small |= lb_h == k
     mc = (small | (mc > 0)).astype(mc.dtype)
