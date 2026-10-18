@@ -38,7 +38,8 @@ def build(it, out=None, debug=True):
     if it.get('pleats'): meta['pleats'] = True
     if it.get('lining'): meta['lining'] = it['lining']   # нижний слой у подола (цвет): шорты-подклад, подъюбник
     if it.get('puff'): meta['puff'] = True
-    if it.get('puffer'): meta['puffer'] = True   # стёганый жилет: объём утеплителя, как у пуховика
+    if it.get('puffer'): meta['puffer'] = True
+    if it.get('sleeveless'): meta['sleeveless'] = True   # без рукавов (по названию: бретели, сарафан, комбинация)   # стёганый жилет: объём утеплителя, как у пуховика
     if it.get('stand'): meta['stand'] = True   # воротник-стойка   # рукав-фонарик: окат шире проймы, собран в неё; внизу — манжета
     if it.get('who'): meta['who'] = it['who']
     ovs = []
@@ -59,6 +60,9 @@ def build(it, out=None, debug=True):
             if c0.get('outseam') and c0.get('inseam'): cf = (c0['outseam'] - c0['inseam']) / c0['outseam']
         tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf, flat and it.get('src') != 'studio') if part is bottom_parts else part(im, m, it['kind'])
         if it.get('src') == 'model' and side == 'front' and model_photo.LAST_HEM is not None: meta['hem_waist'] = model_photo.LAST_HEM
+        if it.get('src') == 'model' and side == 'front' and it.get('model_h'):   # длина вещи в см по росту модели (человек в полный рост)
+            sc = model_photo.person_scale(im, it['model_h']); L_cm = model_photo.garment_len_cm(m, sc)
+            if L_cm: meta['len_photo'] = L_cm; meta['len_photo_est'] = bool(it.get('model_h_est'))
         if not flat and it.get('src') != 'model':
             g = wall_gain(im); tex = apply_gain(tex, g)
             if sleeve is not None: sleeve = apply_gain(sleeve, g)
@@ -82,6 +86,7 @@ def build(it, out=None, debug=True):
         if it.get(k): meta['shape'][k] = it[k]
     if it.get('src') == 'model': meta['shape']['hang'] = False; meta['shape']['worn'] = True   # ширины сняты с вещи на человеке
     if meta.get('hem_waist') is not None: meta['shape']['hem_waist'] = meta.pop('hem_waist')
+    if meta.get('len_photo'): meta['shape']['len_photo'] = meta.pop('len_photo'); meta['shape']['len_photo_est'] = meta.pop('len_photo_est', False)
     if it.get('ref_len'): meta['shape']['ref_len'] = it['ref_len']
     if it.get('sizes'): meta['sizes'] = it['sizes']
     for k in ('brand', 'url', 'price', 'note'):

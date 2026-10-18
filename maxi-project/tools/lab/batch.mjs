@@ -5,7 +5,7 @@ import fs from 'node:fs'; import path from 'node:path';
 import {browser, bodyFromEnv, URL0, ensureShots} from './common.mjs';
 const ids = (process.argv[2] || '').split(',').filter(Boolean); if (!ids.length) { console.log('batch.mjs id1,id2'); process.exit(1); }
 const OUTD = process.env.OUTD || path.join(ensureShots(), 'batch'); fs.mkdirSync(OUTD, {recursive: true});
-const V = (process.env.V || '0,1.57,3.14').split(',').map(Number), T = +(process.env.T || 180) * 1000, body = bodyFromEnv('m');
+const V = (process.env.V || '0,1.57,3.14').split(',').map(Number), T = +(process.env.T || 300) * 1000, body = bodyFromEnv('m');
 const ST = process.env.ST || '';
 const log = fs.createWriteStream(path.join(OUTD, 'qc.jsonl'), {flags: 'a'});
 let b, pg;

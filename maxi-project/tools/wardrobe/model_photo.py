@@ -166,3 +166,30 @@ def paint_over_skin(im, m):
     if not keep.any(): return im
     keep = cv2.dilate(keep, np.ones((7, 7), np.uint8))
     return cv2.inpaint(im, keep, 9, cv2.INPAINT_TELEA)
+
+
+def person_scale(im, model_h):
+    """См на пиксель по росту модели: человек целиком в кадре на ровном фоне (стена-циклорама, в т.ч. с плавным переходом в пол).
+    Фон оценивается по каждой строке отдельно — по краям строки (у циклорамы низ темнее верха). Человек — строки, где середина
+    заметно отличается от краёв своей строки. None — если макушка или стопы за краем кадра, или фон пёстрый (улица, интерьер)."""
+    if not model_h: return None
+    h, w = im.shape[:2]; a = im.astype(np.int16)
+    # фон строки — по тому краю кадра, который ровнее (на другом часто надпись: бренд, размерный ряд)
+    sides = []
+    for S_ in (a[:, :int(w * 0.07)], a[:, int(w * 0.93):]):
+        bg_ = np.median(S_, 1); sides.append((np.median(np.abs(S_ - bg_[:, None]).max(2).mean(1)), bg_))
+    var, rowbg = min(sides, key=lambda t: t[0])
+    if var > 18: return None                                                  # пёстрый фон
+    x0, x1 = int(w * 0.2), int(w * 0.8)
+    diff = np.abs(a[:, x0:x1] - rowbg[:, None]).max(2) > 40
+    cnt = diff.sum(1)
+    rows = np.where(cnt > max(4, 0.01 * (x1 - x0)))[0]
+    if len(rows) < h * 0.4: return None
+    top, bot = rows[0], rows[-1]
+    if top < 0.008 * h or bot > 0.996 * h: return None                         # макушка или стопы за краем кадра
+    return model_h / float(bot - top)
+
+
+def garment_len_cm(m, scale):
+    ys = np.where(m.any(1))[0]
+    return round(float(ys[-1] - ys[0]) * scale, 1) if len(ys) and scale else None

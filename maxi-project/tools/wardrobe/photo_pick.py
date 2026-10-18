@@ -57,11 +57,17 @@ def score_model(im, kind):
     face = 0.0
     if y > 20:
         y0, y1 = max(0, y - int(0.22 * bh)), max(1, y - int(0.08 * bh)); xa, xb = x + bw // 4, x + 3 * bw // 4   # выше шеи: лицо или затылок
-        if y1 > y0 + 4: _, sk2 = basic(im[y0:y1, xa:xb]); face = float(sk2.mean())
+        if y1 > y0 + 4:   # кожа лица светлая, тёмно-русые волосы на затылке в тот же диапазон цвета попадают — их отсекаем по яркости
+            yc = cv2.cvtColor(im[y0:y1, xa:xb], cv2.COLOR_BGR2YCrCb).astype(np.int16)
+            face = float(((yc[..., 0] > 115) & (yc[..., 1] > 135) & (yc[..., 1] < 173) & (yc[..., 2] > 77) & (yc[..., 2] < 127)).mean())
     s = area * 100 * (0.25 if cut_top else 1) * (0.35 if cut_bot and kind not in BOTTOMS | {'coat', 'dress'} else 0.7 if cut_bot else 1) * (0.5 if cut_side else 1)
     s *= (0.4 + 0.6 * sym) * max(0.2, 1 - 2.5 * skin_k) * max(0.3, 1 - 0.8 * min(1, other_k))
+    # человек в полный рост на ровном фоне — по нему фабрика меряет длину вещи в см (рост модели из карточки)
+    from model_photo import person_scale
+    full_fig = person_scale(im, 175) is not None
+    if full_fig: s *= 1.2
     return dict(ok=not cut_top and not cut_side, score=round(s, 2), face=round(face, 3), area=round(area, 3), sym=round(sym, 3), skin=round(skin_k, 3), other=round(other_k, 2),
-                cut=''.join(c for c, f in (('t', cut_top), ('b', cut_bot), ('s', cut_side)) if f))
+                full=full_fig, cut=''.join(c for c, f in (('t', cut_top), ('b', cut_bot), ('s', cut_side)) if f))
 
 
 def person_free(im, kind):
@@ -104,9 +110,9 @@ def pick(photos, kind, hints=None, table=()):
     mod = sorted([r for r in res if r.get('score', -1) > 0], key=lambda r: -r['score'])
     if not mod: return dict(src=None, scores=res)
     # спереди — с лицом (у низа лица часто не видно — тогда как есть), спинка — без лица
-    fr = [r for r in mod if r['ok'] and (r.get('face', 0) > 0.06 or kind in BOTTOMS)]
+    fr = [r for r in mod if r['ok'] and (r.get('face', 0) > 0.12 or kind in BOTTOMS)]
     front = fr[0] if fr else next((r for r in mod if r['ok'] and r['n'] not in hints.get('back', [])), mod[0])
-    hb = [r for r in mod if r['ok'] and r is not front and r['score'] > 0.3 * front['score'] and (r['n'] in hints.get('back', []) or (r.get('face', 1) < 0.02 and kind not in BOTTOMS))]
+    hb = [r for r in mod if r['ok'] and r is not front and r['score'] > 0.3 * front['score'] and (r['n'] in hints.get('back', []) or (r.get('face', 1) < 0.06 and kind not in BOTTOMS))]
     back = hb[0] if hb else front
     return dict(src='model', front=front['path'], back=back['path'], scores=res)
 

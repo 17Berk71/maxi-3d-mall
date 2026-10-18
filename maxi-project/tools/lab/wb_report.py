@@ -32,7 +32,13 @@ def b64im(im, w, q=72):
 
 
 def main():
-    out_html = sys.argv[1]; dirs = sys.argv[2:]
+    out_html = sys.argv[1]; dirs = [a for a in sys.argv[2:] if not a.startswith('--before=')]
+    before = {}
+    for a in sys.argv[2:]:
+        if a.startswith('--before='):
+            for d in a.split('=', 1)[1].split(','):
+                for line in open(os.path.join(d, 'qc.jsonl')):
+                    if line.strip(): r = json.loads(line); before[r['id']] = r
     items = {i['id']: i for i in json.load(open(os.path.join(RAW, 'wb_items.json')))}
     qc = {}
     for d in dirs:
@@ -77,7 +83,9 @@ def main():
             sizes = f'<details><summary>Мерки вещи из таблицы продавца (см, ширина лёжа)</summary><table><tr><th>размер</th>{th}</tr>{tr}</table></details>'
         else:
             sizes = '<p class=muted>Таблицы мерок вещи нет — размеры по пропорциям фото.</p>'
-        status = (f'<span class="score {cls}">{score}</span>' if score is not None else
+        b0 = before.get(iid, {}).get('score')
+        delta = f'<span class=was>было {b0}</span>' if b0 is not None and score is not None else ''
+        status = (f'<span class="score {cls}">{score}</span>{delta}' if score is not None else
                   f'<span class="score none">{"сбой" if err else "нет"}</span>')
         note = html.escape((r or {}).get('note') or '')
         rows.append(f'''<article class="card {cls}" data-kind="{it['kind']}" data-store="{html.escape(it.get('brand', ''))}" data-score="{score if score is not None else -1}" data-body="{'f' if it.get('who') == 'women' else 'm'}">
@@ -89,6 +97,9 @@ def main():
 <div class=verdict><label><input type=radio name="v-{iid}" value=ok> похоже</label><label><input type=radio name="v-{iid}" value=meh> так себе</label><label><input type=radio name="v-{iid}" value=bad> плохо</label><input class=cmt placeholder="что не так (для меня)"></div>
 </article>''')
     n = len(cards); ns = [c[2]['score'] for c in cards if c[2] and c[2].get('score') is not None]
+    bs = [before[c[0]]['score'] for c in cards if c[0] in before and before[c[0]].get('score') is not None]
+    bsum = f' Прошлый прогон: средний балл {round(sum(bs) / len(bs))}, 80+: {sum(1 for x in bs if x >= 80)}, ниже 65: {sum(1 for x in bs if x < 65)}.' if bs else ''
+    avg = round(sum(ns) / len(ns)) if ns else 0
     good = sum(1 for s in ns if s >= 80); mid = sum(1 for s in ns if 65 <= s < 80); bad = sum(1 for s in ns if s < 65)
     opts_store = ''.join(f'<option>{html.escape(s)}</option>' for s in stores)
     opts_kind = ''.join(f'<option value={k}>{KIND.get(k, k)}</option>' for k in kinds)
@@ -105,7 +116,7 @@ main{{max-width:1500px;margin:0 auto;padding:12px 16px 60px;display:grid;gap:14p
 .card header{{display:flex;gap:12px;align-items:flex-start}}h2{{font-size:16px;margin:0}}.meta{{margin:2px 0;color:var(--mut);font-size:13px}}.meta a{{color:inherit}}
 .fit{{margin:4px 0 0;font-size:14px}}.err{{color:var(--bad);margin:4px 0 0}}.muted{{color:var(--mut);font-size:13px}}
 .score{{flex:none;min-width:54px;text-align:center;font-weight:700;font-size:22px;border-radius:10px;padding:6px 8px;color:#fff}}
-.score.good{{background:var(--good)}}.score.mid{{background:var(--mid)}}.score.bad{{background:var(--bad)}}.score.none{{background:var(--mut);font-size:14px}}
+.was{{display:block;font-size:11px;color:var(--mut);text-align:center;margin-top:2px}}header>span{{flex:none}}.score.good{{background:var(--good)}}.score.mid{{background:var(--mid)}}.score.bad{{background:var(--bad)}}.score.none{{background:var(--mut);font-size:14px}}
 .imgs{{display:flex;gap:8px;overflow-x:auto;margin:10px 0 6px}}figure{{margin:0;flex:none}}figure img{{height:300px;border-radius:8px;display:block;background:#ddd}}
 figure.sim img{{background:#e9e6e0}}figcaption{{font-size:12px;color:var(--mut);text-align:center}}
 .checks{{columns:2 420px;margin:6px 0;padding-left:18px;font-size:13px}}.checks li{{break-inside:avoid;margin:2px 0}}.checks li.ok{{color:var(--mut)}}.checks li.no b{{color:var(--bad)}}
@@ -114,7 +125,7 @@ details{{font-size:13px;margin:4px 0}}table{{border-collapse:collapse;margin-top
 @media (max-width:600px){{figure img{{height:220px}}.checks{{columns:1}}}}
 </style></head><body>
 <div class=top><h1>Проверка вещей Wildberries на манекене</h1>
-<p class=sum>Вещей: <b>{n}</b> · снято: <b>{len(ns)}</b> · балл 80+: <b>{good}</b> · 65–79: <b>{mid}</b> · ниже 65: <b>{bad}</b>. Сначала самые проблемные. Балл автопроверки — подсказка, решает глаз.</p>
+<p class=sum>Вещей: <b>{n}</b> · снято: <b>{len(ns)}</b> · балл 80+: <b>{good}</b> · 65–79: <b>{mid}</b> · ниже 65: <b>{bad}</b>. Средний балл: <b>{avg}</b>.{bsum} Сначала самые проблемные. Балл автопроверки — подсказка, решает глаз.</p>
 <div class=f><select id=fs><option value="">все магазины</option>{opts_store}</select><select id=fk><option value="">все виды</option>{opts_kind}</select>
 <select id=fb><option value="">обе фигуры</option><option value=m>мужская</option><option value=f>женская</option></select>
 <select id=fq><option value="">любой балл</option><option value=bad>ниже 65</option><option value=mid>65–79</option><option value=good>80+</option></select>

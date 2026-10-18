@@ -42,7 +42,10 @@ export function topSpec(item, d) {
   // вещь снята на модели: длину берём с фото — где низ относительно пояса брюк (hem_waist), разница размеров — по таблице
   // но если в таблице есть длина выбранного размера — она точнее: на карточке магазина кадр часто обрезан, низ вещи не виден или
   // закрыт (td-tee: «низ у пояса» по фото — 49 см при 72 по таблице)
-  const lenPhoto = !!(sh.worn && sh.hem_waist != null && !cm.len);
+  // длина в см по фото с моделью в полный рост (рост модели из карточки → см на пиксель; build.py) — после таблицы
+  const lp = !cm.len && sh.len_photo ? sh.len_photo / 100 : 0, L0k = (LEN0[k] || 0.7) * Math.pow(H / 1.8, 0.6);
+  if (lp && lp > L0k * 0.5 && lp < L0k * 2.2) L = lp;
+  const lenPhoto = !!(sh.worn && sh.hem_waist != null && !cm.len && !(lp && L === lp));
   if (lenPhoto) {
     const yW = d.fW * H, yN = d.fN * H, yHemPhoto = yW - sh.hem_waist * (yN - yW) - 0.012 * H;
     L = d.fHPS * H - yHemPhoto;
@@ -73,6 +76,14 @@ export function topSpec(item, d) {
   // замер ширины по груди: ширины по нему; а если длины в замерах нет и фото не на модели и не со слившимися рукавами —
   // и длину по пропорции фото (типовая длина вида у футболки Zolla давала 72 см при ~69 по фото и замеру ширины; поправка
   // вешалки hk подобрана как раз по ней)
+  // студийное фото или вешалка без таблицы у длинных вещей (пальто, пуховик, платье, куртка): длина вида бывает любой (короткое
+  // пальто и пальто в пол), а ширина у вещи «своего» размера — фигура плюс обычный припуск вида. Поэтому масштаб — по ширине,
+  // длина — по пропорции фото. Раньше длинное пальто и парка выходили короткими, длинный пуховик — широким «пончо»
+  if (!cm.chest && !cm.len && !sh.worn && !sh.merged && !lp && ['coat', 'puffer', 'dress', 'jacket'].includes(k) && !(typeof window !== 'undefined' && window.__noWAnchor)) {
+    const EASEC = {coat: 0.22, puffer: 0.30, dress: 0.08, jacket: 0.16}, over = /оверсайз|oversize|свободн/i.test(item.name || '') ? 0.12 : 0;
+    const ab = bodyAB(d, 0.72), half = ellP(ab.a, ab.b) / 2 + (EASEC[k] + over) / 2, f = half / Fs[1];
+    const L1 = clamp(L * f, L0k * 0.55, L0k * 1.9), f1 = L1 / L; Fs = Fs.map(v => v * f1); L = L1;
+  }
   if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); if (!cm.len && !sh.worn && !sh.merged) L *= f; }
   const yHPS = d.fHPS * H, yHem = yHPS - L, yN = d.fN * H;
   const bc = bodyAB(d, 0.72), Fbody = ellP(bc.a, bc.b) / 2;
@@ -92,9 +103,10 @@ export function bottomSpec(item, d) {
   // масштаб: пояс садится на талию (на резинке лёжа собран ~в 1.2 раза); у длинных брюк ещё и длина «до пола» — берём среднее
   const kW = (cm.waist ? cm.waist / 100 : (Fw + 0.012) / (sh.elastic ? 1.1 : 1));
   const tot = (sh.rise || 0.75) + (sh.leg_len || 1.6), full = k !== 'shorts' && !/укороч|кюлот|капри/i.test(item.name || '');
-  const kk = cm.outseam ? cm.outseam / 100 / tot : kW;
+  const outPh = !cm.outseam && sh.len_photo && (k === 'pants' || k === 'jeans' || k === 'shorts') && sh.len_photo > 25 && sh.len_photo < 130 ? sh.len_photo : 0;   // по росту модели
+  const kk = (cm.outseam || outPh) ? (cm.outseam || outPh) / 100 / tot : kW;
   // длинные брюки шьют «до пола»: если по фото вышли короче щиколотки — дотянуть
-  const T = full && !cm.outseam ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
+  const T = full && !cm.outseam && !outPh ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
   let yC = 0.47 * H - 0.015;                                  // шаг: по фото лёжа не виден (штанины лежат вплотную), берём по фигуре
   // по таблице размеров: шаг = длина − шаговый шов; короткий шаг сажает брюки ниже на бёдрах, длинный — «спущенный» шаг
   // длина − шаговый шов = посадка по ткани (по изгибу спереди); по вертикали она ≈ на 20% короче
@@ -136,7 +148,7 @@ export function skirtProf(item, d) {
   let yW = Math.max(sp.yW, 0.585 * H); const bodyHalfAt = y => { const ab = bodyAB(d, y / H); return ellP(ab.a, ab.b) / 2; };
   if (cm.waist) while (yW < 0.625 * H && bodyHalfAt(yW) + 0.006 > cm.waist / 100) yW += 0.002 * H;
   const WW = Math.max(sp.ww, bodyHalfAt(yW) + 0.01);
-  const Lk = cm.len ? cm.len / 100 : (LEN0.skirt) * Math.pow(H / 1.8, 0.6), HPb = ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03;
+  const Lk = cm.len ? cm.len / 100 : sh.len_photo && sh.len_photo > 25 && sh.len_photo < 125 ? sh.len_photo / 100 : (LEN0.skirt) * Math.pow(H / 1.8, 0.6), HPb = ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03;
   let prof = sh.hip && sh.hip.length ? sh.hip.slice() : [1, 1.15, 1.2]; for (let i = 1; i < prof.length; i++) prof[i] = Math.max(prof[i], prof[i - 1]);
   if (sh.worn) prof = prof.map((v, i) => v * (1 + 0.16 * i / Math.max(1, prof.length - 1)));
   const kk = WW / (prof[0] || 1);

@@ -39,6 +39,7 @@ def flags(kind, name):
     if kind in ('skirt', 'dress') and has(n, r'плиссе|складк|гофре'): out['pleats'] = True
     if kind in ('dress', 'shirt', 'tee') and has(n, r'фонарик|буф'): out['puff'] = True
     if has(n, r'укороч|кроп'): out['crop'] = True
+    if kind in ('dress', 'tee', 'shirt') and has(n, r'бретел|комбинац|без рукав|сарафан|халтер|майк|топ\b|открытыми плечами|бандо'): out['sleeveless'] = True
     if kind in ('pants', 'jeans', 'shorts') and has(n, r'резинк|джоггер|спортивн'): out['elastic'] = True
     return out
 
@@ -109,6 +110,15 @@ def main():
         it = dict(id='wb-%d' % g['nm'], name='%s · %s' % (store, g['name']), kind=kind, worn=[], brand=store, url=g['url'], how=how, **ph)
         it.update(flags(kind, g['name']))
         if g.get('body_for_check') == 'f': it['who'] = 'women'
+        # рост модели на фото (для длины вещи по фото с человеком в полный рост); нет в карточке — типовой рост моделей
+        mh = None; m_ = g.get('model')
+        if isinstance(m_, dict):
+            v = m_.get('h') or next((v for k, v in m_.items() if 'Рост' in k), None)
+            if v is not None:
+                r = re.findall(r'\d{3}', str(v)); mh = int(r[0]) if r else None
+        if it.get('how') == 'model' or ph.get('src') == 'model':
+            it['model_h'] = mh or (175 if g.get('body_for_check') == 'f' else 185)
+            if not mh: it['model_h_est'] = True
         sz = sizes_of(g, kind)
         if sz: it['sizes'] = sz
         if g.get('note'): it['note'] = g['note'][:300]
