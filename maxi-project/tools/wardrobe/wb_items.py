@@ -14,7 +14,7 @@ from wardrobe_paths import RAW  # noqa: E402
 SKIP = {'jumpsuit'}                                    # комбинезонов в примерочной пока нет
 TOP_KEYS = ('chest', 'len', 'shoulder', 'sleeve')      # что понимает выкройка верха (specs.js, measures.js)
 BOTTOM_KEYS = ('waist', 'hip', 'hem', 'outseam', 'inseam')
-SKIRT_KEYS = ('waist', 'len')
+SKIRT_KEYS = ('waist', 'len', 'hip', 'hem')
 
 
 def has(n, rx): return re.search(rx, n) is not None
@@ -85,6 +85,12 @@ def pick_photos(g, d):
     note = g.get('note') or ''
     if re.search(r'вешалк|на полу', note) and len(studio) >= 1:      # фото на вешалке / лёжа на полу — как личные фото, обычное вырезание
         return dict(front=f(studio[0]), back=f(studio[1] if len(studio) > 1 else studio[0])), 'photo'
+    pk = os.path.join(d, 'pick.json')            # автоматический выбор снимков (photo_pick.py / pick_all.py), если есть
+    if os.path.exists(pk):
+        r = json.load(open(pk))
+        if r.get('src') in ('studio', 'model'):
+            rel = lambda q: os.path.relpath(q if os.path.isabs(q) else os.path.join(os.path.dirname(RAW), q), RAW)   # путь в pick.json — от tools/wardrobe
+            return dict(src=r['src'], front=rel(r['front']), back=rel(r['back'])), r['src']
     if studio:
         return dict(src='studio', front=f(studio[0]), back=f(studio[1] if len(studio) > 1 else studio[0])), 'studio'
     if p.get('front'):

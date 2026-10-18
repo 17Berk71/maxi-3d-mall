@@ -88,7 +88,11 @@ def load_model_photo(key, kind):
     m = (ms['full'] | ms['upper'] | ms['lower']) if kind == 'dress' else ms['upper'] if kind in TOPS else ms['lower']
     # длинное пальто, плащ, удлинённый пуховик сеть часто относит к «целиком» (как платье), а «верх» — только плечи:
     # у верхней одежды, если «целиком» много, берём оба класса
-    if kind in TOPS and kind != 'dress' and ms['full'].sum() > 0.5 * max(1, ms['upper'].sum()):
+    # у остальных верхних вещей — только если «верх» почти не найден (белый жакет на белом: всё в «целиком»);
+    # иначе к пиджаку цеплялась юбка или платье под ним, и низ вещи выходил у колена
+    long_top = kind in ('coat', 'puffer') and ms['full'].sum() > 0.5 * max(1, ms['upper'].sum())
+    tiny_top = kind in TOPS and kind != 'dress' and ms['upper'].sum() < 0.25 * ms['full'].sum()
+    if long_top or tiny_top:
         m = ms['upper'] | ms['full']
     # длинную юбку (атлас, макси) сеть тоже бывает относит к «целиком»: если «низа» мало — берём и «целиком»,
     # верх (кофта, жилет) потом отрезается по резкому сужению у пояса
@@ -114,7 +118,7 @@ def load_model_photo(key, kind):
     global LAST_HEM
     LAST_HEM = None
     if kind in TOPS and ms['lower'].sum() > 1000:
-        cx = w // 2; yu = np.where(m[:, cx - 40:cx + 40].any(1))[0]; yl = np.where(ms['lower'][:, cx - 60:cx + 60].any(1))[0]
+        cx = w // 2; yu = np.where((m if (long_top or tiny_top) else ms['upper'])[:, cx - 40:cx + 40].any(1))[0]; yl = np.where(ms['lower'][:, cx - 60:cx + 60].any(1))[0]
         if len(yu) and len(yl) and yl[0] > yu[0]: LAST_HEM = round(float((yu[-1] - yl[0]) / (yl[0] - yu[0])), 3)
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     n, lab_, st, _ = cv2.connectedComponentsWithStats(m)
@@ -140,4 +144,25 @@ def load_model_photo(key, kind):
             yw = max(seg, key=lambda y: wid[y - dd] - wid[y + dd])
             if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
         if kind != 'skirt': m = drop_leg_gap(im, m)
+    im = paint_over_skin(im, m)
     return im, m
+
+
+def paint_over_skin(im, m):
+    """Кожа внутри силуэта вещи (кисти поверх ткани, грудь в вырезе, пальцы на поясе) — закрасить тканью вокруг,
+    силуэт не трогаем. Вещь телесного цвета (бежевая, пудровая) — не трогаем совсем: кожу от ткани не отличить."""
+    ycc = cv2.cvtColor(im, cv2.COLOR_BGR2YCrCb)
+    cr, cb = ycc[..., 1].astype(np.int16), ycc[..., 2].astype(np.int16)
+    skin = (cr > 137) & (cr < 173) & (cb > 77) & (cb < 127) & (ycc[..., 0] > 60)
+    inside = m > 0
+    if inside.sum() < 1000: return im
+    if skin[inside].mean() > 0.35: return im
+    sk = (skin & inside).astype(np.uint8)
+    sk = cv2.morphologyEx(sk, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(sk)
+    keep = np.zeros_like(sk)
+    for k in range(1, n):
+        if st[k, cv2.CC_STAT_AREA] >= 60: keep[lab == k] = 1      # мелкие точки цвета кожи на принте — не трогаем
+    if not keep.any(): return im
+    keep = cv2.dilate(keep, np.ones((7, 7), np.uint8))
+    return cv2.inpaint(im, keep, 9, cv2.INPAINT_TELEA)

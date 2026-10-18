@@ -141,6 +141,9 @@ export function drapePrepare(item, d, under) {
     if (!open) C.mid = fronts.concat([pb]).flatMap(P_ => { const mn = Math.min(...P_.pts.map(p => Math.abs(p.x))), col = P_.pts.filter(p => Math.abs(Math.abs(p.x) - mn) < 1e-4);
       return col.filter(p => p.x >= -1e-4).map(p => { const q = col.find(o => o.r === p.r && Math.abs(o.x + p.x) < 1e-4) || p; return [p.g, q.g]; }); });
     if (open) C.hold = fronts.flatMap(pf => pf.pts.filter(p => p.edge && p.lab === 'cf').map(p => p.g));
+    // нараспашку вещь держится только на плечах и у горловины сзади: касание там не скользит (как капюшон на голове) —
+    // иначе широкая вещь (оверсайз, шире плеч фигуры) сползала с узких плеч целиком, оставались одни рукава
+    if (open && !(typeof window !== 'undefined' && window.__noOpenStick)) fronts.concat([pb]).forEach(P_ => P_.pts.forEach(p => { if (p.edge && (p.lab === 'neck' || p.lab === 'shoulder' || lb_(p) === 'shoulder')) (C.stickyIds = C.stickyIds || []).push(p.g); }));
     if (tucked) fronts.concat([pb]).forEach(P_ => P_.pts.forEach(p => { if (p.edge && p.lab === 'hem') C.pin[p.g] = 1; }));
     // рукава: трубы вдоль руки, верхнее кольцо вшито в пройму (перед: от плеча к подмышке — спереди трубы; спинка — сзади)
     // нет отдельного фото рукава — ткань берём с бока корпуса на фото (узкая полоса): цвет и фактура как у корпуса

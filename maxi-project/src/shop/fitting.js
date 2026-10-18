@@ -13,3 +13,4 @@ export {createFitting} from './fitting/ui.js';
 export {bodyDims, torsoR, sx, sz, armX} from './fitting/body.js';
 export {armJ, armRad} from './fitting/geometry.js';
 export {runCloth, motionAt} from './fitting/sim.js';
+export {topSpec, bottomSpec, skirtProf} from './fitting/specs.js';

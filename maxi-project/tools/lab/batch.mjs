@@ -6,12 +6,14 @@ import {browser, bodyFromEnv, URL0, ensureShots} from './common.mjs';
 const ids = (process.argv[2] || '').split(',').filter(Boolean); if (!ids.length) { console.log('batch.mjs id1,id2'); process.exit(1); }
 const OUTD = process.env.OUTD || path.join(ensureShots(), 'batch'); fs.mkdirSync(OUTD, {recursive: true});
 const V = (process.env.V || '0,1.57,3.14').split(',').map(Number), T = +(process.env.T || 180) * 1000, body = bodyFromEnv('m');
+const ST = process.env.ST || '';
 const log = fs.createWriteStream(path.join(OUTD, 'qc.jsonl'), {flags: 'a'});
 let b, pg;
 async function open() {
   if (b) await b.close().catch(() => {});
   b = await browser(); pg = await b.newPage({viewport: {width: 620, height: 920}, deviceScaleFactor: +(process.env.DPR || 1)}); pg.setDefaultTimeout(T);
   pg.on('pageerror', e => console.log('PAGEERR', e.message.slice(0, 200)));
+  await pg.addInitScript(st => { window.__ST = st; }, ST);
   await pg.goto(URL0 + (process.env.PAGE || 'index.html'));
   await pg.evaluate(async ([body, pack]) => { localStorage.clear(); Object.assign(PREFS.body, body); await FIT.addPack(pack); FIT.setAnim(false); FIT.open(); }, [body, process.env.PACK || 'wardrobe/']);
 }
@@ -20,7 +22,7 @@ for (const id of ids) {
   const t0 = Date.now(); let rec;
   try {
     rec = await Promise.race([pg.evaluate(async id => {
-      FIT.wear(['w-' + id], {}); await FIT.ready(); await new Promise(r => setTimeout(r, 200)); await FIT.ready();
+      FIT.wear(['w-' + id], window.__ST ? {['w-' + id]: window.__ST} : {}); await FIT.ready(); await new Promise(r => setTimeout(r, 200)); await FIT.ready();
       const q = FIT.qc('w-' + id) || {checks: []};
       return {score: q.score, ok: q.ok, warn: q.warn, checks: q.checks.map(c => ({name: c.name, ok: c.ok, pen: c.pen, val: c.val})), note: FIT.fitNote('w-' + id)};
     }, id), new Promise((_, rej) => setTimeout(() => rej(new Error('время вышло')), T))]);

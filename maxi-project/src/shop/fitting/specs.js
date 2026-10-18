@@ -1,11 +1,11 @@
 // Мерки вещи по фото: длина и ширина, профиль силуэта, юбка, отведение рук.
 import {armX} from './body.js';
-import {armJ, armRad, bodyAB, clamp, ellP, interp, shTopAt, solve} from './geometry.js';
+import {armJ, armRad, bodyAB, clamp, ellP, interp, shTopAt, smooth, solve} from './geometry.js';
 import {EASE} from './simple-garment.js';
 import {itemCm, sizeOf} from './sizes.js';
 
 // длина вещи по спинке (м), если мерок нет: типичная для своего размера, чуть зависит от роста
-const LEN0 = {tee: 0.71, sweater: 0.68, hoodie: 0.68, jacket: 0.68, shirt: 0.76, coat: 1.0, puffer: 0.74, dress: 0.95, skirt: 0.62};
+const LEN0 = {tee: 0.71, sweater: 0.68, hoodie: 0.68, jacket: 0.68, shirt: 0.76, coat: 1.0, puffer: 0.74, dress: 0.95, skirt: 0.62, vest: 0.62};
 // вещи «верха» в расчёте ткани (корпус + рукава): к ним относятся и пальто, пуховик, платье
 export const TOPK = new Set(['tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress', 'vest']);
 function cleanTail(arr) {
@@ -46,6 +46,8 @@ export function topSpec(item, d) {
   if (lenPhoto) {
     const yW = d.fW * H, yN = d.fN * H, yHemPhoto = yW - sh.hem_waist * (yN - yW) - 0.012 * H;
     L = d.fHPS * H - yHemPhoto;
+    // низ «по фото» дальше разумного для вида (маска зацепила юбку или платье под вещью) — типовая длина вида
+    const L0 = (LEN0[k] || 0.7) * Math.pow(H / 1.8, 0.6); const hi = k === 'coat' || k === 'puffer' || k === 'dress' ? 1.9 : 1.35; if (L > L0 * hi || L < L0 * 0.55) L = L0;
   }
   // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
   const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
@@ -138,7 +140,16 @@ export function skirtProf(item, d) {
   let prof = sh.hip && sh.hip.length ? sh.hip.slice() : [1, 1.15, 1.2]; for (let i = 1; i < prof.length; i++) prof[i] = Math.max(prof[i], prof[i - 1]);
   if (sh.worn) prof = prof.map((v, i) => v * (1 + 0.16 * i / Math.max(1, prof.length - 1)));
   const kk = WW / (prof[0] || 1);
+  // фото на модели (пояс закрыт кофтой или руками) или профиль с невозможным расширением: верхняя строка фото занижена,
+  // и «бёдра в 2.5 раза шире пояса» раздували юбку зонтиком. Тогда до бёдер — от пояса к бёдрам фигуры (или по таблице),
+  // ниже — только расширение от бёдер по фото (не больше ×1.9) или ширина низа по таблице
+  const robust = sh.worn || Math.max(...prof) > 2.1 || cm.hip || cm.hem;
+  const tH = Math.min(0.85, 0.1 * H / Lk), hipW = Math.max(HPb, cm.hip ? cm.hip / 100 : 0), pH = interp(prof, tH) || 1;
+  const hemW = cm.hem ? Math.max(hipW, cm.hem / 100) : 0;
+  const flare = t => { const f = clamp(interp(prof, t) / pH, 1, 1.9); if (!hemW) return hipW * f;
+    const u = (t - tH) / Math.max(0.05, 1 - tH); return hipW + (hemW - hipW) * clamp(u, 0, 1); };
   const wvis = y => { const t = y / Lk, yw = (yW - y) / H, ab = bodyAB(d, Math.max(0.5, yw)); const body = yw > 0.47 ? ellP(ab.a, ab.b) / 2 + 0.012 : HPb;
+    if (robust) return Math.max(t < tH ? WW + (hipW - WW) * smooth(t / tH) : flare(t), body);
     return Math.max(interp(prof, t) * kk, body, t > 0.25 ? HPb : 0); };
   return {yW, WW, Lk, wvis};
 }
