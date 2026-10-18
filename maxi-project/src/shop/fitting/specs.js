@@ -55,10 +55,12 @@ export function topSpec(item, d) {
   // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
   const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
   // рукава висят вдоль корпуса и закрывают боковые швы: корпус ≈ 85% общей ширины (у пиджака плечи жёсткие — 92%)
-  let Fs = sh.merged && sh.full ? new Array(16).fill(sh.full * (k === 'jacket' ? 0.92 : 0.85) / hk * L) : cleanTail(sh.tw || [0.62]).map(v => v / hk * L);
+  // студийное фото лёжа (или на невидимом манекене) с рукавами вдоль корпуса: в «общую ширину» входят оба рукава целиком — корпус ≈ 0.68
+  const flatM = sh.merged && !sh.hang && !sh.worn;
+  let Fs = sh.merged && sh.full ? new Array(16).fill(sh.full * (flatM ? 0.68 : k === 'jacket' ? 0.92 : 0.85) / hk * L) : cleanTail(sh.tw || [0.62]).map(v => v / hk * L);
   // платье/пальто на модели: руки вдоль корпуса — по ширине с рукавами силуэт прямой. Сам силуэт вещи (без рук) — в сетке фото:
   // ширина центральной полосы по строкам от подмышки до низа (приталенное, клёш)
-  const gp = (k === 'dress' || k === 'coat') && sh.merged ? photoProfile(item) : null;
+  const gp = (k === 'dress' || k === 'coat') && sh.merged && !flatM ? photoProfile(item) : null;   // лёжа с рукавами вдоль — строка фото включает рукава: силуэт по ней ложно расширяется книзу
   if (gp) {
     // спереди ширины груди и талии на человеке различаются меньше, чем обхваты: лиф — по таблице (талия/грудь с припуском),
     // юбка — по фото от талии вниз (как видно спереди; поправка «на круглое сечение» давала лишний клёш — бока торчали)
@@ -79,7 +81,7 @@ export function topSpec(item, d) {
   // студийное фото или вешалка без таблицы у длинных вещей (пальто, пуховик, платье, куртка): длина вида бывает любой (короткое
   // пальто и пальто в пол), а ширина у вещи «своего» размера — фигура плюс обычный припуск вида. Поэтому масштаб — по ширине,
   // длина — по пропорции фото. Раньше длинное пальто и парка выходили короткими, длинный пуховик — широким «пончо»
-  if (!cm.chest && !cm.len && !sh.worn && !sh.merged && !lp && ['coat', 'puffer', 'dress', 'jacket'].includes(k) && !(typeof window !== 'undefined' && window.__noWAnchor)) {
+  if (!cm.chest && !cm.len && !sh.worn && (!sh.merged || flatM) && !lp && ['coat', 'puffer', 'dress', 'jacket'].includes(k) && !(typeof window !== 'undefined' && window.__noWAnchor)) {
     const EASEC = {coat: 0.22, puffer: 0.30, dress: 0.08, jacket: 0.16}, over = /оверсайз|oversize|свободн/i.test(item.name || '') ? 0.12 : 0;
     const ab = bodyAB(d, 0.72), half = ellP(ab.a, ab.b) / 2 + (EASEC[k] + over) / 2, f = half / Fs[1];
     const L1 = clamp(L * f, L0k * 0.55, L0k * 1.9), f1 = L1 / L; Fs = Fs.map(v => v * f1); L = L1;
