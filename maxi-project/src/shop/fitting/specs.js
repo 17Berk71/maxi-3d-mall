@@ -195,7 +195,10 @@ export function armSpread(items, d) {
       else { const bw = bodyAB(d, yf); a = bw.a + 0.02;
         // расклешённая юбка: кисти — снаружи конуса юбки (ширина лёжа / π, сечение чуть шире по бокам)
         if (it.kind === 'skirt') { const sk = skirtProf(it, d), yy = sk.yW - y; if (yy > 0 && yy <= sk.Lk) a = Math.max(a, sk.wvis(yy) / Math.PI * 1.12 + 0.01); } }
-      const dy = j.y - y, need = a + armRad(d, dy / j.L) * 1.0 + 0.004;
+      // утеплитель (FABRIC.puffer.margin 2.8 см) утолщает в расчёте и бок, и руку: руки отводим на обе толщины, иначе рукав
+      // зажат между боком и рукой и уезжает вверх к локтю
+      const mg = it.kind === 'puffer' || (it.kind === 'vest' && it.puffer) ? 0.028 : 0;
+      const dy = j.y - y, need = a + armRad(d, dy / j.L) * 1.0 + 0.004 + (it.kind === 'puffer' ? 2 * mg : mg);
       th = Math.max(th, Math.atan((need - j.x) / dy));
     });
   });

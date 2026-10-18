@@ -100,7 +100,7 @@ export function meshCollider(d, under, margin) {
   let arms = [];
   const setArm = delta => { arms = T.arms.map(A => { const sg = A.side, c = Math.cos(delta * sg), s_ = Math.sin(delta * sg), s0 = A.segs[0], x0 = s0.x0, y0 = s0.y0;
     const rot = (x, y) => [x0 + (x - x0) * c - (y - y0) * s_, y0 + (x - x0) * s_ + (y - y0) * c];
-    return A.segs.map(g => { const [ox, oy] = rot(g.x0, g.y0), dx = g.dx * c - g.dy * s_, dy = g.dx * s_ + g.dy * c; return {x0: ox, y0: oy, z0: g.z0, dx, dy, dz: g.dz, L: g.L, rad: g.rad}; }); }); };
+    return A.segs.map(g => { const [ox, oy] = rot(g.x0, g.y0), dx = g.dx * c - g.dy * s_, dy = g.dx * s_ + g.dy * c; return {x0: ox, y0: oy, z0: g.z0, dx, dy, dz: g.dz, L: g.L, rad: g.rad, Lw: g === A.segs[1] ? A.Ll : 9}; }); }); };
   setArm(0);
   const jy = T.jL[1];
   const push = function (P, i, noArm) {
@@ -128,7 +128,7 @@ export function meshCollider(d, under, margin) {
     // руки: ниже подмышки рука толкает только рукава (бок вещи лежит под рукой)
     if (!(noArm && y < jy - 0.07)) for (const segs of arms) for (let gi = 0; gi < 2; gi++) { const g = segs[gi], qx = x - g.x0, qy = y - g.y0, qz = z - g.z0, tt = qx * g.dx + qy * g.dy + qz * g.dz;
       if (gi === 0 && tt < 0) continue; if (tt > g.L + 0.03 || tt < -0.03) continue;
-      const t = Math.max(0, Math.min(g.L, tt)), bi = Math.min(15, Math.floor(t / g.L * 16)), r = g.rad[bi] + m, px = g.x0 + g.dx * t, py = g.y0 + g.dy * t, pz = g.z0 + g.dz * t, dx = x - px, dy = y - py, dz = z - pz, dd = Math.hypot(dx, dy, dz);
+      const t = Math.max(0, Math.min(g.L, tt)), bi = Math.min(15, Math.floor(t / g.L * 16)), r = g.rad[bi] + (t > (g.Lw || 9) - 0.01 ? Math.min(m, 0.004) : m),   /* кисть без утеплителя: манжета пуховика на кисти выдавливалась к локтю */ px = g.x0 + g.dx * t, py = g.y0 + g.dy * t, pz = g.z0 + g.dz * t, dx = x - px, dy = y - py, dz = z - pz, dd = Math.hypot(dx, dy, dz);
       if (dd < r) { const s_ = r / Math.max(dd, 1e-5); x = px + dx * s_; y = py + dy * s_; z = pz + dz * s_; hit = true; } }
     P[i] = x; P[i + 1] = y; P[i + 2] = z; return hit;
   };

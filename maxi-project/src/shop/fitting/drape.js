@@ -30,7 +30,7 @@ export function drapePrepare(item, d, under) {
   const st = item.state || '', open = st === 'open', tucked = st === 'tucked', hoodUp = st === 'hood', hooded = k === 'hoodie' || item.hood;
   // заправленный верх: ниже пояса брюк не отталкивается от них — край уходит внутрь, пояс брюк виден поверх
   if (tucked && under && fit.BOT_YW) { const lim = Math.round(fit.BOT_YW / d.H * 100) + 1; under = {a: under.a.map((v, i) => i <= lim ? 0 : v), b: under.b.map((v, i) => i <= lim ? 0 : v)}; }
-  const H = d.H, C = makeCloth(), fab = (k === 'skirt' && item.pleats ? FABRIC.skirtP : k === 'vest' && item.puffer ? FABRIC.puffer : FABRIC[k]) || FABRIC.tee, push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
+  const H = d.H, C = makeCloth(), fab = ((k === 'skirt' && item.pleats ? FABRIC.skirtP : k === 'vest' && item.puffer ? FABRIC.puffer : FABRIC[k]) || FABRIC.tee), push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
   // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
   C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front', fabric: item.color}, b));
@@ -154,13 +154,17 @@ export function drapePrepare(item, d, under) {
     let armLen = 0; for (let i = 1; i < arm.length; i++) armLen += Math.hypot(arm[i][0] - arm[i - 1][0], arm[i][1] - arm[i - 1][1]);
     // окат = длине проймы по выкройке (перед + спинка); иначе шов растягивает верх рукава («рожки» на плечах)
     // ×1.1 — запас оката, как у настоящего рукава: пройма на теле растягивается, и без запаса верх рукава натянут (автопроверка «натяжение» 3–10% у рукавов)
-    const hole = Math.max((M.AD + 0.01) * 2.1, armLen * 2 * 0.97) * 1.1, r0 = Math.max(hole / (2 * Math.PI), armRad(d, 0) + 0.015), r1 = Math.max(M.SO / Math.PI, armRad(d, Math.min(1, M.SL / j.L)) + 0.008);
+    const hole = Math.max((M.AD + 0.01) * 2.1, armLen * 2 * 0.97) * 1.1, r0 = Math.max(hole / (2 * Math.PI), armRad(d, 0) + 0.015), r1 = Math.max(M.SO / Math.PI, armRad(d, Math.min(1, M.SL / j.L)) + 0.008 + (fab.margin || 0));   /* утеплитель: тело расчёта толще на margin — без него низ рукава пуховика был теснее руки и уезжал к локтю */
     (M.noSleeve ? [] : [-1, 1]).forEach(side => {   // платье без рукавов (сарафан) — пройма остаётся открытой
       const D = new THREE.Vector3(Math.sin(j.th) * side, -Math.cos(j.th), j.dz || 0).normalize();   // манекен по сетке: рука чуть сзади и вперёд по глубине
       // начало рукава — в середине проймы (между плечевой точкой и подмышкой), чтобы шов сошёлся без натяжки
       const yS = yTop - (M.SD + M.AD) / 2, S0 = new THREE.Vector3(side * Math.max(j.x * 0.9, (M.S / 2 + M.W / 2) / 2), yS, j.z || 0);
       // манекен по сетке: рука ближе к боку и толще прежней — ось рукава по оси руки (иначе рука оставалась вне рукава)
-      if (d.mh) { const t = (j.y - yS) / Math.max(0.3, -D.y); S0.set(side * j.x + D.x * t, yS, (j.z || 0) + D.z * t); }
+      if (d.mh) { const t = (j.y - yS) / Math.max(0.3, -D.y); S0.set(side * j.x + D.x * t, yS, (j.z || 0) + D.z * t);
+        // ось рукава — от начала к запястью (а не вдоль плеча): предплечье согнуто, и по прямой плеча манжета у запястья
+        // оказывалась сбоку от руки, упиралась в неё и уезжала к локтю (рукава пуховиков и свитеров «до локтя»)
+        if (!(typeof window !== 'undefined' && window.__noWristAxis)) { const A = d.mh.arms.find(a_ => a_.side === side) || d.mh.arms[0], g1 = A.segs[1];
+          const Wp = new THREE.Vector3(side * Math.abs(g1.x0 + g1.dx * A.Ll), g1.y0 + g1.dy * A.Ll, g1.z0 + g1.dz * A.Ll); D.copy(Wp).sub(S0).normalize(); } }
       // окат: эллипс в плоскости проймы — по высоте от плеча до подмышки, по глубине — чтобы длина совпала с проймой
       // окат лежит вдоль линии проймы — от плечевой точки вниз к подмышке (наклонно), а не стоит вертикально снаружи от плеча:
       // иначе верх рукава оставался на высоте плеча над опущенной рукой — плечо выходило квадратным («погоны»)
@@ -177,9 +181,9 @@ export function drapePrepare(item, d, under) {
       // конец рукава — не дальше запястья (+ запас по виду вещи): по таблице рукав длиннее руки, и лишняя ткань в жизни уходит
       // в складки над манжетой, а у нас висела колоколом ниже кистей. У вещей с манжетой (свитер, худи, пуховик) манжета — по запястью
       const ribC = (k === 'sweater' || k === 'hoodie' || k === 'puffer' || /бомбер|манжет/i.test(item.name || '')) && !item.puff;
-      const J = new THREE.Vector3(side * j.x, j.y, j.z || 0), wristD = J.clone().addScaledVector(D, j.L).sub(S0).dot(D);
+      const J = new THREE.Vector3(side * j.x, j.y, j.z || 0), A_ = d.mh && (d.mh.arms.find(a_ => a_.side === side) || d.mh.arms[0]), wristD = A_ && !(typeof window !== 'undefined' && window.__noWristAxis) ? new THREE.Vector3(side * Math.abs(A_.segs[1].x0 + A_.segs[1].dx * A_.Ll), A_.segs[1].y0 + A_.segs[1].dy * A_.Ll, A_.segs[1].z0 + A_.segs[1].dz * A_.Ll).sub(S0).dot(D) : J.clone().addScaledVector(D, j.L).sub(S0).dot(D);
       const SLv = (typeof window !== 'undefined' && window.__noWristCap) ? M.SL : Math.min(M.SL, wristD + (ribC ? 0.01 : k === 'shirt' || k === 'dress' || k === 'tee' ? 0.02 : 0.04));
-      const rW = armRad(d, 1) + 0.006 + (fab.margin || 0) * 0.3;
+      const rW = armRad(d, 1) + 0.008 + (fab.margin || 0);   /* утеплитель — целиком: тело расчёта толще на margin, тесная манжета выдавливалась к локтю */
       // конец рукава дальше запястья ложится на кисть: не уже кисти в теле расчёта (иначе манжета растянута, очаги «рукав»)
       const rHand = d.mh ? 0.042 * d.H / 1.75 + 0.004 + (fab.margin || 0) : 0, endR = SLv > wristD + 0.005 && !ribC ? rHand : 0;
       const radE = endR ? sv => Math.max(radS(sv * M.SL / SLv), endR * Math.max(0, Math.min(1, (sv - (SLv - 0.06)) / 0.06))) : null;

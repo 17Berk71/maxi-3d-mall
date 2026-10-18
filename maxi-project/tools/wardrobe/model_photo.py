@@ -161,6 +161,8 @@ def load_model_photo(key, kind):
         if kind != 'skirt': m = drop_leg_gap(im, m)
     im = paint_over_skin(im, m)
     im = paint_over_hair(im, m)
+    # paint_over_inner (середина расстёгнутой вещи) — проба не удалась: у жилета на модели маска «верх» захватывает и кофту под ним,
+    # «основным» цветом выходила кофта; у пуховика с красным свитером и джинсами цветов больше двух. Не включено.
     return im, m
 
 
@@ -182,6 +184,36 @@ def paint_over_skin(im, m):
     if not keep.any(): return im
     keep = cv2.dilate(keep, np.ones((7, 7), np.uint8))
     return cv2.inpaint(im, keep, 9, cv2.INPAINT_TELEA)
+
+
+def paint_over_inner(im, m):
+    """Верхняя одежда на модели расстёгнута: посередине видна кофта/рубашка под ней (жилет Телодвижения — бежевый свитер
+    в коричневом жилете). На манекене вещь застёгнута — середину закрашиваем тканью вещи. Узнаём по двум цветам внутри силуэта:
+    второй цвет (8–45% площади) собран у середины, основной — по бокам."""
+    inside = m > 0
+    if inside.sum() < 3000: return im
+    lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+    ys, xs = np.where(inside); sel = np.linspace(0, len(ys) - 1, min(len(ys), 20000)).astype(int)
+    px = lab[ys[sel], xs[sel]]
+    _, lb, cen = cv2.kmeans(px, 2, None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 0.5), 3, cv2.KMEANS_PP_CENTERS)
+    lb = lb.ravel(); big = int(np.bincount(lb, minlength=2).argmax()); f = float((lb != big).mean())
+    if not (0.08 < f < 0.45) or np.linalg.norm(cen[0] - cen[1]) < 25: return im
+    x0, x1 = xs.min(), xs.max(); cx, bw = (x0 + x1) / 2, max(1, x1 - x0)
+    xm, xb = xs[sel][lb != big], xs[sel][lb == big]
+    if (np.abs(xm - cx) < 0.22 * bw).mean() < 0.6 or (np.abs(xb - cx) < 0.22 * bw).mean() > 0.4: return im
+    dm = np.linalg.norm(lab - cen[1 - big], axis=2) < np.linalg.norm(lab - cen[big], axis=2)
+    band = np.zeros_like(inside); band[:, int(cx - 0.3 * bw):int(cx + 0.3 * bw) + 1] = True
+    k = (dm & inside & band).astype(np.uint8); k = cv2.morphologyEx(k, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    n, lab2, st, _ = cv2.connectedComponentsWithStats(k); keep = np.zeros_like(k)
+    for i in range(1, n):
+        if st[i, cv2.CC_STAT_AREA] > 0.02 * inside.sum(): keep[lab2 == i] = 1
+    if not keep.any(): return im
+    keep = cv2.dilate(keep, np.ones((9, 9), np.uint8))
+    # большую область Telea размазывает полосами: сначала основной цвет вещи, по краю — плавный переход
+    out = im.copy(); col = cv2.cvtColor(np.uint8([[np.clip(cen[big], 0, 255)]]), cv2.COLOR_LAB2BGR)[0, 0]
+    out[keep > 0] = col
+    edge = cv2.dilate(keep, np.ones((15, 15), np.uint8)) - cv2.erode(keep, np.ones((15, 15), np.uint8))
+    return cv2.inpaint(out, edge, 7, cv2.INPAINT_TELEA)
 
 
 def person_scale(im, model_h):

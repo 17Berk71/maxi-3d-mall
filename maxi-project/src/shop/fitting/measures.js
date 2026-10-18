@@ -17,7 +17,9 @@ export function topMeasures(item, d) {
   // утеплитель (пуховик) съедает ширину: толщина m по кругу — это π·m от ширины лёжа; это не «оверсайз», плечо не спускаем
   const fk = k === 'vest' && item.puffer ? 'puffer' : k, ins = Math.PI * ((FABRIC[fk] && FABRIC[fk].margin) || 0);
   const knit = k === 'tee' || k === 'sweater' || k === 'hoodie', bodyHalf = d.b.chest / 200, W = Math.max(sp.Fs[1], bodyHalf + (knit ? 0.008 : 0.015) + ins), L = sp.L, loose = Math.max(0, W - bodyHalf - 0.03 - ins);
-  const S = cm.shoulder ? cm.shoulder / 100 : Math.min(W * 1.02, W * 0.84 + loose * 0.9);            // оверсайз — спущенное плечо
+  // спущенное плечо — не дальше 9 см за плечо фигуры: у фото на модели со слившимися рукавами ширина «с руками», и плечо уезжало
+  // к локтю, а рукав по остатку длины кончался у локтя (пуховик Zarina)
+  const S = cm.shoulder ? cm.shoulder / 100 : Math.min(W * 1.02, W * 0.84 + loose * 0.9, 2 * (armX(d) + 0.09));            // оверсайз — спущенное плечо
   // без рукавов (сарафан, комбинация, жилет без таблицы): плечо не спускается за край плеча фигуры — иначе срез проймы висел
   // на руке «коротким рукавом»
   const S_ = noSleeve && !cm.shoulder ? Math.min(S, 2 * armX(d) - 0.02) : S;
