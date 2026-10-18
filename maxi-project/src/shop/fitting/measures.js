@@ -18,11 +18,14 @@ export function topMeasures(item, d) {
   const fk = k === 'vest' && item.puffer ? 'puffer' : k, ins = Math.PI * ((FABRIC[fk] && FABRIC[fk].margin) || 0);
   const knit = k === 'tee' || k === 'sweater' || k === 'hoodie', bodyHalf = d.b.chest / 200, W = Math.max(sp.Fs[1], bodyHalf + (knit ? 0.008 : 0.015) + ins), L = sp.L, loose = Math.max(0, W - bodyHalf - 0.03 - ins);
   const S = cm.shoulder ? cm.shoulder / 100 : Math.min(W * 1.02, W * 0.84 + loose * 0.9);            // оверсайз — спущенное плечо
+  // без рукавов (сарафан, комбинация, жилет без таблицы): плечо не спускается за край плеча фигуры — иначе срез проймы висел
+  // на руке «коротким рукавом»
+  const S_ = noSleeve && !cm.shoulder ? Math.min(S, 2 * armX(d) - 0.02) : S;
   const AD = Math.min(0.34, 0.215 + loose * 0.6) * Math.pow(d.H / 1.8, 0.5);
-  const SL = cm.sleeve ? cm.sleeve / 100 : long ? armJ(d).L * 0.98 + 0.03 - (S / 2 - armX(d)) : Math.max(0.16, Math.min(0.3, (sh.sl_len ? sh.sl_len * L * 0.6 : 0.2) + loose * 0.4));
+  const SL = cm.sleeve ? cm.sleeve / 100 : long ? armJ(d).L * 0.98 + 0.03 - (S_ / 2 - armX(d)) : Math.max(0.16, Math.min(0.3, (sh.sl_len ? sh.sl_len * L * 0.6 : 0.2) + loose * 0.4));
   const SO = long ? (k === 'jacket' || k === 'coat' ? 0.15 : k === 'puffer' ? 0.17 : 0.11) : Math.max(0.15, 0.17 + loose * 0.5);
   const HW = sp.Fs[sp.Fs.length - 3] || W;
-  return {W, L, S, AD, SL, SO, HW: long && (k === 'sweater' || k === 'hoodie') ? Math.max(bodyHalf * 1.02, W * 0.86) : Math.max(HW, W * 0.95), NW: 0.155 * Math.pow(d.H / 1.8, 0.5), ND: item.stand ? 0.03 : item.collar ? 0.035 : 0.06, NDb: 0.018, sp, noSleeve};
+  return {W, L, S: S_, AD, SL, SO, HW: long && (k === 'sweater' || k === 'hoodie') ? Math.max(bodyHalf * 1.02, W * 0.86) : Math.max(HW, W * 0.95), NW: 0.155 * Math.pow(d.H / 1.8, 0.5), ND: item.stand ? 0.03 : item.collar ? 0.035 : 0.06, NDb: 0.018, sp, noSleeve};
 }
 // пояс надетых брюк (для заправленного верха); сбрасывается при каждой сборке образа
 fit.BOT_YW = 0;

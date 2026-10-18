@@ -90,6 +90,16 @@ def person_free(im, kind):
     return other < 0.12 * m.sum() and face < 0.004 and legs < 0.03
 
 
+def promo_card(im):
+    """Рекламная картинка карточки (светлый фон, вещь маленькая, вокруг надписи и значки): у студийного снимка один предмет.
+    Считаем отдельные предметы сетью ISNet: три и больше заметных (≥0.3% кадра) или главный меньше 8% кадра — не студия."""
+    from cutout import isnet_mask
+    m = isnet_mask(im)
+    if m is None: return False
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m); a = st[1:, cv2.CC_STAT_AREA] / m.size if n > 1 else np.array([0.0])
+    return (a > 0.003).sum() >= 3 or a.max() < 0.08
+
+
 def pick(photos, kind, hints=None, table=()):
     """photos — список путей; hints — {'studio': [...], 'back': [...]} номера из ручной разметки (если есть)."""
     hints = hints or {}; res = []
@@ -101,6 +111,7 @@ def pick(photos, kind, hints=None, table=()):
         texty = f['edges'] > 0.11 and f['skin'] < 0.05
         r = dict(n=nr, path=p, studio=studio or nr in hints.get('studio', []), texty=texty or nr in table)
         if r['studio'] and not r['texty'] and not person_free(im, kind): r['studio'] = False; r['person'] = True   # модель на белом фоне
+        if r['studio'] and not r['texty'] and promo_card(im): r['studio'] = False; r['texty'] = True   # картинка-реклама: вещь + надписи и значки
         if not r['studio'] and not r['texty']: r.update(score_model(im, kind))
         res.append(r)
     st = [r for r in res if r['studio'] and not r['texty']]

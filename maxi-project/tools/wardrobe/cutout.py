@@ -116,7 +116,44 @@ def fill_holes_with_cloth(img, m):
     return cv2.inpaint(img, inv * 255, 7, cv2.INPAINT_TELEA)
 
 
+_ISNET = None
+
+
+def isnet_mask(im):
+    """Маска предмета на однотонном фоне сетью ISNet (rembg isnet-general-use, ~180 МБ:
+    https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx → tools/wardrobe/models/isnet.onnx, в .gitignore).
+    Нет модели — None (тогда прежний способ по цвету фона)."""
+    global _ISNET
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'isnet.onnx')
+    if _ISNET is None:
+        if not os.path.exists(path): _ISNET = False
+        else:
+            import onnxruntime as ort
+            so = ort.SessionOptions(); so.intra_op_num_threads = 2
+            _ISNET = ort.InferenceSession(path, so, providers=['CPUExecutionProvider'])
+    if not _ISNET: return None
+    h, w = im.shape[:2]
+    x = cv2.resize(cv2.cvtColor(im, cv2.COLOR_BGR2RGB), (1024, 1024), interpolation=cv2.INTER_LANCZOS4).astype(np.float32) / 255.
+    x = x / max(1e-6, float(x.max())) - 0.5
+    o = _ISNET.run(None, {_ISNET.get_inputs()[0].name: x.transpose(2, 0, 1)[None]})[0][0, 0]
+    o = (o - o.min()) / (o.max() - o.min() + 1e-6)
+    return (cv2.resize(o, (w, h)) > 0.5).astype(np.uint8)
+
+
 def studio_mask(im):
+    """Сначала сеть ISNet (светлая вещь на светлом/сером фоне, тени на полу — по цвету фона это не разделить: белая рубашка
+    пропадала, на сером фоне маской становился весь кадр, кремовый бомбер обрезался по планке). Если сеть дала явную
+    ерунду (почти пусто или весь кадр) — прежний способ."""
+    m = isnet_mask(im)
+    if m is not None and 0.02 < m.mean() < 0.9:
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        n, lab_, st, _ = cv2.connectedComponentsWithStats(m)
+        if n > 1: m = (lab_ == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
+        ff = m.copy(); cv2.floodFill(ff, None, (0, 0), 1); return m | (1 - ff)
+    return studio_mask_color(im)
+
+
+def studio_mask_color(im):
     """Студийное фото из выгрузки магазина: вещь на однотонном светлом фоне (или уже без фона).
     Маска — всё, что не фон, связанный с краями кадра; одна самая большая деталь, дырки внутри закрыты."""
     h, w = im.shape[:2]

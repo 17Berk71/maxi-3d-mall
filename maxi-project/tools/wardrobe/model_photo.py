@@ -94,6 +94,21 @@ def load_model_photo(key, kind):
     tiny_top = kind in TOPS and kind != 'dress' and ms['upper'].sum() < 0.25 * ms['full'].sum()
     if long_top or tiny_top:
         m = ms['upper'] | ms['full']
+    elif kind in TOPS and kind != 'dress' and ms['full'].sum() > 0.15 * max(1, ms['upper'].sum()) and ms['upper'].sum() > 500:
+        # светлая куртка или пуховик: сеть делит одну вещь между «верхом» и «целиком» кусками (Zolla 551585075 — от куртки
+        # осталась полоса). Берём из «целиком» только то, что цветом как «верх» и касается его: юбка/платье под пиджаком
+        # почти всегда другого цвета и остаётся в стороне
+        lab_im = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32); up = ms['upper'] > 0
+        ref = np.median(lab_im[up], 0); dl = lab_im - ref; dl[..., 0] *= 0.4   # по яркости мягче: тени стёжки и складок
+        near = ((np.linalg.norm(dl, axis=2) < 16) & (ms['full'] > 0)).astype(np.uint8)
+        n_, lab2, st2, _ = cv2.connectedComponentsWithStats(near)
+        touch = cv2.dilate(up.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+        keep = [i for i in range(1, n_) if st2[i, cv2.CC_STAT_AREA] > 300 and touch[lab2 == i].any()]
+        if keep:
+            add = np.isin(lab2, keep)
+            if add.sum() > 0.1 * up.sum():
+                m = cv2.morphologyEx((up | add).astype(np.uint8), cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8)) & ((ms['full'] | ms['upper']) > 0).astype(np.uint8)
+                tiny_top = True   # дальше — как с объединением (низ вещи по маске)
     # длинную юбку (атлас, макси) сеть тоже бывает относит к «целиком»: если «низа» мало — берём и «целиком»,
     # верх (кофта, жилет) потом отрезается по резкому сужению у пояса
     if kind == 'skirt' and ms['lower'].sum() < 0.5 * ms['full'].sum():

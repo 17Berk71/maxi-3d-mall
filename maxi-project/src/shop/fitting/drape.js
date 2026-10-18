@@ -52,11 +52,11 @@ export function drapePrepare(item, d, under) {
       const yArmTop = d.mh ? shTopAt(d, xs) : Math.abs(xs - ax) < r ? 0.8 * H + Math.sqrt(r * r - (xs - ax) ** 2) : xs < ax ? 0.8 * H + SYb * Math.sqrt(Math.max(0, 1 - (xs / SXb) ** 2)) : 0.8 * H;
       M.SD = Math.max(0.04, Math.min(0.11, yTop - yArmTop - 0.006)); M.AD = Math.max(M.AD, M.SD + 0.16);
       // манекен по сетке: низ проймы не выше подмышки тела (иначе рука давит в шов снизу — растяжение под мышкой)
-      if (d.mh) M.AD = Math.max(M.AD, yTop - d.mh.armpit + 0.015); }
+      if (d.mh) M.AD = Math.max(M.AD, yTop - d.mh.armpit + (M.noSleeve ? 0.045 : 0.015)); }   /* без рукавов пройма открыта ниже подмышки, как у сарафана */
     // что закрывает вещь на теле (для окраски тела под ней, см. paintBody): корпус от низа до шеи, рука — на длину рукава
-    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, arm: M.noSleeve ? 0 : ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L};
+    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, arm: M.noSleeve ? 0 : Math.min(1.0, ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L)};   /* рукав кончается у запястья (дальше — кисть, её не красим: были тёмные «перчатки») */
     // контур половины (x ≥ 0) и метки отрезков; зеркалим
-    const arm = [], nA = 6; for (let i = 0; i <= nA; i++) { const t = i / nA, x = M.S / 2 + (M.W / 2 - M.S / 2) * Math.pow(t, 2.2) - 0.012 * Math.sin(t * Math.PI), y = M.SD + (M.AD - M.SD) * t; arm.push([x, y]); }
+    const arm = [], nA = 6; for (let i = 0; i <= nA; i++) { const t = i / nA, x = M.S / 2 + (M.W / 2 - M.S / 2) * Math.pow(t, M.noSleeve ? 4 : 2.2) - (M.noSleeve ? 0.03 : 0.012) * Math.sin(t * Math.PI),   /* без рукавов — пройма вырезана внутрь: иначе угол детали у подмышки висел на руке «рукавчиком» */ y = M.SD + (M.AD - M.SD) * t; arm.push([x, y]); }
     // бок от проймы до низа — по ширине вещи на фото (приталенная, прямая, расклешённая книзу — у платья, пальто),
     // но не уже тела на этой высоте (у длинных вещей ниже шага — бёдра)
     const flare = k === 'dress' || k === 'coat';
@@ -180,7 +180,10 @@ export function drapePrepare(item, d, under) {
       const J = new THREE.Vector3(side * j.x, j.y, j.z || 0), wristD = J.clone().addScaledVector(D, j.L).sub(S0).dot(D);
       const SLv = (typeof window !== 'undefined' && window.__noWristCap) ? M.SL : Math.min(M.SL, wristD + (ribC ? 0.01 : k === 'shirt' || k === 'dress' || k === 'tee' ? 0.02 : 0.04));
       const rW = armRad(d, 1) + 0.006 + (fab.margin || 0) * 0.3;
-      const radC = (ribC && SLv < M.SL + 1e-6 && M.SL > 0.3) ? sv => { const r = radS(sv * M.SL / SLv); const u = (SLv - sv) / 0.07; return u >= 1 ? r : rW + (r - rW) * Math.max(0, u) * Math.max(0, u); } : sv => radS(sv * M.SL / SLv);
+      // конец рукава дальше запястья ложится на кисть: не уже кисти в теле расчёта (иначе манжета растянута, очаги «рукав»)
+      const rHand = d.mh ? 0.042 * d.H / 1.75 + 0.004 + (fab.margin || 0) : 0, endR = SLv > wristD + 0.005 && !ribC ? rHand : 0;
+      const radE = endR ? sv => Math.max(radS(sv * M.SL / SLv), endR * Math.max(0, Math.min(1, (sv - (SLv - 0.06)) / 0.06))) : null;
+      const radC = radE || ((ribC && SLv < M.SL + 1e-6 && M.SL > 0.3) ? sv => { const r = radS(sv * M.SL / SLv); const u = (SLv - sv) / 0.07; return u >= 1 ? r : rW + (r - rW) * Math.max(0, u) * Math.max(0, u); } : sv => radS(sv * M.SL / SLv));
       const tube = addTube(C, S0, D, SLv, radC, 20, Math.max(6, Math.round(SLv / 0.025)), mS, side, sUV, cap);
       const ring = tube.top, segs = ring.length;
       const loop = (P_, front) => P_.pts.filter(p => p.edge && p.lab === 'arm' && Math.sign(p.x) === side).sort((a, b) => a.y - b.y).map(p => p.g);
@@ -273,7 +276,7 @@ export function drapePrepare(item, d, under) {
     // бок от пояса до шага — по форме вещи на фото (sh.hip: ширина по 8 строкам от пояса к шагу): плавно, как у настоящей выкройки.
     // Раньше бок шёл от пояса сразу к точке бёдер HP на 0.55 посадки и дальше отвесно: у широких брюк (HP намного больше бёдер)
     // это давало резкую «полку» на бёдрах и прямые стенки ниже — надутый каркас
-    const hp = sh.hip && sh.hip.length > 2 ? sh.hip : null, hipMin = (HP0 => HP0 / 2)(ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
+    const hp = sh.hip && sh.hip.length > 2 && !sh.worn ? sh.hip : null,   /* на фото с моделью пояс срезан кадром или закрыт кофтой: первая строка узкая, бок «полкой» выпрыгивал у пояса — там плавная кривая */ hipMin = (HP0 => HP0 / 2)(ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03);
     // у прямых брюк прирост ширины к шагу почти нулевой (коричневые: 0.005 пояса) — деление на него превращало шум фото в скачок
     // (бок то выпрыгивал наружу сразу у пояса, то не двигался): при приросте меньше 5% — плавная кривая, как без профиля
     const hpGrow = hp ? hp[hp.length - 1] - hp[0] : 0;

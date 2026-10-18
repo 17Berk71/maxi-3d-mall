@@ -84,7 +84,10 @@ export function topSpec(item, d) {
   if (!cm.chest && !cm.len && !sh.worn && (!sh.merged || flatM) && !lp && ['coat', 'puffer', 'dress', 'jacket'].includes(k) && !(typeof window !== 'undefined' && window.__noWAnchor)) {
     const EASEC = {coat: 0.22, puffer: 0.30, dress: 0.08, jacket: 0.16}, over = /оверсайз|oversize|свободн/i.test(item.name || '') ? 0.12 : 0;
     const ab = bodyAB(d, 0.72), half = ellP(ab.a, ab.b) / 2 + (EASEC[k] + over) / 2, f = half / Fs[1];
-    const L1 = clamp(L * f, L0k * 0.55, L0k * 1.9), f1 = L1 / L; Fs = Fs.map(v => v * f1); L = L1;
+    // лёжа с рукавами вдоль корпуса пропорция фото ненадёжна (ширина — уже рукавов, а не корпуса): длина не больше ×1.25 типовой
+    // (×1.45 у «удлинённых»); иначе удлинённый бомбер Love Republic выходил пальто в пол
+    const up = flatM ? (/удлин|макси|в пол|длинн/i.test(item.name || '') ? 1.45 : 1.25) : 1.9;
+    const L1 = clamp(L * f, L0k * 0.55, L0k * up), f1 = L1 / L; Fs = Fs.map(v => v * f1); L = L1;
   }
   if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); if (!cm.len && !sh.worn && !sh.merged) L *= f; }
   const yHPS = d.fHPS * H, yHem = yHPS - L, yN = d.fN * H;
@@ -108,7 +111,10 @@ export function bottomSpec(item, d) {
   const outPh = !cm.outseam && sh.len_photo && (k === 'pants' || k === 'jeans' || k === 'shorts') && sh.len_photo > 25 && sh.len_photo < 130 ? sh.len_photo : 0;   // по росту модели
   const kk = (cm.outseam || outPh) ? (cm.outseam || outPh) / 100 / tot : kW;
   // длинные брюки шьют «до пола»: если по фото вышли короче щиколотки — дотянуть
-  const T = full && !cm.outseam && !outPh ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
+  let T = full && !cm.outseam && !outPh ? Math.max(tot * kk, yW - 0.025 * H) : tot * kk;
+  // фото на модели без роста в кадре: масштаб по видимой ширине пояса (часто срезан кадром) ненадёжен — брюки выходили длиннее
+  // ног и ложились на пол «клёшем». Длинные — до щиколотки, не длиннее
+  if (sh.worn && !cm.outseam && !outPh) T = Math.min(T, yW - (full ? 0.03 : k === 'shorts' ? 0.265 : 0.09) * H);   // укороченные — 7/8, шорты — не ниже колена
   let yC = 0.47 * H - 0.015;                                  // шаг: по фото лёжа не виден (штанины лежат вплотную), берём по фигуре
   // по таблице размеров: шаг = длина − шаговый шов; короткий шаг сажает брюки ниже на бёдрах, длинный — «спущенный» шаг
   // длина − шаговый шов = посадка по ткани (по изгибу спереди); по вертикали она ≈ на 20% короче
@@ -136,8 +142,17 @@ export function bottomSpec(item, d) {
   // ширина штанины по всей длине, измеренная по фото с листом A4 (cm.leg: [доля от шага до низа, см]) — точнее профиля с фото без масштаба
   if (Array.isArray(cm.leg) && cm.leg.length > 1) lw = lw.map((_, i) => { const t = i / (lw.length - 1) * 0.99, L = cm.leg; let k = 0; while (k < L.length - 2 && L[k + 1][0] < t) k++;
     const [t0, v0] = L[k], [t1, v1] = L[k + 1], w = Math.max(0, Math.min(1, (t - t0) / ((t1 - t0) || 1))); return (v0 + (v1 - v0) * w) / 100; });
+  // фото на модели без мерок бёдер: видимая ширина — это не ширина лёжа (штанина круглая: лёжа шире видимой в ~1.5 раза, пояс — в ~1.3),
+  // а пояс часто срезан кадром или закрыт кофтой, и масштаб «по поясу» раздувал бёдра (скинни Colin's — галифе).
+  // Бёдра — по фигуре + свобода по виду и названию, ширина штанины у шага — от них, форма книзу — по фото
+  let hipW = 0;
+  if (sh.worn && !cm.hip && !cm.knee && !Array.isArray(cm.leg)) {
+    const nm = (item.name || '').toLowerCase(), ease = /скинни|skinny|super slim|облега|узк/.test(nm) ? 0.006 : /slim|зауж/.test(nm) ? 0.015 : /широк|палаццо|wide|багги|baggy|бочк|клёш|клеш|свобод|оверсайз|карго/.test(nm) ? 0.06 : k === 'jeans' ? 0.025 : 0.04;
+    hipW = (d.b.hips || 96) / 200 + ease; const f = hipW * 0.55 / lw[0]; lw = lw.map(v => v * f);
+    for (let i = 1; i < lw.length; i++) lw[i] = Math.min(lw[i], lw[0] * (ease >= 0.06 ? 1.6 : 1.15));
+  }
   // бёдра (полуобхват): по таблице или по фото (середина посадки; ниже на фото лёжа уже расходятся штанины)
-  const hip = cm.hip ? cm.hip / 100 : sh.hip && sh.hip.length > 3 ? sh.hip[3] * kk : 0;
+  const hip = cm.hip ? cm.hip / 100 : hipW || (sh.hip && sh.hip.length > 3 ? sh.hip[3] * kk : 0);
   return {yW, yC, yHem, legLen, stack, lw, kk, ww: kW, T, hip};
 }
 // насколько вещь раздвигает руки (широкая вещь — руки лежат на ней, а не протыкают)

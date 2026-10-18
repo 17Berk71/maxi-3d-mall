@@ -210,8 +210,9 @@ export function mhTables(B) {
     segs.forEach(g => { const ds = Array.from({length: 16}, () => []); g.pts.forEach(([p, t]) => { const q = [p[0] - g.x0, p[1] - g.y0, p[2] - g.z0], tt = Math.max(0, Math.min(g.L, dot(q, [g.dx, g.dy, g.dz]))); ds[Math.min(15, Math.floor(tt / g.L * 16))].push(Math.hypot(q[0] - g.dx * tt, q[1] - g.dy * tt, q[2] - g.dz * tt)); });
       for (let i = 0; i < 16; i++) { const a_ = ds[i].sort((p, q) => p - q); g.rad[i] = a_.length ? a_[Math.min(a_.length - 1, Math.floor(a_.length * 0.85))] : 0; } delete g.pts;
       for (let i = 0; i < 16; i++) if (!g.rad[i]) g.rad[i] = g.rad[i - 1] || 0.04; });
-    // кисть: пальцы на сетке чуть разведены — для ткани кисть не шире 4.5 см от оси (иначе юбки и полы цепляются за «веер»)
-    for (let i = 0; i < 16; i++) if ((i + 0.5) / 16 * segs[1].L > Math.hypot(...sub(w, b)) - 0.01) segs[1].rad[i] = Math.min(segs[1].rad[i], 0.065 * H / 1.75);
+    // кисть: пальцы на сетке чуть разведены — для ткани кисть не шире 4.2 см от оси (у мужской фигуры 4.5): ладонь плоская, круг такого радиуса
+    // по периметру как ладонь. Было 6.5 см — манжета рубашки над кистью растягивалась на 30–45% (очаги «рукав» у всех верхов), юбки цеплялись за «веер»
+    for (let i = 0; i < 16; i++) if ((i + 0.5) / 16 * segs[1].L > Math.hypot(...sub(w, b)) - 0.01) segs[1].rad[i] = Math.min(segs[1].rad[i], 0.042 * H / 1.75);
     // верх плечевого звена (дельтовидная, плечо — в профиле туловища): радиус у сустава как чуть ниже
     { const r0 = segs[0].rad, med = Array.from(r0.slice(4, 9)).sort((p, q) => p - q)[2]; for (let i = 0; i < 4; i++) r0[i] = Math.min(r0[i], med * 1.1); }
     return {side: sg, segs, Lu, Ll: Math.hypot(...sub(w, b))}; });
