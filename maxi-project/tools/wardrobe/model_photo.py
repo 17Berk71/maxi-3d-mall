@@ -86,6 +86,14 @@ def load_model_photo(key, kind):
         h, w = im.shape[:2]
     # платье сеть делит на «целиком», «верх» и «низ» (лиф и юбка у отрезного) — берём всё вместе
     m = (ms['full'] | ms['upper'] | ms['lower']) if kind == 'dress' else ms['upper'] if kind in TOPS else ms['lower']
+    # длинное пальто, плащ, удлинённый пуховик сеть часто относит к «целиком» (как платье), а «верх» — только плечи:
+    # у верхней одежды, если «целиком» много, берём оба класса
+    if kind in TOPS and kind != 'dress' and ms['full'].sum() > 0.5 * max(1, ms['upper'].sum()):
+        m = ms['upper'] | ms['full']
+    # длинную юбку (атлас, макси) сеть тоже бывает относит к «целиком»: если «низа» мало — берём и «целиком»,
+    # верх (кофта, жилет) потом отрезается по резкому сужению у пояса
+    if kind == 'skirt' and ms['lower'].sum() < 0.5 * ms['full'].sum():
+        m = ms['lower'] | ms['full']
     # юбку под блузкой навыпуск сеть часто считает «платьем» (вместе с рукавами блузки): низ — это область цвета вещи
     # под краем верха по середине кадра (рукава другого цвета отпадают), связная с серединой
     if kind not in TOPS and m.sum() < 0.2 * max(1, (ms['full'] | ms['upper']).sum()) and (ms['full'] | ms['upper']).sum() > 2000:
@@ -106,7 +114,7 @@ def load_model_photo(key, kind):
     global LAST_HEM
     LAST_HEM = None
     if kind in TOPS and ms['lower'].sum() > 1000:
-        cx = w // 2; yu = np.where(ms['upper'][:, cx - 40:cx + 40].any(1))[0]; yl = np.where(ms['lower'][:, cx - 60:cx + 60].any(1))[0]
+        cx = w // 2; yu = np.where(m[:, cx - 40:cx + 40].any(1))[0]; yl = np.where(ms['lower'][:, cx - 60:cx + 60].any(1))[0]
         if len(yu) and len(yl) and yl[0] > yu[0]: LAST_HEM = round(float((yu[-1] - yl[0]) / (yl[0] - yu[0])), 3)
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     n, lab_, st, _ = cv2.connectedComponentsWithStats(m)
@@ -128,7 +136,8 @@ def load_model_photo(key, kind):
         # пояс — там, где ширина резко падает (низ кофты шире пояса брюк)
         dd = 10
         seg = range(y0 + dd, y0 + int((y1 - y0) * .35))
-        yw = max(seg, key=lambda y: wid[y - dd] - wid[y + dd])
-        if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
+        if len(seg):
+            yw = max(seg, key=lambda y: wid[y - dd] - wid[y + dd])
+            if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
         if kind != 'skirt': m = drop_leg_gap(im, m)
     return im, m
