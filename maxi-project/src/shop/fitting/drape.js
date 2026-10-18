@@ -174,7 +174,14 @@ export function drapePrepare(item, d, under) {
       const rP = Math.max(r0 * 0.95, armRad(d, 0.1) + 0.022), rC = armRad(d, Math.min(1, M.SL / j.L)) + 0.012;
       const radS = item.puff ? s => { const u = s / M.SL; return u < 0.82 ? rP * (1 - 0.18 * u * u) : rP * 0.88 + (rC - rP * 0.88) * Math.min(1, (u - 0.82) / 0.12); }
         : s => s < sB ? r0 + (rB - r0) * (s / sB) * (s / sB) * (3 - 2 * s / sB) : rB + (r1 - rB) * Math.pow((s - sB) / Math.max(0.01, M.SL - sB), 0.8);
-      const tube = addTube(C, S0, D, M.SL, radS, 20, Math.max(6, Math.round(M.SL / 0.025)), mS, side, sUV, cap);
+      // конец рукава — не дальше запястья (+ запас по виду вещи): по таблице рукав длиннее руки, и лишняя ткань в жизни уходит
+      // в складки над манжетой, а у нас висела колоколом ниже кистей. У вещей с манжетой (свитер, худи, пуховик) манжета — по запястью
+      const ribC = (k === 'sweater' || k === 'hoodie' || k === 'puffer' || /бомбер|манжет/i.test(item.name || '')) && !item.puff;
+      const J = new THREE.Vector3(side * j.x, j.y, j.z || 0), wristD = J.clone().addScaledVector(D, j.L).sub(S0).dot(D);
+      const SLv = (typeof window !== 'undefined' && window.__noWristCap) ? M.SL : Math.min(M.SL, wristD + (ribC ? 0.01 : k === 'shirt' || k === 'dress' || k === 'tee' ? 0.02 : 0.04));
+      const rW = armRad(d, 1) + 0.006 + (fab.margin || 0) * 0.3;
+      const radC = (ribC && SLv < M.SL + 1e-6 && M.SL > 0.3) ? sv => { const r = radS(sv * M.SL / SLv); const u = (SLv - sv) / 0.07; return u >= 1 ? r : rW + (r - rW) * Math.max(0, u) * Math.max(0, u); } : sv => radS(sv * M.SL / SLv);
+      const tube = addTube(C, S0, D, SLv, radC, 20, Math.max(6, Math.round(SLv / 0.025)), mS, side, sUV, cap);
       const ring = tube.top, segs = ring.length;
       const loop = (P_, front) => P_.pts.filter(p => p.edge && p.lab === 'arm' && Math.sign(p.x) === side).sort((a, b) => a.y - b.y).map(p => p.g);
       const lf = fronts.flatMap(pf => pf.pts).filter(p => p.edge && p.lab === 'arm' && Math.sign(p.x) === side).sort((a, b) => a.y - b.y).map(p => p.g), lb = loop(pb, false);
