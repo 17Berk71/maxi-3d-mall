@@ -32,13 +32,21 @@ def b64im(im, w, q=72):
 
 
 def main():
-    out_html = sys.argv[1]; dirs = [a for a in sys.argv[2:] if not a.startswith('--before=')]
-    before = {}
+    out_html = sys.argv[1]; dirs = [a for a in sys.argv[2:] if not a.startswith('--')]
+    before = {}; verd = {}
     for a in sys.argv[2:]:
-        if a.startswith('--before='):
+        if a.startswith('--before='):   # прошлый прогон: балл (итог с похожестью, если есть) и снимок спереди «было»
             for d in a.split('=', 1)[1].split(','):
                 for line in open(os.path.join(d, 'qc.jsonl')):
-                    if line.strip(): r = json.loads(line); before[r['id']] = r
+                    if line.strip(): r = json.loads(line); r['dir'] = d; before[r['id']] = r
+                lp = os.path.join(d, 'look.jsonl')
+                if os.path.exists(lp):
+                    for line in open(lp):
+                        if line.strip():
+                            lk = json.loads(line)
+                            if lk['id'] in before: before[lk['id']]['score'] = lk.get('final', before[lk['id']].get('score'))
+        if a.startswith('--verdicts='):   # отметки пользователя по прошлому отчёту: показываем рядом, что он написал
+            verd = json.load(open(a.split('=', 1)[1]))
     items = {i['id']: i for i in json.load(open(os.path.join(RAW, 'wb_items.json')))}
     qc = {}
     for d in dirs:
@@ -74,6 +82,9 @@ def main():
         imgs.append(f'<figure><img loading=lazy src="{b64(src_photo, 260)}"><figcaption>{HOW.get(it.get("how"), "")}</figcaption></figure>')
         if front_model and front_model != src_photo and os.path.exists(front_model):
             imgs.append(f'<figure><img loading=lazy src="{b64(front_model, 260)}"><figcaption>на модели</figcaption></figure>')
+        bf = before.get(iid)
+        if bf and bf.get('files') and os.path.exists(os.path.join(bf['dir'], bf['files'][0])):
+            imgs.append(f'<figure class="sim was"><img loading=lazy src="{b64im(crop_shot(os.path.join(bf["dir"], bf["files"][0])), 300)}"><figcaption>было (прошлый отчёт)</figcaption></figure>')
         if r and r.get('files'):
             for f, lab in zip(r['files'], ('спереди', 'сбоку', 'сзади')):
                 imgs.append(f'<figure class=sim><img loading=lazy src="{b64im(crop_shot(os.path.join(r["dir"], f)), 300)}"><figcaption>{lab}</figcaption></figure>')
@@ -104,11 +115,15 @@ def main():
         status = (f'<span class="score {cls}">{score}</span>{delta}' if score is not None else
                   f'<span class="score none">{"сбой" if err else "нет"}</span>')
         note = html.escape((r or {}).get('note') or '')
+        uv = verd.get(iid) or {}
+        vtxt = {'ok': 'совпадает', 'meh': 'почти', 'bad': 'переделать'}.get(uv.get('v'), '')
+        ucm = f'<p class=you>Ваша прошлая отметка: <b>{vtxt or "—"}</b>{": «" + html.escape(uv.get("c", "").strip()) + "»" if uv.get("c", "").strip() else ""}</p>' if uv else ''
         if lk.get('review'): cls += ' review'
+        if uv: cls += ' commented'
         rows.append(f'''<article class="card {cls}" data-kind="{it['kind']}" data-store="{html.escape(it.get('brand', ''))}" data-score="{score if score is not None else -1}" data-body="{'f' if it.get('who') == 'women' else 'm'}">
 <header>{status}<div><h2>{html.escape(it['name'])}</h2>
 <p class=meta>{KIND.get(it['kind'], it['kind'])} · фигура {'женская 173/56' if it.get('who') == 'women' else 'мужская 186/83'} · {HOW.get(it.get('how'), '')} · <a href="{it['url']}" target=_blank>карточка ↗</a> · <code>{iid}</code></p>
-{f'<p class=fit>Посадка: {note}</p>' if note else ''}{f'<p class=err>Сбой: {html.escape(err)}</p>' if err else ''}{'' if built else '<p class=err>Фабрика не собрала вещь</p>'}</div></header>
+{ucm}{f'<p class=fit>Посадка: {note}</p>' if note else ''}{f'<p class=err>Сбой: {html.escape(err)}</p>' if err else ''}{'' if built else '<p class=err>Фабрика не собрала вещь</p>'}</div></header>
 <div class=imgs>{''.join(imgs)}</div>
 {checks}{sizes}
 <div class=verdict><label><input type=radio name="v-{iid}" value=ok> совпадает</label><label><input type=radio name="v-{iid}" value=meh> почти</label><label><input type=radio name="v-{iid}" value=bad> переделать</label><input class=cmt placeholder="что не так (для меня)"></div>
@@ -131,7 +146,7 @@ h1{{font-size:20px;margin:0 0 4px}}.sum{{color:var(--mut);margin:0 0 8px}}.sum b
 main{{max-width:1500px;margin:0 auto;padding:12px 16px 60px;display:grid;gap:14px}}
 .card{{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}}
 .card header{{display:flex;gap:12px;align-items:flex-start}}h2{{font-size:16px;margin:0}}.meta{{margin:2px 0;color:var(--mut);font-size:13px}}.meta a{{color:inherit}}
-.fit{{margin:4px 0 0;font-size:14px}}.err{{color:var(--bad);margin:4px 0 0}}.muted{{color:var(--mut);font-size:13px}}
+.fit{{margin:4px 0 0;font-size:14px}}.err{{color:var(--bad);margin:4px 0 0}}.you{{margin:4px 0 0;font-size:14px;background:rgba(176,122,18,.12);border-radius:6px;padding:3px 8px;display:inline-block}}figure.was img{{opacity:.85;outline:2px dashed var(--line)}}.muted{{color:var(--mut);font-size:13px}}
 .score{{flex:none;min-width:54px;text-align:center;font-weight:700;font-size:22px;border-radius:10px;padding:6px 8px;color:#fff}}
 .was{{display:block;font-size:11px;color:var(--mut);text-align:center;margin-top:2px}}header>span{{flex:none}}.score.good{{background:var(--good)}}.score.mid{{background:var(--mid)}}.score.bad{{background:var(--bad)}}.score.none{{background:var(--mut);font-size:14px}}
 .imgs{{display:flex;gap:8px;overflow-x:auto;margin:10px 0 6px}}figure{{margin:0;flex:none}}figure img{{height:300px;border-radius:8px;display:block;background:#ddd}}
@@ -145,7 +160,7 @@ details{{font-size:13px;margin:4px 0}}table{{border-collapse:collapse;margin-top
 <p class=sum>Вещей: <b>{n}</b> · снято: <b>{len(ns)}</b> · балл 80+: <b>{good}</b> · 65–79: <b>{mid}</b> · ниже 65: <b>{bad}</b>. Средний балл: <b>{avg}</b>.{bsum} На ручную проверку: <b>{nrev}</b>. Балл — меньшее из «расчёт не сломался» и «похоже на фото». Сначала самые проблемные; решает глаз.</p>
 <div class=f><select id=fs><option value="">все магазины</option>{opts_store}</select><select id=fk><option value="">все виды</option>{opts_kind}</select>
 <select id=fb><option value="">обе фигуры</option><option value=m>мужская</option><option value=f>женская</option></select>
-<select id=fq><option value="">любой балл</option><option value=bad>ниже 65</option><option value=mid>65–79</option><option value=good>80+</option><option value=review>на ручную проверку</option></select>
+<select id=fq><option value="">любой балл</option><option value=bad>ниже 65</option><option value=mid>65–79</option><option value=good>80+</option><option value=review>на ручную проверку</option><option value=commented>с вашими замечаниями</option></select>
 <button id=exp>Скачать мои отметки</button><span id=cnt class=muted></span></div></div>
 <main>{''.join(rows)}</main>
 <script>
