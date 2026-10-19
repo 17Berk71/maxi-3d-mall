@@ -128,12 +128,26 @@ export function photoTex(url, flat) {
     im.onload = () => { const W_ = typeof window !== 'undefined' ? window : {}; let r = im, rel = null;
       if (!W_.__noDelight) { const o = !W_.__delight1 && flat !== 'gentle' && delight2(im); if (o) { r = o.img; rel = o.relief; } else r = delight(im); }
       if (flat === true) { r = flatten(r); rel = null; }
+      let solidDone = false; if (flat === 'solid' && !W_.__noSolid && flat !== true && isSolid(r)) { r = flattenSoft(r); rel = null; solidDone = true; }
       t.image = r; t.needsUpdate = true; if (rel && !W_.__noRelief2) { rt.image = rel; rt.needsUpdate = true; }
-      if (flat !== true && !W_.__noDetail) { const dr = detailRelief(im); if (dr) { dt.image = dr; dt.needsUpdate = true; } } }; im.src = url; }
+      if (flat !== true && !W_.__noDetail) { const dr = detailRelief(solidDone ? r : im);   /* однотонная: фактура — с уже выровненного снимка, без бликов сгибов */ if (dr) { dt.image = dr; dt.needsUpdate = true; } } }; im.src = url; }
   return PTEX[key];
 }
+// однотонная ткань (юбка, брюки, платье одного цвета): складки и блики со снимка на манекене выглядят «впечатанными»
+// (пользователь: «складки впечатались в юбку»). Однотонная — почти все пиксели близки к основному цвету по оттенку и яркости
+function isSolid(img) {
+  const w = img.width, h = img.height, cv = document.createElement('canvas'), sc = Math.min(1, 160 / Math.max(w, h)); cv.width = Math.max(4, Math.round(w * sc)); cv.height = Math.max(4, Math.round(h * sc));
+  const g = cv.getContext('2d'); g.drawImage(img, 0, 0, cv.width, cv.height); let D; try { D = g.getImageData(0, 0, cv.width, cv.height).data; } catch (e) { return false; }
+  const px = []; for (let i = 0; i < D.length; i += 4) if (D[i + 3] > 200) px.push([D[i], D[i + 1], D[i + 2]]); if (px.length < 100) return false;
+  const med = k => px.map(p => p[k]).sort((a, b) => a - b)[px.length >> 1], m = [med(0), med(1), med(2)], lm = (m[0] + m[1] + m[2]) / 3 + 1;
+  let far = 0; for (const p of px) { const l = (p[0] + p[1] + p[2]) / 3 + 1, ch = Math.abs(p[0] / l - m[0] / lm) + Math.abs(p[1] / l - m[1] / lm) + Math.abs(p[2] / l - m[2] / lm);
+    if ((l > 40 && ch > 0.12) || Math.abs(Math.log((l + 12) / (lm + 12))) > 0.55) far++; }   /* у тёмной ткани оттенок по шуму не считаем, блики кожи — не «второй цвет» */
+  return far / px.length < 0.07;
+}
+// мягче, чем у плиссе: мелкая фактура (швы, строчки, вязка) остаётся почти целиком, крупные тени и сгибы — уходят
+function flattenSoft(img) { return flatten(img, 0.5, 0.86, 1.12); }
 // ровная ткань: основной цвет × чуть-чуть мелкой фактуры (отношение яркости к размытой в ~4 px), без светотени и линий сгибов
-function flatten(img) {
+function flatten(img, pw = 0.35, lo = 0.93, hi = 1.07) {
   const w = img.width, h = img.height, cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.drawImage(img, 0, 0);
   let D; try { D = g.getImageData(0, 0, w, h); } catch (e) { return img; }
   const a = D.data, n = w * h, L = new Float32Array(n);
@@ -145,6 +159,6 @@ function flatten(img) {
     for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let y = -rad; y < h; y++) { if (y + rad < h) { s += t[(y + rad) * w + x]; c++; } if (y - rad - 1 >= 0) { s -= t[(y - rad - 1) * w + x]; c--; } if (y >= 0) o[y * w + x] = s / c; } }
     return o; };
   const B = blur(L, 4);
-  for (let i = 0; i < n; i++) { const k = Math.max(0.93, Math.min(1.07, Math.pow(L[i] / B[i], 0.35)));   /* слабо: линии сгибов с фото не должны читаться как складки — их дают форма и шейдер ткани */ a[i * 4] = Math.min(255, R0 * k); a[i * 4 + 1] = Math.min(255, G0 * k); a[i * 4 + 2] = Math.min(255, B0 * k); a[i * 4 + 3] = 255; }
+  for (let i = 0; i < n; i++) { const k = Math.max(lo, Math.min(hi, Math.pow(L[i] / B[i], pw)));   /* слабо: линии сгибов с фото не должны читаться как складки — их дают форма и шейдер ткани */ a[i * 4] = Math.min(255, R0 * k); a[i * 4 + 1] = Math.min(255, G0 * k); a[i * 4 + 2] = Math.min(255, B0 * k); a[i * 4 + 3] = 255; }
   g.putImageData(D, 0, 0); return cv;
 }
