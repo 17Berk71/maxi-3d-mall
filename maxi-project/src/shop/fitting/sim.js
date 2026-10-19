@@ -76,6 +76,9 @@ export function runCloth(C, push, fab, yPin, opt) {
       if (C.sector && s > sewEnd * 0.6) for (const [i, fz, sx_, cx] of C.sector) { const q = i * 3;
         if (P[q + 2] * fz < -0.005) P[q + 2] += (-0.005 * fz - P[q + 2]) * 0.3;
         if (sx_ && (P[q] - cx) * sx_ < 0) P[q] += (cx - P[q]) * 0.3; }
+      // пояс стягивает ткань к телу (belt3d.js): точка не дальше эллипса a×b на своей высоте
+      if (C.belt && s > sewEnd * 0.6) { const B_ = C.belt; for (let t = 0; t < B_.length; t += 3) { const q = B_[t] * 3, x = P[q], z = P[q + 2], e = (x / B_[t + 1]) ** 2 + (z / B_[t + 2]) ** 2;
+        if (e > 1) { const f = 1 + (1 / Math.sqrt(e) - 1) * 0.5; P[q] *= f; P[q + 2] *= f; } } }
       if (C.half && s > sewEnd * 0.6) for (const [i, sg] of C.half) if (P[i * 3] * sg < 0.004) P[i * 3] += (sg * 0.004 - P[i * 3]) * 0.3;
       if (SR && s >= sewEnd && it % 2 === 0) selfCollide();
       for (let i = 0; i < n; i++) { if (push(P, i * 3, NA && NA[i])) hit[i] = 1; if (C.pin[i]) { P[i * 3 + 1] = yPin; if (FIX) { P[i * 3] = FIX[i * 3]; P[i * 3 + 2] = FIX[i * 3 + 2]; } } }

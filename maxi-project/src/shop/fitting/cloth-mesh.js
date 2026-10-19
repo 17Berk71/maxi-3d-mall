@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import {noteAB} from './geometry.js';
 import {buildDecor, decorUpdate} from './decor.js';
+import {buildBelt, beltUpdate} from './belt3d.js';
 import {buildEdge, edgeUpdate, edgeThickness, FUR_ROWS} from './edges.js';
 import {buildCollar, collarUpdate} from './collar3d.js';
 import {pleatGrid, pleatUpdate, pleatSmooth, liningBand, liningUpdate} from './pleats.js';
@@ -102,7 +103,7 @@ export function clothUpdate(g, P) {
     pa.needsUpdate = true; na.needsUpdate = true; if (ca) ca.needsUpdate = true; mesh.geometry.computeBoundingSphere(); });
   const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); }
   g.children.forEach(o => { if (o.userData.lining) liningUpdate(o); if (o.userData.edge) edgeUpdate(o); if (o.userData.collar) collarUpdate(o, P, N); });
-  decorUpdate(g, P, N);
+  decorUpdate(g, P, N); beltUpdate(g, P);
 }
 export function clothMeshes(C, P, H) {
   const g = new THREE.Group(), n = P.length / 3, N = new Float32Array(n * 3);
@@ -159,6 +160,7 @@ export function clothMeshes(C, P, H) {
     const band = liningBand(pgs, C.lining.len, lm); liningUpdate(band); g.add(band); } }
   if (C.collar) { const fm = C.meshes.find(m => m.role === 'front'); if (fm) buildCollar(g, C, P, N, fm.mat); }   // отложной воротник объёмом
   buildDecor(g, C, P, N);   // пуговицы — объёмные детали на ткани
+  buildBelt(g, C, P);   // пояс, ремень — лентой поверх ткани (belt3d.js)
   if (fit.UNDER) C.meshes.forEach(m => { if (m.role !== 'front' && m.role !== 'back') return; m.verts.forEach(i => noteAB(P[i * 3 + 1] / H, Math.abs(P[i * 3]) + 0.004, Math.abs(P[i * 3 + 2]) + 0.004)); });
   return g;
 }

@@ -8,7 +8,7 @@ import {motionAt, runCloth} from './sim.js';
 // Расчёт вещи — 1.5–2.5 с на компьютере и в 2–3 раза дольше на телефоне. В фоне страница не замирает,
 // а готовый результат (точки ткани) хранится: та же вещь на той же фигуре во второй раз надевается сразу.
 // Версия расчёта: менять при любой правке выкроек, швов или расчёта — старый кэш станет недействительным.
-export const CLOTH_VER = 'c92';
+export const CLOTH_VER = 'c95';
 // анимация надевания (FIT.setAnim(false) — выключить, для автопроверок); «без анимации» на сайте и системная настройка — тоже выключают
 export const ANIM = {on: true};
 export function calmNow() { try { const v = localStorage.getItem('maxi-calm'); if (v !== null) return v === '1'; } catch (e) {} try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
@@ -45,6 +45,6 @@ export function seamBend(C) {
 export function armFlags(C) { const f = new Uint8Array(C.pin.length); C.meshes.forEach(m => { if (!m.local) m.verts.forEach(v => { f[v] = 1; }); }); return f; }
 export function solveInWorker(job) {
   const w = clothWorker(); if (!w) return Promise.resolve(null);
-  const id = ++WSEQ, C = job.C, msg = {id, C: {P: Float32Array.from(C.P), E: C.E, seams: C.seams, pin: C.pin, hold: C.hold, mid: C.mid, half: C.half, sector: C.sector, force: C.force, stickyIds: C.stickyIds, fr: C.fr, noArm: C.noArm || armFlags(C), tether: Float32Array.from(C.tether || []), hq: C.hq || null}, d: job.d, under: job.under, fab: typeof window !== 'undefined' && window.__fab ? Object.assign({}, job.fab, window.__fab) : job.fab, yPin: job.yPin, margin: job.margin, rec: !!job.rec};   // __fab — проба ткани (отладка)
+  const id = ++WSEQ, C = job.C, msg = {id, C: {P: Float32Array.from(C.P), E: C.E, seams: C.seams, pin: C.pin, hold: C.hold, mid: C.mid, half: C.half, sector: C.sector, belt: C.belt || null, force: C.force, stickyIds: C.stickyIds, fr: C.fr, noArm: C.noArm || armFlags(C), tether: Float32Array.from(C.tether || []), hq: C.hq || null}, d: job.d, under: job.under, fab: typeof window !== 'undefined' && window.__fab ? Object.assign({}, job.fab, window.__fab) : job.fab, yPin: job.yPin, margin: job.margin, rec: !!job.rec};   // __fab — проба ткани (отладка)
   return new Promise((resolve, reject) => { WJOBS.set(id, {resolve, reject}); w.postMessage(msg); }).catch(() => null);
 }

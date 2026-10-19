@@ -9,17 +9,17 @@ import {TOPK} from './specs.js';
 // nAmp — неровность полотна, rough/sheen — матовость и ворс, wrL — шаг заломов там, где ткань в расчёте сжата (м),
 // wrG — их глубина, cav — темнее во впадинах
 export const FT = {
-  jersey: {weave: 'knit', tile: 0.011, wAmp: 0.22, nAmp: 0.5, rough: 0.9, sheen: 0.22, wrL: 0.042, wrG: 0.45, cav: 0.08},
-  rib: {weave: 'rib', tile: 0.014, wAmp: 1.1, nAmp: 0.4, rough: 0.9, sheen: 0.2, wrL: 0.045, wrG: 0.42, cav: 0.08},
-  fleece: {weave: 'knit', tile: 0.014, wAmp: 0.15, nAmp: 0.6, rough: 0.96, sheen: 0.32, wrL: 0.05, wrG: 0.39, cav: 0.07},
-  chunky: {weave: 'chunky', tile: 0.04, wAmp: 1.3, nAmp: 0.4, rough: 0.95, sheen: 0.28, wrL: 0.06, wrG: 0.33, cav: 0.06},
-  woven: {weave: 'plain', tile: 0.007, wAmp: 0.3, nAmp: 0.55, rough: 0.8, sheen: 0.12, wrL: 0.036, wrG: 0.48, cav: 0.09},
-  suiting: {weave: 'plain', tile: 0.009, wAmp: 0.25, nAmp: 0.4, rough: 0.72, sheen: 0.14, wrL: 0.045, wrG: 0.39, cav: 0.07},
-  twill: {weave: 'twill', tile: 0.012, wAmp: 1.0, nAmp: 0.55, rough: 0.86, sheen: 0.08, wrL: 0.05, wrG: 0.42, cav: 0.09},
-  nylon: {weave: 'ripstop', tile: 0.022, wAmp: 0.35, nAmp: 0.35, rough: 0.42, sheen: 0.04, wrL: 0.04, wrG: 0.48, cav: 0.10},
-  suede: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.8, rough: 0.97, sheen: 0.5, wrL: 0.045, wrG: 0.36, cav: 0.07},
-  satin: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.25, rough: 0.38, sheen: 0.06, wrL: 0.04, wrG: 0.5, cav: 0.08},
-  leather: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.9, rough: 0.5, sheen: 0.02, wrL: 0.05, wrG: 0.4, cav: 0.09},
+  jersey: {weave: 'knit', tile: 0.011, wAmp: 0.22, nAmp: 0.5, rough: 0.9, sheen: 0.22, wrL: 0.042, wrG: 0.45, cav: 0.08, det: 0.6},
+  rib: {weave: 'rib', tile: 0.014, wAmp: 1.1, nAmp: 0.4, rough: 0.9, sheen: 0.2, wrL: 0.045, wrG: 0.42, cav: 0.08, det: 0.8},
+  fleece: {weave: 'knit', tile: 0.014, wAmp: 0.15, nAmp: 0.6, rough: 0.96, sheen: 0.32, wrL: 0.05, wrG: 0.39, cav: 0.07, det: 0.5},
+  chunky: {weave: 'chunky', tile: 0.04, wAmp: 1.3, nAmp: 0.4, rough: 0.95, sheen: 0.28, wrL: 0.06, wrG: 0.33, cav: 0.06, det: 1.0},
+  woven: {weave: 'plain', tile: 0.007, wAmp: 0.3, nAmp: 0.55, rough: 0.8, sheen: 0.12, wrL: 0.036, wrG: 0.48, cav: 0.09, det: 0.6},
+  suiting: {weave: 'plain', tile: 0.009, wAmp: 0.25, nAmp: 0.4, rough: 0.72, sheen: 0.14, wrL: 0.045, wrG: 0.39, cav: 0.07, det: 0.5},
+  twill: {weave: 'twill', tile: 0.012, wAmp: 1.0, nAmp: 0.55, rough: 0.86, sheen: 0.08, wrL: 0.05, wrG: 0.42, cav: 0.09, det: 0.8},
+  nylon: {weave: 'ripstop', tile: 0.022, wAmp: 0.35, nAmp: 0.35, rough: 0.42, sheen: 0.04, wrL: 0.04, wrG: 0.48, cav: 0.10, det: 0.35},
+  suede: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.8, rough: 0.97, sheen: 0.5, wrL: 0.045, wrG: 0.36, cav: 0.07, det: 0.7},
+  satin: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.25, rough: 0.38, sheen: 0.06, wrL: 0.04, wrG: 0.5, cav: 0.08, det: 0.15},
+  leather: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.9, rough: 0.5, sheen: 0.02, wrL: 0.05, wrG: 0.4, cav: 0.09, det: 0.45},
 };
 // ткань из характеристик карточки (wb_details.py → meta.card.fabric) — надёжнее догадки по названию
 const CARD_FT = {rib: 'rib', chunky: 'chunky', knit: 'jersey', jersey: 'jersey', denim: 'twill', satin: 'satin', leather: 'leather', lace: 'woven', nylon: 'nylon', wool: 'suiting'};
@@ -92,7 +92,7 @@ function noiseTex2() {
 // мелкие заломы там, где расчёт сжал ткань (атрибут wrk: √сжатия по утку и по основе). Всё считается один раз (3 выборки
 // текстур) — на телефоне и в слабой графике кадр не тяжелеет. Затенение складок (цвет вершин) действует и на «свечение» фото
 const CLOTH_GLSL = `
-uniform sampler2D clWeave; uniform sampler2D clRel; uniform float clRelAmp; uniform sampler2D clNoise; uniform sampler2D clNoise2; uniform float clTile; uniform float clWAmp; uniform float clNAmp; uniform float clWrL; uniform float clWrG; uniform float clCav;
+uniform sampler2D clWeave; uniform sampler2D clRel; uniform float clRelAmp; uniform sampler2D clDet; uniform float clDetAmp; uniform sampler2D clNoise; uniform sampler2D clNoise2; uniform float clTile; uniform float clWAmp; uniform float clNAmp; uniform float clWrL; uniform float clWrG; uniform float clCav;
 varying vec2 vUvm; varying vec2 vWrk;
 vec2 clSl; float clCv;
 void clEval(vec2 u) {
@@ -113,18 +113,22 @@ export function clothify(mat, ft) {
   ft = ft || FT.woven; mat.userData.ft = ft;
   // рельеф со снимка (photo-texture.js delight2): мелкие заломы фото — наклоны нормали в координатах фото (vUv)
   const relT = mat.map && mat.map.relief, rel = !!relT, X = (typeof window !== 'undefined' && window.__relAmp != null) ? window.__relAmp : 0.03;
+  // мелкая фактура со снимка (вязка, рубчик, переплетение, ворс): наклоны нормали по яркости фото в полном разрешении — ткань
+  // ловит свет своей фактурой, а не выглядит «нарисованной» (пользователь: «не хватает жизни», «пластмассовый»)
+  const detT = mat.map && mat.map.detail, det = !!detT && !(typeof window !== 'undefined' && window.__noDetail), DA = ((typeof window !== 'undefined' && window.__detAmp != null) ? window.__detAmp : 1.3) * (ft.det == null ? 0.5 : ft.det);
   mat.extensions = Object.assign(mat.extensions || {}, {derivatives: true});
   mat.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, {clWeave: {value: weaveTex(ft.weave)}, clNoise: {value: noiseTex()}, clNoise2: {value: noiseTex2()}, clTile: {value: ft.tile}, clWAmp: {value: ft.wAmp}, clNAmp: {value: ft.nAmp}, clWrL: {value: ft.wrL}, clWrG: {value: ft.wrG}, clCav: {value: ft.cav}, clRel: {value: relT || null}, clRelAmp: {value: X}});
+    Object.assign(sh.uniforms, {clWeave: {value: weaveTex(ft.weave)}, clNoise: {value: noiseTex()}, clNoise2: {value: noiseTex2()}, clTile: {value: ft.tile}, clWAmp: {value: ft.wAmp}, clNAmp: {value: ft.nAmp}, clWrL: {value: ft.wrL}, clWrG: {value: ft.wrG}, clCav: {value: ft.cav}, clRel: {value: relT || null}, clRelAmp: {value: X}, clDet: {value: detT || null}, clDetAmp: {value: DA}});
     if (rel) mat.userData.relU = sh.uniforms;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 uvm; attribute vec2 wrk; varying vec2 vUvm; varying vec2 vWrk;')
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvUvm = uvm; vWrk = wrk;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + CLOTH_GLSL)
       .replace('#include <color_fragment>', '#include <color_fragment>\nclEval(vUvm); diffuseColor.rgb *= clCv;')
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = clPerturb(-vViewPosition, normal, clSl, vUvm, faceDirection);' + (rel ? '\n{ vec2 rs = (texture2D(clRel, vUv).xy - 128.0 / 255.0) * 127.5 * clRelAmp; normal = clPerturb(-vViewPosition, normal, rs, vUv, faceDirection); }' : ''))
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = clPerturb(-vViewPosition, normal, clSl, vUvm, faceDirection);' + (rel ? '\n{ vec2 rs = (texture2D(clRel, vUv).xy - 128.0 / 255.0) * 127.5 * clRelAmp; normal = clPerturb(-vViewPosition, normal, rs, vUv, faceDirection); }' : '') +
+        (det ? '\n{ vec2 ds = (texture2D(clDet, vUv).xy - 128.0 / 255.0) * 2.0 * clDetAmp; normal = clPerturb(-vViewPosition, normal, ds, vUv, faceDirection); }' : ''))
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n totalEmissiveRadiance *= vColor;\n#endif\ntotalEmissiveRadiance *= clCv;');
   };
-  mat.customProgramCacheKey = () => 'cloth:' + ft.weave + ft.tile + ft.wAmp + ft.wrL + (rel ? 'r' : '');
+  mat.customProgramCacheKey = () => 'cloth:' + ft.weave + ft.tile + ft.wAmp + ft.wrL + (rel ? 'r' : '') + (det ? 'd' : '');
   return mat;
 }
 // фото — основной цвет ткани (без своей светотени, см. delight); свет кабины даёт объём и складки;
