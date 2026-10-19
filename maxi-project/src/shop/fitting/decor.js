@@ -17,8 +17,10 @@ function buttonGeo(pearl) {
 }
 const MATS = new Map();
 // цвет с фото — среднее по пятну пуговицы вместе с бликом: чуть темнее, блеск дадут свет и лак
-function buttonMat(hex, pearl, covered) {
-  const key = hex + pearl + covered;
+function buttonMat(hex, pearl, covered, metal) {
+  const key = hex + pearl + covered + metal;
+  // металлическая (серебристая/золотистая фурнитура на тёмной ткани) — блестящий металл, не «жемчуг»
+  if (metal) { if (!MATS.has(key)) MATS.set(key, new THREE.MeshPhysicalMaterial({color: LIN(hex).multiplyScalar(0.9), roughness: 0.32, metalness: 0.85, envMapIntensity: 0.9})); return MATS.get(key); }
   // обтянутая тканью — матовая, как ткань (без лака и блеска)
   if (covered) { if (!MATS.has(key)) MATS.set(key, new THREE.MeshPhysicalMaterial({color: LIN(hex).multiplyScalar(0.8), roughness: 0.85, metalness: 0, sheen: new THREE.Color(0.12, 0.1, 0.1), envMapIntensity: 0.1})); return MATS.get(key); }
   if (!MATS.has(key)) MATS.set(key, new THREE.MeshPhysicalMaterial({color: LIN(hex).multiplyScalar(pearl ? 0.72 : 0.85), roughness: pearl ? 0.28 : 0.55, metalness: 0,
@@ -63,9 +65,10 @@ export function buildDecor(g, C, P, N) {
     // пуговица того же оттенка, что ткань, только светлее — обтянута тканью: на фото светлая от блика на выпуклости
     // (платье марсала: #c4a2a6 при ткани #4c0e21 выходило белым «жемчугом»). Цвет — от ткани, чуть светлее, матовая
     const fh = {}; if (b.fabric) new THREE.Color(b.fabric).getHSL(fh); const dh = Math.abs(hsl.h - (fh.h || 0)), sameHue = b.fabric && Math.min(dh, 1 - dh) < 0.05 && fh.s > 0.2 && hsl.s > 0.12;
-    const covered = !!sameHue, pearl = !covered && hsl.l > 0.55; d.pearl = pearl || covered;
+    const fl = fh.l != null ? fh.l : 0.5, metal = !sameHue && hsl.s < 0.18 && hsl.l > 0.35 && hsl.l < 0.85 && fl < 0.3;   /* серая пуговица на тёмной ткани — металл (вязаное платье-поло) */
+    const covered = !!sameHue, pearl = !covered && !metal && hsl.l > 0.55; d.pearl = pearl || covered;
     const hex = covered ? '#' + new THREE.Color(b.fabric).offsetHSL(0, 0, 0.06).getHexString() : (b.rgb || '#e8e4dc');
-    const mesh = new THREE.Mesh(buttonGeo(pearl || covered), buttonMat(hex, pearl, covered)); mesh.scale.setScalar(d.r); mesh.castShadow = false; mesh.receiveShadow = false; mesh.userData.decor = d;   /* мелочь: своя тень на шарике давала «полумесяцы» */
+    const mesh = new THREE.Mesh(buttonGeo(pearl || covered), buttonMat(hex, pearl, covered, metal)); mesh.scale.setScalar(d.r); mesh.castShadow = false; mesh.receiveShadow = false; mesh.userData.decor = d;   /* мелочь: своя тень на шарике давала «полумесяцы» */
     place(mesh, d, P, N); mesh.userData.final = {p: mesh.position.clone(), q: mesh.quaternion.clone()}; g.add(mesh); list.push(mesh); }
   g.userData.decor = list;
 }

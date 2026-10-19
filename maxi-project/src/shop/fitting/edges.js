@@ -7,10 +7,12 @@ import * as THREE from 'three';
 const THICK = {jersey: 0.0026, rib: 0.003, fleece: 0.004, chunky: 0.0055, woven: 0.0024, suiting: 0.003, twill: 0.0036, nylon: 0.0016, suede: 0.0032};
 export function edgeThickness(FT, ft) { const k = Object.keys(FT).find(k => FT[k] === ft); return THICK[k] || 0.0026; }
 
-const ROWS = [[0, 0], [0.5, 0.42], [1, 0]];   // по профилю среза: доля толщины внутрь и выпуклость наружу (в долях толщины)
+const ROWS = [[0, 0], [0.5, 0.42], [1, 0]], ROWS0 = ROWS;   // по профилю среза: доля толщины внутрь и выпуклость наружу (в долях толщины)
 
 // mesh — деталь показа (userData.cm), sewn(k) — вершина показа k пришита к другой детали
-export function buildEdge(mesh, sewn, t) {
+export const FUR_ROWS = [[-0.5, 0], [-0.35, 0.55], [0, 0.85], [0.35, 0.55], [0.5, 0]];   // мех: валик в обе стороны от края, пышнее
+export function buildEdge(mesh, sewn, t, ROWS_ = ROWS) {
+  const ROWS = ROWS_;
   const geo = mesh.geometry, idx = geo.index.array, cnt = new Map(), third = new Map();
   for (let q = 0; q < idx.length; q += 3) for (const [x, y, z] of [[0, 1, 2], [1, 2, 0], [2, 0, 1]]) {
     const a = idx[q + x], b = idx[q + y], key = a < b ? a * 1e6 + b : b * 1e6 + a; cnt.set(key, (cnt.get(key) || 0) + 1); third.set(key, [a, b, idx[q + z]]); }
@@ -26,12 +28,12 @@ export function buildEdge(mesh, sewn, t) {
     for (let r = 0; r < R; r++) vs.forEach((v, i) => { for (let c = 0; c < s; c++) A[(r * K + i) * s + c] = src[name].array[v * s + c]; }); g.setAttribute(name, new THREE.Float32BufferAttribute(A, s)); }
   g.setIndex(index);
   const out = new THREE.Mesh(g, mesh.material); out.castShadow = false; out.receiveShadow = true;
-  out.userData.edge = {src: mesh, vs, edges, at, K, t}; edgeUpdate(out);
+  out.userData.edge = {src: mesh, vs, edges, at, K, t, rows: ROWS}; edgeUpdate(out);
   return out;
 }
 // пересчитать бортик по текущей сетке показа (после clothUpdate)
 export function edgeUpdate(out) {
-  const {src, vs, edges, at, K, t} = out.userData.edge, P = src.geometry.attributes.position.array, N = src.geometry.attributes.normal.array;
+  const {src, vs, edges, at, K, t} = out.userData.edge, ROWS = out.userData.edge.rows || ROWS0, P = src.geometry.attributes.position.array, N = src.geometry.attributes.normal.array;
   const away = new Float32Array(K * 3);   // наружу от ткани по её поверхности (поперёк края)
   for (const [a, b, c] of edges) { const ex = P[b * 3] - P[a * 3], ey = P[b * 3 + 1] - P[a * 3 + 1], ez = P[b * 3 + 2] - P[a * 3 + 2];
     const nx = N[a * 3] + N[b * 3], ny = N[a * 3 + 1] + N[b * 3 + 1], nz = N[a * 3 + 2] + N[b * 3 + 2];
@@ -45,6 +47,6 @@ export function edgeUpdate(out) {
       pos[q] = P[v * 3] - N[v * 3] * inn * t + ax * bulge * t; pos[q + 1] = P[v * 3 + 1] - N[v * 3 + 1] * inn * t + ay * bulge * t; pos[q + 2] = P[v * 3 + 2] - N[v * 3 + 2] * inn * t + az * bulge * t; }); });
   out.geometry.computeVertexNormals(); out.geometry.attributes.position.needsUpdate = true; out.geometry.attributes.normal.needsUpdate = true;
   const col = out.geometry.attributes.color, sc = src.geometry.attributes.color;
-  if (col && sc) { for (let r = 0; r < ROWS.length; r++) vs.forEach((v, i) => { for (let c = 0; c < 3; c++) col.array[(r * K + i) * 3 + c] = sc.array[v * 3 + c] * (r === 2 ? 0.9 : 1); }); col.needsUpdate = true; }
+  if (col && sc) { for (let r = 0; r < ROWS.length; r++) vs.forEach((v, i) => { for (let c = 0; c < 3; c++) col.array[(r * K + i) * 3 + c] = sc.array[v * 3 + c] * (r === ROWS.length - 1 ? 0.9 : 1); }); col.needsUpdate = true; }
   out.geometry.computeBoundingSphere();
 }

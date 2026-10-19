@@ -18,13 +18,20 @@ export const FT = {
   twill: {weave: 'twill', tile: 0.012, wAmp: 1.0, nAmp: 0.55, rough: 0.86, sheen: 0.08, wrL: 0.05, wrG: 0.42, cav: 0.09},
   nylon: {weave: 'ripstop', tile: 0.022, wAmp: 0.35, nAmp: 0.35, rough: 0.42, sheen: 0.04, wrL: 0.04, wrG: 0.48, cav: 0.10},
   suede: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.8, rough: 0.97, sheen: 0.5, wrL: 0.045, wrG: 0.36, cav: 0.07},
+  satin: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.25, rough: 0.38, sheen: 0.06, wrL: 0.04, wrG: 0.5, cav: 0.08},
+  leather: {weave: 'none', tile: 0.01, wAmp: 0, nAmp: 0.9, rough: 0.5, sheen: 0.02, wrL: 0.05, wrG: 0.4, cav: 0.09},
 };
+// ткань из характеристик карточки (wb_details.py → meta.card.fabric) — надёжнее догадки по названию
+const CARD_FT = {rib: 'rib', chunky: 'chunky', knit: 'jersey', jersey: 'jersey', denim: 'twill', satin: 'satin', leather: 'leather', lace: 'woven', nylon: 'nylon', wool: 'suiting'};
 export function fabricType(item) {
   const n = ((item.name || '') + ' ' + (item.desc || '')).toLowerCase(), k = item.kind;
+  const cf = item.card && item.card.fabric;
+  if (cf && CARD_FT[cf] && FT[CARD_FT[cf]] && !(k === 'puffer' && cf !== 'nylon')) return FT[CARD_FT[cf]];
   if (/нейлон|плащев|ветровк|болонь/.test(n) || k === 'puffer') return FT.nylon;
   if (/замш|велюр|бархат/.test(n)) return FT.suede;
   if (/рубчик|лапша|резинк/.test(n) && TOPK.has(k)) return FT.rib;
-  if (/вязан|крупн.*вязк|свитер/.test(n)) return FT.chunky;
+  if (/крупн.{0,6}вязк|косами|косы/.test(n)) return FT.chunky;   /* «вязаное» без «крупной» — тонкая вязка (было: кольчуга на вязаном платье) */
+  if (/вязан|свитер/.test(n)) return FT.jersey;
   if (k === 'jeans' || /джинс|деним|вельвет|карго|чинос/.test(n)) return FT.twill;
   if (k === 'hoodie' || /свитшот|худи|толстовк|флис|зипк/.test(n) || k === 'sweater') return FT.fleece;
   if (k === 'tee' || /футболк|лонгслив|поло|трикотаж/.test(n)) return FT.jersey;
@@ -124,6 +131,8 @@ export function clothify(mat, ft) {
 // немного «свечения» фото — чтобы тёмные ткани в тени не уходили в черноту и цвет оставался как на снимке.
 // Белёсый налёт («бледно, засвечено») давали ворс (sheen) и отражение окружения: у ткани они слабые.
 // Сверено по платью: на свету юбка (86,18,35) при цвете на фото (88,19,40). window.__matx — проба настроек
+// ворс подсвечивает ткань её же цветом (белый ворс делал чёрное серым: вязаное платье L 5 на фото → 19 на манекене)
+function sheenOf(color, sh) { const c = LIN(color || '#888'), k = 0.25; return new THREE.Color(sh * (c.r * (1 - k) + k), sh * (c.g * (1 - k) + k), sh * (c.b * (1 - k) + k)); }
 export function photoMat(url, color, ft, flat) {
   const t = photoTex(url, flat);
   if (!t) return new THREE.MeshStandardMaterial({color: LIN(color || '#888'), roughness: 0.86, side: THREE.DoubleSide});
@@ -131,7 +140,7 @@ export function photoMat(url, color, ft, flat) {
   const X = (typeof window !== 'undefined' && window.__matx) || {};   /* проба настроек материала (отладка) */
   const c = X.color != null ? X.color : 0.7, sh = ft.sheen * (X.sheenK != null ? X.sheenK : 0.55);
   const m = new THREE.MeshPhysicalMaterial({map: t, color: new THREE.Color(c, c, c), emissive: 0xffffff, emissiveMap: t, emissiveIntensity: X.emis != null ? X.emis : 0.08, roughness: ft.rough, metalness: 0, side: THREE.DoubleSide,
-    sheen: new THREE.Color(sh, sh, sh), envMapIntensity: X.env != null ? X.env : 0.3, reflectivity: X.refl != null ? X.refl : 0.15});
+    sheen: sheenOf(color, sh), envMapIntensity: X.env != null ? X.env : 0.3, reflectivity: X.refl != null ? X.refl : 0.15});
   if (X.tm === 0) m.toneMapped = false;
   return clothify(m, ft);
 }

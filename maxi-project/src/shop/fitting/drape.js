@@ -34,6 +34,11 @@ export function drapePrepare(item, d, under) {
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
   // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
   C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front', fabric: item.color}, b));
+  // стёжка (пуховик, стёганые жилет/куртка/пальто): дутые секции между строчками — рельефом на показе (cloth-mesh.js quiltRelief).
+  // Строчки — там же, где на фото (фабрика: a.quilt — доли высоты выреза), иначе шаг 10 см по выкройке
+  { const qd = k === 'puffer' || item.puffer || (item.card && item.card.quilted);
+    if (item.card && item.card.fur && !(typeof window !== 'undefined' && window.__noFur)) C.fur = {t: 0.028};   /* мех по краю капюшона (cloth-mesh.js) */
+    if (qd && !(typeof window !== 'undefined' && window.__noQuilt)) C.quilt = {front: aF.quilt || null, back: aB.quilt || null, pitch: 0.1, amp: k === 'puffer' || item.puffer ? 0.012 : 0.005}; }
   const ft = fabricType(item), flatT = item.pleats ? true : DYE.test((item.name || '') + ' ' + (item.desc || '')) || item.dye ? 'gentle' : false, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
   [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
   const zo = 0.21 * d.s, cell = (typeof window !== 'undefined' && window.__cell) || 0.022;
@@ -150,7 +155,7 @@ export function drapePrepare(item, d, under) {
     // на фото с человеком «рукав» с бока корпуса — это рука, фон и край вещи (пятна и треугольник на рукаве): ткань рукава
     // берём с чистого места переда — между серединой (планка, пуговицы) и боком, ниже груди
     const merged = item.shape && item.shape.merged, worn = item.shape && item.shape.worn, ownS = item.tex.sleeve && !merged && !worn, j = armJ(d), sTex = ownS ? item.tex.sleeve : item.tex.frontCut || item.tex.front, mS = photoMat(sTex, base, ft, flatT === 'gentle' ? 'gentle' : false); mS.side = THREE.DoubleSide;
-    const sK = merged ? 0.3 : 0.62, sUV = ownS ? (u, v) => [u, v] : worn ? (u, v) => [aF.cx + (aF.hw || 0.3) * (0.32 + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.5 + 0.2 * v] : (u, v) => [aF.cx + (aF.hw || 0.3) * (sK + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.3 + 0.45 * v];   // рукава слились с корпусом на фото — ткань ближе к середине (с края там рука и блик)
+    const sK = merged ? 0.3 : 0.62, sUV = ownS ? (u, v) => [0.22 + 0.56 * u, 0.04 + 0.92 * v] :   /* края снимка рукава — блик и тень сгиба (на окате выходили серые клинья) */ worn ? (u, v) => [aF.cx + (aF.hw || 0.3) * (0.32 + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.5 + 0.2 * v] : (u, v) => [aF.cx + (aF.hw || 0.3) * (sK + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.3 + 0.45 * v];   // рукава слились с корпусом на фото — ткань ближе к середине (с края там рука и блик)
     let armLen = 0; for (let i = 1; i < arm.length; i++) armLen += Math.hypot(arm[i][0] - arm[i - 1][0], arm[i][1] - arm[i - 1][1]);
     // окат = длине проймы по выкройке (перед + спинка); иначе шов растягивает верх рукава («рожки» на плечах)
     // ×1.1 — запас оката, как у настоящего рукава: пройма на теле растягивается, и без запаса верх рукава натянут (автопроверка «натяжение» 3–10% у рукавов)

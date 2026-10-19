@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import {noteAB} from './geometry.js';
 import {buildDecor, decorUpdate} from './decor.js';
-import {buildEdge, edgeUpdate, edgeThickness} from './edges.js';
+import {buildEdge, edgeUpdate, edgeThickness, FUR_ROWS} from './edges.js';
 import {buildCollar, collarUpdate} from './collar3d.js';
 import {pleatGrid, pleatUpdate, pleatSmooth, liningBand, liningUpdate} from './pleats.js';
 import {clothify, FT} from './cloth-material.js';
@@ -66,6 +66,23 @@ function pleatRelief(geo, rl, edges, nbase) {
   // нормали: грани складок ловят свет, но не до бликов на рёбрах — смесь с гладкими
   geo.computeVertexNormals(); for (let k = 0; k < n * 3; k += 3) { const x = nor[k] * 0.6 + n0[k] * 0.4, y = nor[k + 1] * 0.6 + n0[k + 1] * 0.4, z = nor[k + 2] * 0.6 + n0[k + 2] * 0.4, l = Math.hypot(x, y, z) || 1; nor[k] = x / l; nor[k + 1] = y / l; nor[k + 2] = z / l; }
 }
+// стёжка: между строчками ткань вздута по нормали (как у пуховика), у строчек — впадина и тень. Строчки перед/спинки — по фото
+// (C.quilt.front/back — доли высоты выреза, совпадают с нарисованными на текстуре), у рукавов и капюшона — шаг по выкройке
+function quiltRelief(geo, q, role) {
+  if (!q) return;
+  const pos = geo.attributes.position.array, nor = geo.attributes.normal.array, uv = geo.attributes.uv.array, uvm = geo.attributes.uvm ? geo.attributes.uvm.array : null, col = geo.attributes.color ? geo.attributes.color.array : null;
+  const st = role === 'front' ? q.front : role === 'back' ? q.back : null, n = pos.length / 3, n0 = nor.slice();
+  if (!st && !uvm) return;
+  for (let k = 0; k < n; k++) { let t;
+    if (st && st.length > 2) { const v = 1 - uv[k * 2 + 1]; let i = 0; while (i < st.length - 1 && st[i + 1] < v) i++;
+      if (v < st[0] || v > st[st.length - 1]) { const sp = (st[st.length - 1] - st[0]) / (st.length - 1); t = ((v - st[0]) / sp) % 1; if (t < 0) t += 1; }
+      else t = (v - st[i]) / Math.max(1e-4, st[i + 1] - st[i]); }
+    else { const y = uvm[k * 2 + 1] / q.pitch; t = y - Math.floor(y); }
+    const b = Math.pow(Math.sin(Math.PI * Math.min(1, Math.max(0, t))), 0.6), a = q.amp * b;
+    pos[k * 3] += nor[k * 3] * a; pos[k * 3 + 1] += nor[k * 3 + 1] * a; pos[k * 3 + 2] += nor[k * 3 + 2] * a;
+    if (col) { const f = 0.72 + 0.28 * b; col[k * 3] *= f; col[k * 3 + 1] *= f; col[k * 3 + 2] *= f; } }
+  geo.computeVertexNormals(); for (let k = 0; k < n * 3; k += 3) { const x = nor[k] * 0.7 + n0[k] * 0.3, y = nor[k + 1] * 0.7 + n0[k + 1] * 0.3, z = nor[k + 2] * 0.7 + n0[k + 2] * 0.3, l = Math.hypot(x, y, z) || 1; nor[k] = x / l; nor[k + 1] = y / l; nor[k + 2] = z / l; }
+}
 // кадр анимации: та же сетка (порядок вершин как в clothMeshes), новые точки ткани P — без пересборки
 export function clothUpdate(g, P) {
   const cl = g.userData.cloth; if (!cl) return; const C = cl.C, n = P.length / 3, N = cl.N || (cl.N = new Float32Array(n * 3));
@@ -81,6 +98,7 @@ export function clothUpdate(g, P) {
       pos[r * 3] = (pos[i * 3] + pos[j * 3]) / 2 + (nix + njx) / 2 * off; pos[r * 3 + 1] = (pos[i * 3 + 1] + pos[j * 3 + 1]) / 2 + (niy + njy) / 2 * off; pos[r * 3 + 2] = (pos[i * 3 + 2] + pos[j * 3 + 2]) / 2 + (niz + njz) / 2 * off;
       nor[r * 3] = hx / hl; nor[r * 3 + 1] = hy / hl; nor[r * 3 + 2] = hz / hl; if (col) col[r * 3] = col[r * 3 + 1] = col[r * 3 + 2] = (col[i * 3] + col[j * 3]) / 2; r++; }
     if (m.relief) pleatRelief(mesh.geometry, m.relief, cm.edges, m.verts.length);
+    if (C.quilt) quiltRelief(mesh.geometry, C.quilt, m.role);
     pa.needsUpdate = true; na.needsUpdate = true; if (ca) ca.needsUpdate = true; mesh.geometry.computeBoundingSphere(); });
   const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); }
   g.children.forEach(o => { if (o.userData.lining) liningUpdate(o); if (o.userData.edge) edgeUpdate(o); if (o.userData.collar) collarUpdate(o, P, N); });
@@ -127,9 +145,12 @@ export function clothMeshes(C, P, H) {
     mesh.userData.cm = {mi, edges: [...mid.entries()].sort((a_, b_) => a_[1] - b_[1]).map(([key]) => [Math.floor(key / 100000), key % 100000])}; g.add(mesh);
     mesh.userData.cm.straight = new Set(mesh.userData.cm.edges.map(([i, j], q) => straight.has(i < j ? i * 100000 + j : j * 100000 + i) ? q : -1).filter(q => q >= 0));
     if (m.relief) pleatRelief(geo, m.relief, mesh.userData.cm.edges, m.verts.length);
+    if (C.quilt) quiltRelief(geo, C.quilt, m.role);
     // толщина на открытых краях (низ, манжеты, горловина): пришитые края — нет
     const nv = m.verts.length, ce = mesh.userData.cm.edges, sw = k => k < nv ? sewnG.has(m.verts[k]) : sewnG.has(m.verts[ce[k - nv][0]]) && sewnG.has(m.verts[ce[k - nv][1]]);
-    if (!(typeof window !== 'undefined' && window.__noEdge)) { const ed = buildEdge(mesh, sw, edgeThickness(FT, m.mat.userData.ft)); if (ed) g.add(ed); }
+    // мех опушки (характеристики карточки): по открытому краю капюшона — пышный валик ~3 см, ворс по тому же фото
+    if (C.fur && m.role === 'hood') { const ed = buildEdge(mesh, sw, C.fur.t, FUR_ROWS); if (ed) { const fm = m.mat.clone(); fm.roughness = 1; fm.sheen = new THREE.Color(0.5, 0.48, 0.45); fm.envMapIntensity = 0.15; clothify(fm, FT.suede); fm.userData.fur = true; ed.material = fm; ed.userData.fur = true; g.add(ed); } }
+    else if (!(typeof window !== 'undefined' && window.__noEdge)) { const ed = buildEdge(mesh, sw, edgeThickness(FT, m.mat.userData.ft)); if (ed) g.add(ed); }
   });
   { const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); } }
   // слой для следующих вещей — только корпус (перед, спинка); рукава и капюшон не расширяют «туловище» верхней вещи

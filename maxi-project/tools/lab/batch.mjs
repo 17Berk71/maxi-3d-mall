@@ -14,6 +14,7 @@ async function open() {
   b = await browser(); pg = await b.newPage({viewport: {width: 620, height: 920}, deviceScaleFactor: +(process.env.DPR || 1)}); pg.setDefaultTimeout(T);
   pg.on('pageerror', e => console.log('PAGEERR', e.message.slice(0, 200)));
   await pg.addInitScript(st => { window.__ST = st; }, ST);
+  await pg.addInitScript(x => { (x || '').split(',').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); window[k] = v == null ? 1 : +v; }); }, process.env.X || '');   // X=__флаг,__флаг2=число — отладочные переключатели
   await pg.addInitScript(() => { window.__maskPass = on => { const R = FIT._R(); if (!R) return;
     if (on) { R.__sv = []; R.__bg = R.scene.background; R.__fog = R.scene.fog; R.scene.background = new THREE.Color(0); R.scene.fog = null;
       const wm = new THREE.MeshBasicMaterial({color: 0xffffff, side: THREE.DoubleSide}); wm.toneMapped = false; wm.skinning = false;
