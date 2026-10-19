@@ -63,8 +63,10 @@ def render_side(d, id_, v):
 
 
 def torso_ratio(m):
-    """длина вещи к ширине корпуса (отрезок строки через середину, 35–65% высоты): рукава не в счёт."""
+    """длина вещи к ширине корпуса (отрезок строки через середину, 35–65% высоты): рукава не в счёт.
+    Щель посередине (вещь нараспашку, видно манекен) закрываем — иначе «корпус» был одной полочкой."""
     h, w = m.shape; cx = w // 2; ws = []
+    m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((1, max(3, int(w * 0.3))), np.uint8)) > 0
     for y in range(int(h * 0.35), int(h * 0.65)):
         row = m[y]
         if not row[cx]:
@@ -152,7 +154,8 @@ def source_quality(id_, item):
 def score(f, src, q, det):
     pens = {}
     if 'dE' in f: pens['цвет'] = 25 * ramp(f['dE'], 6, 22)
-    tx = max(abs(np.log2(max(f.get('detail', 1), 0.05))), abs(np.log2(max(f.get('mid', 1), 0.05))))
+    # средняя полоса: надетая вещь в складках, а вещь на студийном фото лежит ровно — на манекене складок больше и это нормально (×1.6)
+    tx = max(abs(np.log2(max(f.get('detail', 1), 0.05))), abs(np.log2(max(f.get('mid', 1), 0.05) / (1.6 if src in ('studio', 'photo') else 1.0))))
     pens['фактура'] = 20 * ramp(tx, 0.3, 1.3)
     if 'holes' in f: pens['дырки'] = 20 * ramp(f['holes'], 0.002, 0.02)
     if 'layout' in f: pens['рисунок'] = 25 * ramp(f['layout'], 5, 16)

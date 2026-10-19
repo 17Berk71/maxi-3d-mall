@@ -27,7 +27,9 @@ def flags(kind, name):
         out.update(zip=z, hood=True, states=[['closed', 'Застёгнута'], ['open', 'Расстёгнута'], ['hood', 'Капюшон']] if z else [['closed', 'Капюшон снят'], ['hood', 'Капюшон']])
     elif kind in ('coat', 'puffer'): out['states'] = [['closed', 'Застёгнут'], ['open', 'Нараспашку']]
     elif kind == 'jacket':
-        out['states'] = [['open', 'Нараспашку'], ['closed', 'Застёгнут']] if has(n, r'пиджак|жакет|блейзер') else [['closed', 'Застёгнута'], ['open', 'Нараспашку']]
+        # сначала застёгнут: распахнутые полочки на манекене висели узкими полосками по бокам. Нараспашку первым — только если
+        # так на фото (фабрика: open_photo)
+        out['states'] = [['closed', 'Застёгнут'], ['open', 'Нараспашку']] if has(n, r'пиджак|жакет|блейзер') else [['closed', 'Застёгнута'], ['open', 'Нараспашку']]
         if has(n, r'молни|зип') and not has(n, r'пиджак|жакет'): out['zip'] = True
     elif kind in ('tee', 'shirt', 'sweater'): out['states'] = [['loose', 'Навыпуск'], ['tucked', 'Заправлен']]
     elif kind == 'vest':
