@@ -47,7 +47,7 @@ export function drapePrepare(item, d, under) {
     const puffy = k === 'puffer' || /дут|пухов/i.test(item.name || '');
     if (qd && (qF || qB) && !(typeof window !== 'undefined' && window.__noQuilt)) { const sp_ = qF || qB, pitch = Math.min(0.16, Math.max(0.05, (sp_[sp_.length - 1] - sp_[0]) / (sp_.length - 1) * topSpec(item, d).L));
       C.quilt = {front: qF, back: qB, pitch, amp: puffy ? 0.009 : 0.003}; } }
-  const ft = fabricType(item), flatT = item.pleats ? true : DYE.test((item.name || '') + ' ' + (item.desc || '')) || item.dye ? 'gentle' : false, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
+  const ft = fabricType(item), flatT = item.pleats ? true : DYE.test((item.name || '') + ' ' + (item.desc || '')) || item.dye ? 'gentle' : ['skirt', 'pants', 'dress'].includes(k) ? 'solid' : false, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
   [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
   const zo = 0.21 * d.s, cell = (typeof window !== 'undefined' && window.__cell) || 0.022;
   let yPin = 0, info = {}, cover = null;
