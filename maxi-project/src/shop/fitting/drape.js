@@ -11,7 +11,7 @@ import {FABRIC, addPanel, addTube, makeCloth, mirrorPoly, segDist} from './patte
 import {QC, qcCloth} from './qc.js';
 import {runCloth} from './sim.js';
 import {itemCm} from './sizes.js';
-import {TOPK, bottomSpec, rowSpans, skirtProf, trueHem} from './specs.js';
+import {TOPK, bottomSpec, rowSpans, skirtProf, trueHem, topSpec} from './specs.js';
 import {seamBend} from './worker.js';
 import {shoulderRound} from './shoulder-round.js';
 import {relaxStretch} from './relax.js';
@@ -38,13 +38,35 @@ export function drapePrepare(item, d, under) {
   // Строчки — там же, где на фото (фабрика: a.quilt — доли высоты выреза), иначе шаг 10 см по выкройке
   { const qd = k === 'puffer' || item.puffer || (item.card && item.card.quilted);
     if (item.card && item.card.fur && !(typeof window !== 'undefined' && window.__noFur)) C.fur = {t: 0.028};   /* мех по краю капюшона (cloth-mesh.js) */
-    if (qd && !(typeof window !== 'undefined' && window.__noQuilt)) C.quilt = {front: aF.quilt || null, back: aB.quilt || null, pitch: 0.1, amp: k === 'puffer' || item.puffer ? 0.012 : 0.005}; }
+    // только там, где строчки видны на фото: пуховик без прострочек (Телодвижения 495712416) рисовался из дутых секций, а у
+    // стёганого жилета с одной прострочкой секции выходили надувными. Объём — у пуховика и «дутых», у остальных — только прострочка
+    const qF = aF.quilt && aF.quilt.length > 3 ? aF.quilt : null, qB = aB.quilt && aB.quilt.length > 3 ? aB.quilt : null;
+    const puffy = k === 'puffer' || /дут|пухов/i.test(item.name || '');
+    if (qd && (qF || qB) && !(typeof window !== 'undefined' && window.__noQuilt)) { const sp_ = qF || qB, pitch = Math.min(0.16, Math.max(0.05, (sp_[sp_.length - 1] - sp_[0]) / (sp_.length - 1) * topSpec(item, d).L));
+      C.quilt = {front: qF, back: qB, pitch, amp: puffy ? 0.009 : 0.003}; } }
   const ft = fabricType(item), flatT = item.pleats ? true : DYE.test((item.name || '') + ' ' + (item.desc || '')) || item.dye ? 'gentle' : false, mF = photoMat(item.tex.frontCut || item.tex.front, base, ft, flatT), mB = photoMat(item.tex.backCut || item.tex.back || item.tex.front, base, ft, flatT);
   [mF, mB].forEach(m => { m.side = THREE.DoubleSide; });
   const zo = 0.21 * d.s, cell = (typeof window !== 'undefined' && window.__cell) || 0.022;
   let yPin = 0, info = {}, cover = null;
   if (top) {
     const M = topMeasures(item, d), yTop = d.fN * H + 0.012; info = M;
+    // вырез спереди — по контуру вещи на фото (фабрика: a.neck — глубина, ширина, форма) и по характеристикам карточки
+    // (V-образный, квадратный, лодочка). Раньше у всех вещей была одна круглая горловина: декольте, V-вырез, бретели терялись
+    M.NS = 'round';
+    if (!item.stand && !item.collar && !hooded && !(typeof window !== 'undefined' && window.__noNeck)) {
+      const nk = aF.neck, ty = item.card && item.card.neckline, def = {v: [0.12, 0.17], square: [0.08, 0.2], boat: [0.03, 0.26]}[ty];
+      const dep = nk ? nk.d * M.L : def ? def[0] : 0, wid = nk ? 2 * nk.w * (M.W / 2) : def ? def[1] : 0;
+      // на бретелях (комбинация, сарафан): над плечом только лямки ~2.5 см, вырез глубокий спереди и сзади
+      if ((item.card && item.card.straps) || (M.noSleeve && /бретел|комбинац/i.test(item.name || ''))) {
+        M.NW = Math.max(M.NW, M.S - 0.09); M.ND = Math.max(M.ND, ty === 'square' ? 0.1 : 0.14, nk ? Math.min(0.2, nk.d * M.L) : 0); M.NDb = Math.max(M.NDb, 0.05);
+        M.NS = ty === 'square' ? 'square' : ty === 'round' ? 'round' : 'v'; M.straps = true; }   /* лямки держатся на плечах (липкие точки), иначе тяжёлый атлас сползал к талии */
+      else if (dep > M.ND + 0.01 || wid > M.NW + 0.02) {
+        M.ND = Math.max(M.ND, Math.min(0.26, dep)); M.NW = Math.max(M.NW, Math.min(0.3, wid, M.S - 0.06));
+        M.NS = ty === 'v' || ty === 'square' ? ty : nk && nk.v < 0.72 ? 'v' : nk && nk.v > 0.93 ? 'square' : 'round'; } }
+    const neckPt = (t, nd, front) => { const sh_ = front ? M.NS : 'round';
+      if (sh_ === 'v') return [M.NW / 2 * t, nd * (1 - t)];
+      if (sh_ === 'square') return t < 0.5 ? [M.NW / 2 * 0.88 * t / 0.5, nd] : [M.NW / 2 * (0.88 + 0.12 * (t - 0.5) / 0.5), nd * (1 - (t - 0.5) / 0.5)];
+      return [M.NW / 2 * Math.sin(t * Math.PI / 2), nd * Math.cos(t * Math.PI / 2)]; };
     // длина в мерках считается от 0.848H (старая геометрия), а верх выкройки — выше: низ вещи с фото на модели должен остаться на своём месте
     if (M.sp && M.sp.lenPhoto) M.L += yTop - d.fHPS * H;
     // утеплитель съедает длину (ткань идёт в обход груди и плеч на толщине): выкройке — запас, проверке — длина из каталога
@@ -59,12 +81,20 @@ export function drapePrepare(item, d, under) {
       // манекен по сетке: низ проймы не выше подмышки тела (иначе рука давит в шов снизу — растяжение под мышкой)
       if (d.mh) M.AD = Math.max(M.AD, yTop - d.mh.armpit + (M.noSleeve ? 0.045 : 0.015)); }   /* без рукавов пройма открыта ниже подмышки, как у сарафана */
     // что закрывает вещь на теле (для окраски тела под ней, см. paintBody): корпус от низа до шеи, рука — на длину рукава
-    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, arm: M.noSleeve ? 0 : Math.min(1.0, ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L)};   /* рукав кончается у запястья (дальше — кисть, её не красим: были тёмные «перчатки») */
+    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, neckOpen: M.ND > 0.085, arm: M.noSleeve ? 0 : Math.min(1.0, ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L)};   /* рукав кончается у запястья (дальше — кисть, её не красим: были тёмные «перчатки») */
     // контур половины (x ≥ 0) и метки отрезков; зеркалим
     const arm = [], nA = 6; for (let i = 0; i <= nA; i++) { const t = i / nA, x = M.S / 2 + (M.W / 2 - M.S / 2) * Math.pow(t, M.noSleeve ? 4 : 2.2) - (M.noSleeve ? 0.03 : 0.012) * Math.sin(t * Math.PI),   /* без рукавов — пройма вырезана внутрь: иначе угол детали у подмышки висел на руке «рукавчиком» */ y = M.SD + (M.AD - M.SD) * t; arm.push([x, y]); }
     // бок от проймы до низа — по ширине вещи на фото (приталенная, прямая, расклешённая книзу — у платья, пальто),
     // но не уже тела на этой высоте (у длинных вещей ниже шага — бёдра)
     const flare = k === 'dress' || k === 'coat';
+    // длинная вещь ниже шага (платье, пальто): невидимый «подъюбник» по ширине вещи, как у юбки — иначе подол проваливался
+    // между ног и спереди висел «хвостом» (вязаное поло, комбинация, платье O'STIN). Коллайдер: эллипс чуть меньше вещи
+    { const yC = d.mh ? d.mh.crotch : 0.47 * H, yHem = yTop - M.L;
+      if (yHem < yC - 0.05 && M.sp && M.sp.F && !(typeof window !== 'undefined' && window.__noUnderDress)) {
+        const ua = under ? Array.from(under.a) : new Array(101).fill(0), ub = under ? Array.from(under.b) : new Array(101).fill(0);
+        for (let i = 0; i <= 100; i++) { const y = i / 100 * H; if (y < yHem + 0.02 || y > yC + 0.02) continue;
+          const r = M.sp.F(y) / Math.PI * 0.86 * Math.min(1, (yC + 0.02 - y) / 0.08); if (r <= 0) continue; ua[i] = Math.max(ua[i] || 0, r * 1.1); ub[i] = Math.max(ub[i] || 0, r * 0.82); }
+        under = {a: ua, b: ub, raw: 1}; } }
     const sideTail = (pts, labs) => { const n_ = flare ? 10 : 6, rib = k === 'sweater' || k === 'hoodie' || k === 'puffer', i0 = pts.length;
       for (let i = 1; i <= n_; i++) { const t = i / n_, y = M.AD + (M.L - M.AD) * t, yw = Math.max(0.5, (yTop - y) / H), ab = bodyAB(d, yw), bodyF = ellP(ab.a, ab.b) / 2 + 0.012;
         let w = Math.max(interp(M.sp.Fs, t), bodyF); if (rib && i === n_) w = Math.max(bodyF, Math.min(w, M.HW)); if (i === 1) w = Math.max(w, Math.min(M.W, w * 1.04));
@@ -72,16 +102,16 @@ export function drapePrepare(item, d, under) {
       // клёш от талии: бок длиннее середины — низ у боков поднять (иначе по бокам «углы» ниже подола), низ к середине — дугой
       if (flare) { let iw = i0; for (let i = i0; i < pts.length; i++) if (pts[i][0] < pts[iw][0] - 1e-4) iw = i;
         trueHem(pts, iw); const [hx, hy] = pts[pts.length - 1];
-        if (M.L - hy > 0.004) for (let i = 1; i <= 3; i++) { const t = i / 4; pts.push([hx * (1 - t), hy + (M.L - hy) * Math.sin(t * Math.PI / 2)]); labs.push('hem'); } } };
-    const mk = nd => { const pts = [], labs = [];
-      for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push([M.NW / 2 * Math.sin(t * Math.PI / 2), nd * Math.cos(t * Math.PI / 2)]); labs.push(i < 5 ? 'neck' : 'shoulder'); }
+        if (M.L - hy > 0.004) for (let i = 1; i <= 5; i++) { const t = i / 6; pts.push([hx * (1 - t), hy + (M.L - hy) * t * t * (3 - 2 * t)]); labs.push('hem'); } } };   /* низ к боку подходит полого (под прямым углом к боковому шву): дугой «синус» угол у бока был острым и торчал «хвостом» на бедре */
+    const mk = (nd, front) => { const pts = [], labs = [];
+      for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push(neckPt(t, nd, front)); labs.push(i < 5 ? 'neck' : 'shoulder'); }
       arm.forEach((p, i) => { pts.push(p); labs.push(i < nA ? 'arm' : 'side'); });
       sideTail(pts, labs); pts.push([0, M.L]);
       return mirrorPoly(pts, labs); };
     // uv: корпус на фото — между cx±hw, по высоте 0..1
     // верхний край выкройки (горловина, плечо) совпадает с верхним краем вещи на фото в том же столбце:
     // иначе вырез горловины с фото (прозрачный) ложится на ткань ниже выреза и видна щель
-    const topY = (x, nd) => { const t = Math.abs(x); if (t < M.NW / 2) return nd * Math.cos(Math.asin(Math.min(1, t / (M.NW / 2)))); return Math.min(M.SD, M.SD * (t - M.NW / 2) / Math.max(0.01, M.S / 2 - M.NW / 2)); };
+    const topY = (x, nd) => { const t = Math.abs(x); if (t < M.NW / 2) { const q = Math.min(1, t / (M.NW / 2)), sh_ = nd === M.ND ? M.NS : 'round'; return sh_ === 'v' ? nd * (1 - q) : sh_ === 'square' ? (q < 0.88 ? nd : nd * (1 - (q - 0.88) / 0.12)) : nd * Math.cos(Math.asin(q)); } return Math.min(M.SD, M.SD * (t - M.NW / 2) / Math.max(0.01, M.S / 2 - M.NW / 2)); };
     const photoTop = g => { if (!g) return () => 0; const T = []; for (let c = 0; c < g.gw; c++) { let r = 0; while (r < g.gh && g.grid[r][c] !== '1') r++; T.push(r < g.gh ? r / g.gh : 1); }
       return u => { const c = Math.max(0, Math.min(g.gw - 1, Math.floor(u * g.gw))), w = [T[c - 1], T[c], T[c + 1]].filter(v => v != null && v < 1).sort((a, b) => a - b); return w.length ? w[w.length >> 1] : 0; }; };
     // низ корпуса на фото: у длинных рукавов на вешалке рукава свисают ниже корпуса — низ сетки не подол
@@ -109,10 +139,10 @@ export function drapePrepare(item, d, under) {
           const cl = mirror ? a.cx : cAt(a, v), side_ = Math.sign(x) * (mirror ? -1 : 1), edge = side_ > 0 ? e[1] : e[0];
           const uRow = cl + (edge - cl) * f * (item.shape && item.shape.worn ? 0.92 : 0.985), uOld = mirror ? u0 : cAt(a, v) + sx_; return [uOld + (uRow - uOld) * t, v]; } }
       return [mirror ? u0 : cAt(a, v) + sx_, v]; }; };
-    const F = mk(M.ND), B = mk(M.NDb);
+    const F = mk(M.ND, true), B = mk(M.NDb, false);
     // половина переда (расстёгнута): контур до середины, край по середине — свободный (молния/борт)
     const mkHalf = (nd, sgn) => { const pts = [], labs = [];
-      for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push([M.NW / 2 * Math.sin(t * Math.PI / 2), nd * Math.cos(t * Math.PI / 2)]); labs.push(i < 5 ? 'neck' : 'shoulder'); }
+      for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push(neckPt(t, nd, true)); labs.push(i < 5 ? 'neck' : 'shoulder'); }
       arm.forEach((p, i) => { pts.push(p); labs.push(i < nA ? 'arm' : 'side'); });
       sideTail(pts, labs); pts.push([0, M.L]); labs.push('cf');
       return {P: pts.map(([x, y]) => [sgn * (x + 0.004), y]), L: labs}; };
@@ -148,14 +178,14 @@ export function drapePrepare(item, d, under) {
     if (open) C.hold = fronts.flatMap(pf => pf.pts.filter(p => p.edge && p.lab === 'cf').map(p => p.g));
     // нараспашку вещь держится только на плечах и у горловины сзади: касание там не скользит (как капюшон на голове) —
     // иначе широкая вещь (оверсайз, шире плеч фигуры) сползала с узких плеч целиком, оставались одни рукава
-    if ((open || ['jacket', 'coat', 'puffer', 'vest'].includes(k)) && !(typeof window !== 'undefined' && window.__noOpenStick)) fronts.concat([pb]).forEach(P_ => P_.pts.forEach(p => { if (p.edge && (p.lab === 'neck' || p.lab === 'shoulder' || lb_(p) === 'shoulder')) (C.stickyIds = C.stickyIds || []).push(p.g); }));
+    if ((open || M.straps || ['jacket', 'coat', 'puffer', 'vest'].includes(k)) && !(typeof window !== 'undefined' && window.__noOpenStick)) fronts.concat([pb]).forEach(P_ => P_.pts.forEach(p => { if (p.edge && (p.lab === 'neck' || p.lab === 'shoulder' || lb_(p) === 'shoulder')) (C.stickyIds = C.stickyIds || []).push(p.g); }));
     if (tucked) fronts.concat([pb]).forEach(P_ => P_.pts.forEach(p => { if (p.edge && p.lab === 'hem') C.pin[p.g] = 1; }));
     // рукава: трубы вдоль руки, верхнее кольцо вшито в пройму (перед: от плеча к подмышке — спереди трубы; спинка — сзади)
     // нет отдельного фото рукава — ткань берём с бока корпуса на фото (узкая полоса): цвет и фактура как у корпуса
     // на фото с человеком «рукав» с бока корпуса — это рука, фон и край вещи (пятна и треугольник на рукаве): ткань рукава
     // берём с чистого места переда — между серединой (планка, пуговицы) и боком, ниже груди
-    const merged = item.shape && item.shape.merged, worn = item.shape && item.shape.worn, ownS = item.tex.sleeve && !merged && !worn, j = armJ(d), sTex = ownS ? item.tex.sleeve : item.tex.frontCut || item.tex.front, mS = photoMat(sTex, base, ft, flatT === 'gentle' ? 'gentle' : false); mS.side = THREE.DoubleSide;
-    const sK = merged ? 0.3 : 0.62, sUV = ownS ? (u, v) => [0.22 + 0.56 * u, 0.04 + 0.92 * v] :   /* края снимка рукава — блик и тень сгиба (на окате выходили серые клинья) */ worn ? (u, v) => [aF.cx + (aF.hw || 0.3) * (0.32 + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.5 + 0.2 * v] : (u, v) => [aF.cx + (aF.hw || 0.3) * (sK + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.3 + 0.45 * v];   // рукава слились с корпусом на фото — ткань ближе к середине (с края там рука и блик)
+    const merged = item.shape && item.shape.merged, worn = item.shape && item.shape.worn, poseS = !!(item.shape && item.shape.sleeve_pose && item.tex.sleeve), ownS = item.tex.sleeve && ((!merged && !worn) || poseS), j = armJ(d), sTex = ownS ? item.tex.sleeve : item.tex.frontCut || item.tex.front, mS = photoMat(sTex, base, ft, flatT === 'gentle' ? 'gentle' : false); mS.side = THREE.DoubleSide;
+    const sK = merged ? 0.3 : 0.62, sUV = poseS ? (u, v) => [0.06 + 0.88 * (1 - Math.abs(2 * (u - Math.floor(u)) - 1)), 0.02 + 0.96 * v] : ownS ? (u, v) => [0.22 + 0.56 * u, 0.04 + 0.92 * v] :   /* poseS — полоса вдоль руки с фото на модели (видна передняя половина рукава: по кругу туда и обратно) */   /* края снимка рукава — блик и тень сгиба (на окате выходили серые клинья) */ worn ? (u, v) => [aF.cx + (aF.hw || 0.3) * (0.32 + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.5 + 0.2 * v] : (u, v) => [aF.cx + (aF.hw || 0.3) * (sK + 0.1 * Math.abs(Math.sin(u * Math.PI))), 0.3 + 0.45 * v];   // рукава слились с корпусом на фото — ткань ближе к середине (с края там рука и блик)
     let armLen = 0; for (let i = 1; i < arm.length; i++) armLen += Math.hypot(arm[i][0] - arm[i - 1][0], arm[i][1] - arm[i - 1][1]);
     // окат = длине проймы по выкройке (перед + спинка); иначе шов растягивает верх рукава («рожки» на плечах)
     // ×1.1 — запас оката, как у настоящего рукава: пройма на теле растягивается, и без запаса верх рукава натянут (автопроверка «натяжение» 3–10% у рукавов)

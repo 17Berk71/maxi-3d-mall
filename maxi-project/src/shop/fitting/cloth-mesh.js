@@ -72,7 +72,7 @@ function quiltRelief(geo, q, role) {
   if (!q) return;
   const pos = geo.attributes.position.array, nor = geo.attributes.normal.array, uv = geo.attributes.uv.array, uvm = geo.attributes.uvm ? geo.attributes.uvm.array : null, col = geo.attributes.color ? geo.attributes.color.array : null;
   const st = role === 'front' ? q.front : role === 'back' ? q.back : null, n = pos.length / 3, n0 = nor.slice();
-  if (!st && !uvm) return;
+  if (!st && (role === 'front' || role === 'back' || !uvm)) return;   /* у переда/спинки без строчек на фото — без рельефа (не выдумываем секции) */
   for (let k = 0; k < n; k++) { let t;
     if (st && st.length > 2) { const v = 1 - uv[k * 2 + 1]; let i = 0; while (i < st.length - 1 && st[i + 1] < v) i++;
       if (v < st[0] || v > st[st.length - 1]) { const sp = (st[st.length - 1] - st[0]) / (st.length - 1); t = ((v - st[0]) / sp) % 1; if (t < 0) t += 1; }
