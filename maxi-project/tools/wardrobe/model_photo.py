@@ -218,7 +218,59 @@ def paint_over_inner(im, m):
 
 
 LAST_OCC = None   # доля корпуса вещи, закрытая руками на последнем фото (для meta и проверки внешнего вида)
+LAST_SLEEVE = None  # ткань рукава, снятая вдоль руки по позе (u — поперёк рукава, v — от плеча к манжете)
 LAST_OPEN = False  # на фото вещь расстёгнута (посередине видна кофта под ней) — в примерочной сначала «нараспашку»
+
+
+def sleeve_strip(im, m, kp, H=256, W=96):
+    """Ткань рукава по позе: полоса вдоль руки (плечо → локоть → запястье) внутри маски вещи, выпрямленная в прямоугольник.
+    Раньше у фото на модели рукав брал ткань с чистого места переда — рисунок и фактура рукава пропадали (пользователь:
+    «рисунок на рукавах должен совпадать с рисунком на теле»). Берём руку, у которой больше ткани в маске; рукав короче руки —
+    полоса до его конца."""
+    best = None
+    sl, sr = np.array(kp['sh_l'][:2]), np.array(kp['sh_r'][:2]); shw = np.linalg.norm(sl - sr)
+    if shw < 20: return None
+    for s_ in ('l', 'r'):
+        pts = [kp[f'{j}_{s_}'] for j in ('sh', 'el', 'wr')]
+        if min(p[2] for p in pts[:2]) < 0.3: continue
+        P = [np.array(p[:2]) for p in pts if p[2] >= 0.3]
+        seg = [np.linalg.norm(P[i + 1] - P[i]) for i in range(len(P) - 1)]; Ltot = sum(seg)
+        if Ltot < shw * 0.4: continue
+        rows = []
+        for k in range(H):
+            d = Ltot * (k + 0.5) / H; i = 0
+            while i < len(seg) - 1 and d > seg[i]: d -= seg[i]; i += 1
+            t = (P[i + 1] - P[i]) / max(seg[i], 1e-6); p = P[i] + t * min(d, seg[i]); nrm = np.array([-t[1], t[0]])
+            lim = shw * 0.32; hw = [0, 0]
+            for sgn_i, sg in enumerate((1, -1)):
+                r = 0
+                while r < lim:
+                    q = (p + nrm * sg * (r + 1)).astype(int)
+                    if not (0 <= q[0] < m.shape[1] and 0 <= q[1] < m.shape[0]) or not m[q[1], q[0]]: break
+                    r += 1
+                hw[sgn_i] = r
+            rows.append((p, nrm, hw))
+        cov = np.array([min(h[0], h[1]) > shw * 0.04 for _, _, h in rows])
+        if cov[:H // 3].mean() < 0.6: continue
+        last = H - 1
+        while last > H // 4 and not cov[last]: last -= 1
+        score = cov[:last + 1].mean() * last
+        if best is None or score > best[0]: best = (score, rows[:last + 1])
+    if best is None: return None
+    rows = best[1]; mx = np.zeros((len(rows), W), np.float32); my = np.zeros_like(mx)
+    hwm = np.median([h[0] + h[1] for _, _, h in rows]) / 2
+    for k, (p, nrm, h) in enumerate(rows):
+        c = p + nrm * (h[0] - h[1]) / 2; hk = max(3, min((h[0] + h[1]) / 2, hwm * 1.3))
+        for j in range(W):
+            o = (j / (W - 1) * 2 - 1) * hk * 0.85; q = c + nrm * o; mx[k, j] = q[0]; my[k, j] = q[1]
+    strip = cv2.remap(im, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    inside = cv2.remap((m > 0).astype(np.uint8) * 255, mx, my, cv2.INTER_NEAREST, borderValue=0)
+    ycc = cv2.cvtColor(strip, cv2.COLOR_BGR2YCrCb)   # кисть, фон за краем рукава — не ткань: заливаем тканью вокруг
+    skin = (ycc[..., 1] > 137) & (ycc[..., 1] < 173) & (ycc[..., 2] > 77) & (ycc[..., 2] < 127) & (ycc[..., 0] > 60)
+    bad = ((inside < 128) | (skin if skin.mean() < 0.35 else False)).astype(np.uint8)
+    if bad.mean() > 0.5: return None
+    if bad.any(): strip = cv2.inpaint(strip, cv2.dilate(bad, np.ones((3, 3), np.uint8)), 5, cv2.INPAINT_TELEA)
+    return cv2.resize(strip, (128, 256), interpolation=cv2.INTER_AREA)
 
 
 def pose_cleanup(im, m, kind):
@@ -226,8 +278,8 @@ def pose_cleanup(im, m, kind):
     2) руки поверх корпуса (скрещены, в карманах, держат полу) — закрасить тканью вокруг;
     3) у расстёгнутой верхней одежды посередине видна кофта под ней — закрасить цветом вещи с боков корпуса
     (на манекене вещь застёгнута)."""
-    global LAST_OCC, LAST_OPEN
-    LAST_OCC = None; LAST_OPEN = False
+    global LAST_OCC, LAST_OPEN, LAST_SLEEVE
+    LAST_OCC = None; LAST_OPEN = False; LAST_SLEEVE = None
     if kind not in TOPS: return im, m
     try:
         import pose
@@ -240,6 +292,9 @@ def pose_cleanup(im, m, kind):
         n, lb, st, _ = cv2.connectedComponentsWithStats(m2)
         if n > 1 and st[1:, cv2.CC_STAT_AREA].max() > 0.4 * m.sum(): m = (lb == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
     occ, om = pose.occlusion(m, kp, im.shape)
+    if kind != 'vest':
+        try: LAST_SLEEVE = sleeve_strip(im, m, kp)
+        except Exception: LAST_SLEEVE = None
     LAST_OCC = occ
     if om is not None and om.any() and kind != 'vest' and occ < 0.35:
         k = cv2.dilate(om.astype(np.uint8), np.ones((7, 7), np.uint8)) & m

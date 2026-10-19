@@ -11,6 +11,7 @@ for it in json.load(open(os.path.join(RAW, 'wb_items.json'))):
     if not os.path.exists(p): continue
     m = json.load(open(p)); old = json.dumps(m, sort_keys=True)
     if it.get('sizes'): m['sizes'] = it['sizes']
+    if it.get('kind') and m.get('kind') != it['kind'] and it['kind'] in ('vest', 'puffer', 'jacket', 'coat'): m['kind'] = it['kind']   # вид уточнён по названию (жилет, пуховик)
     for f in FLAGS:
         if it.get(f): m[f] = it[f]
     if it.get('states'): m['states'] = sorted(it['states'], key=lambda s_: s_[0] != 'open') if m.get('open_photo') else it['states']

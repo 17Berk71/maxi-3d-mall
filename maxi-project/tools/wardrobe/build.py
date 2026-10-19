@@ -62,6 +62,8 @@ def build(it, out=None, debug=True):
             if c0.get('outseam') and c0.get('inseam'): cf = (c0['outseam'] - c0['inseam']) / c0['outseam']
         tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf, flat and it.get('src') != 'studio') if part is bottom_parts else part(im, m, it['kind'])
         if it.get('src') == 'model' and side == 'front' and model_photo.LAST_HEM is not None: meta['hem_waist'] = model_photo.LAST_HEM
+        if it.get('src') == 'model' and side == 'front' and model_photo.LAST_SLEEVE is not None and it['kind'] in TOPS and it['kind'] != 'vest':
+            sleeve = model_photo.LAST_SLEEVE; meta.setdefault('pose', {})['sleeve'] = True   # ткань рукава — с самого рукава на фото
         if it.get('src') == 'model' and side == 'front':
             if model_photo.LAST_OCC is not None: meta['occ'] = round(model_photo.LAST_OCC, 3)   # доля вещи, закрытая руками (проверка внешнего вида)
             if model_photo.LAST_OPEN and meta.get('states') and any(s_[0] == 'open' for s_ in meta['states']):
@@ -92,6 +94,7 @@ def build(it, out=None, debug=True):
         if it.get(k): meta['shape'][k] = it[k]
     if it.get('src') == 'model': meta['shape']['hang'] = False; meta['shape']['worn'] = True   # ширины сняты с вещи на человеке
     if meta.get('hem_waist') is not None: meta['shape']['hem_waist'] = meta.pop('hem_waist')
+    if (meta.pop('pose', None) or {}).get('sleeve'): meta['shape']['sleeve_pose'] = True   # sleeve.webp — полоса вдоль руки (model_photo.sleeve_strip)
     if meta.get('len_photo'): meta['shape']['len_photo'] = meta.pop('len_photo'); meta['shape']['len_photo_est'] = meta.pop('len_photo_est', False)
     if it.get('ref_len'): meta['shape']['ref_len'] = it['ref_len']
     if it.get('sizes'): meta['sizes'] = it['sizes']

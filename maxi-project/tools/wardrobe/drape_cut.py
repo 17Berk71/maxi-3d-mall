@@ -6,6 +6,39 @@ import numpy as np, cv2
 DRAPE_ROWS = 64
 
 
+def find_neck(mc, cx, hw):
+    """Вырез спереди по контуру вещи на фото: глубина (доля высоты выреза от линии плеч), полуширина (доля полуширины
+    корпуса hw) и форма (V — края прямые, круглый — пологий у середины). Раньше вырез у всех вещей был одной формы:
+    V-вырез, декольте, бретели не передавались."""
+    H, W = mc.shape; c = int(cx * W); hwp = hw * W
+    if hwp < 20: return None
+    top = np.full(W, np.nan)
+    for x in range(max(0, int(c - hwp)), min(W, int(c + hwp) + 1)):
+        ys = np.where(mc[:, x] > 0)[0]
+        if len(ys): top[x] = ys[0]
+    xs = np.arange(W); prof = lambda f: np.nanmedian(top[max(0, int(c + f * hwp) - 2):int(c + f * hwp) + 3]) if True else 0
+    sh = np.nanmin([np.nanmedian(top[max(0, int(c - f * hwp) - 3):int(c - f * hwp) + 4]) for f in (0.55, 0.7, 0.85)] +
+                   [np.nanmedian(top[int(c + f * hwp) - 3:int(c + f * hwp) + 4]) for f in (0.55, 0.7, 0.85)])
+    mid = np.nanmedian(top[c - 2:c + 3])
+    if not np.isfinite(sh) or not np.isfinite(mid): return None
+    depth = mid - sh
+    if depth < H * 0.02: return None
+    # полуширина выреза: где край поднимается почти до линии плеч (в среднем по двум сторонам)
+    wds = []
+    for sg in (1, -1):
+        for k in range(1, int(hwp)):
+            x = c + sg * k
+            if 0 <= x < W and np.isfinite(top[x]) and top[x] - sh < depth * 0.15: wds.append(k); break
+    if not wds: return None
+    wd = float(np.mean(wds))
+    half = []
+    for sg in (1, -1):
+        x = int(c + sg * wd / 2)
+        if 0 <= x < W and np.isfinite(top[x]): half.append((top[x] - sh) / depth)
+    vness = float(np.mean(half)) if half else 0.8
+    return dict(d=round(float(depth / H), 4), w=round(float(wd / hwp), 3), v=round(float(vness), 2))
+
+
 def find_quilt(img, mc, cx):
     """Строчки стёжки на фото (пуховик, стёганая куртка): по строкам — медиана яркости в средней полосе вещи, тонкие тёмные
     провалы с почти ровным шагом. → доли высоты выреза (0..1) или None."""
@@ -21,9 +54,9 @@ def find_quilt(img, mc, cx):
     ys = np.arange(H); prof = np.interp(ys, ys[ok], prof[ok])
     hp = cv2.GaussianBlur(prof.reshape(-1, 1), (1, 0), sigmaX=1, sigmaY=H / 120).ravel() - cv2.GaussianBlur(prof.reshape(-1, 1), (1, 0), sigmaX=1, sigmaY=H / 25).ravel()
     sd = hp[ok].std()
-    if sd < 0.8: return None
+    if sd < 1.5: return None   # почти ровно — строчек на фото не видно (дутый без прострочек): рельеф не рисуем
     mins = [y for y in range(2, H - 2) if ok[y] and hp[y] < -0.8 * sd and hp[y] == hp[max(0, y - H // 30):y + H // 30].min()]
-    if len(mins) < 3: return None
+    if len(mins) < 4: return None
     d = np.diff(mins)
     if d.mean() < H * 0.04 or d.std() / d.mean() > 0.45: return None
     return [round(y / H, 4) for y in mins]
@@ -83,6 +116,9 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     if not zc and btn and btn['line']: zc = btn['line']
     if zc: a['zipc'] = zc
     if btn and btn['buttons']: a['buttons'] = btn['buttons']
+    if side == 'front' and kind in ('tee', 'shirt', 'sweater', 'dress', 'vest', 'jacket', 'coat', 'hoodie', 'puffer') and a.get('hw'):
+        nk = find_neck(mc, a['cx'], a['hw'])
+        if nk: a['neck'] = nk
     if kind in ('puffer', 'vest', 'jacket', 'coat'):
         q = find_quilt(filled, mc, a['cx'])
         if q: a['quilt'] = q

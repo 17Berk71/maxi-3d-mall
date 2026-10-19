@@ -110,6 +110,7 @@ def main():
     for gp in sorted(glob.glob(os.path.join(RAW, 'wb_*', 'wb_*', 'garment.json'))):
         g = json.load(open(gp)); d = os.path.dirname(gp); kind = g['kind']
         if kind in SKIP: skipped.append((g['nm'], kind)); continue
+        if kind in ('coat', 'jacket', 'puffer') and re.search(r'жилет|безрукав', g['name'].lower()): kind = 'vest'   # «жилет стёганый» был курткой с рукавами (Tom Tailor 473696127)
         if kind in ('coat', 'jacket') and re.search(r'пуховик|стеган|стёган|дутик', g['name'].lower()): kind = 'puffer'   # стёганое пальто — по ткани и объёму пуховик
         if kind == 'coat' and re.search(r'бомбер|куртк', g['name'].lower()) and not re.search(r'пальто\b', g['name'].lower()): kind = 'jacket'   # «удлинённый бомбер» — куртка
         ph, how = pick_photos(g, d)

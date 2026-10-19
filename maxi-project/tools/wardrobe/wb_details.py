@@ -39,6 +39,8 @@ def details(card, name=''):
     fur = get('Опции опушки', 'Мех опушки/отделки')
     if re.search(r'несъемная опушка|съемная опушка|мех искусств|натуральн', fur) or re.search(r'мех', deco) or re.search(r'мехов|с мехом|экомех|опушк', n): d['fur'] = True
     if re.search(r'стеган|дут|пухов', feat + ' ' + tex + ' ' + n) or re.search(r'пух', get('Утеплитель')) and 'без' not in get('Утеплитель'): d['quilted'] = True
+    # дутая (объём секций) или только прострочка по плоской ткани
+    if d.get('quilted') and (re.search(r'дут|пухов', feat + ' ' + n) or re.search(r'пух', get('Утеплитель')) and 'без' not in get('Утеплитель')): d['puffy'] = True
     cl = get('Вид застежки')
     d['closure'] = 'zip' if 'молни' in cl else 'buttons' if re.search(r'пуговиц', cl) else 'snaps' if 'кнопк' in cl else 'none' if 'без' in cl else ''
     pk = get('Тип карманов')
@@ -81,7 +83,7 @@ def flags(det, kind):
     if det.get('closure') == 'zip' and kind in ('hoodie', 'jacket', 'puffer', 'vest', 'coat', 'sweater'): f['zip'] = True
     if det.get('straps') and kind in ('dress', 'tee', 'shirt'): f['sleeveless'] = True
     if det.get('pleats') and kind in ('skirt', 'dress'): f['pleats'] = True
-    for k in ('fur', 'quilted', 'fabric', 'belt', 'chain', 'pockets', 'neckline'):
+    for k in ('fur', 'quilted', 'puffy', 'fabric', 'belt', 'chain', 'pockets', 'neckline', 'collar', 'straps'):
         if det.get(k): f['card_' + k] = det[k]
     return f
 
@@ -99,8 +101,8 @@ def missing(det, item, meta=None):
         btn = (((meta.get('drape') or {}).get('front') or {}).get('a') or {}).get('buttons')
         if not btn: out.append('пуговицы')
     # пока не умеем совсем — честно считаем отсутствующими
-    if det.get('fur') and not item.get('fur3d'): out.append('мех')
-    if det.get('quilted') and k in ('puffer', 'vest', 'jacket', 'coat') and not item.get('quilt3d'): out.append('стёжка')
+    # стёжку примерочная рисует рельефом у всех стёганых (cloth-mesh.js quiltRelief), мех — валиком по краю капюшона
+    if det.get('fur') and not item.get('hood'): out.append('мех')
     if det.get('belt') and k not in ('pants', 'jeans', 'shorts', 'skirt') and not item.get('belt3d'): out.append('пояс')
     if det.get('chain') and not item.get('chain3d'): out.append('цепочка')
     return out
