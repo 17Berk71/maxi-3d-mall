@@ -109,7 +109,15 @@ export function drapePrepare(item, d, under) {
     const mk = (nd, front) => { const pts = [], labs = [];
       for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push(neckPt(t, nd, front)); labs.push(i < 5 ? 'neck' : 'shoulder'); }
       arm.forEach((p, i) => { pts.push(p); labs.push(i < nA ? 'arm' : 'side'); });
-      sideTail(pts, labs); pts.push([0, M.L]);
+      sideTail(pts, labs);
+      // форма низа переда с фото (фабрика: a.hemp — насколько низ ниже бока от середины к боку): уголки жилета, разрез посередине
+      const hp = front && !flare && aF.hemp && !(typeof window !== 'undefined' && window.__noHemP) ? aF.hemp : null;
+      if (hp) { const [sx_, sy_] = pts[pts.length - 1], dC = hp[0] * M.L, ySide = M.L - Math.max(0, dC);
+        pts[pts.length - 1] = [sx_, ySide];
+        for (let i = 7; i >= 1; i--) { const f = i / 8, v = hp[Math.min(hp.length - 1, Math.round(f * 10))] || 0;   /* hp — через 0.1 полуширины от середины */
+          pts.push([sx_ * f, ySide + v * M.L]); labs.push('hem'); }
+        pts.push([0, ySide + hp[0] * M.L]); }
+      else pts.push([0, M.L]);
       return mirrorPoly(pts, labs); };
     // uv: корпус на фото — между cx±hw, по высоте 0..1
     // верхний край выкройки (горловина, плечо) совпадает с верхним краем вещи на фото в том же столбце:
