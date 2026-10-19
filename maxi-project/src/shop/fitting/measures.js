@@ -3,7 +3,7 @@ import {armX} from './body.js';
 import {armJ} from './geometry.js';
 import {FABRIC} from './pattern.js';
 import {itemCm} from './sizes.js';
-import {topSpec} from './specs.js';
+import {topSpec, isBlazer} from './specs.js';
 import {fit} from './state.js';
 
 // мерки верха (м): ширина лёжа W, длина L, плечи S, пройма AD, рукав SL/SO, горловина (у стойки вырез спереди неглубокий:
@@ -22,7 +22,9 @@ export function topMeasures(item, d) {
   const S = cm.shoulder ? cm.shoulder / 100 : Math.min(W * 1.02, W * 0.84 + loose * 0.9, 2 * (armX(d) + 0.09));            // оверсайз — спущенное плечо
   // без рукавов (сарафан, комбинация, жилет без таблицы): плечо не спускается за край плеча фигуры — иначе срез проймы висел
   // на руке «коротким рукавом»
-  const S_ = noSleeve && !cm.shoulder ? Math.min(S, 2 * armX(d) - 0.02) : S;
+  let S_ = noSleeve && !cm.shoulder ? Math.min(S, 2 * armX(d) - 0.02) : S;
+  // пиджак: плечо по плечу фигуры с подплечником (~2.5 см), не спущенное — кроме оверсайза
+  if (isBlazer(item) && !cm.shoulder && !/оверсайз|oversize/i.test(item.name || '') && !(typeof window !== 'undefined' && window.__noBlazer)) S_ = Math.min(W * 1.02, 2 * (armX(d) + 0.025));
   const AD = Math.min(0.34, 0.215 + loose * 0.6) * Math.pow(d.H / 1.8, 0.5);
   const SL = cm.sleeve ? cm.sleeve / 100 : long ? armJ(d).L * 0.98 + 0.03 - (S_ / 2 - armX(d)) : Math.max(0.16, Math.min(0.3, (sh.sl_len ? sh.sl_len * L * 0.6 : 0.2) + loose * 0.4));
   const SO = long ? (k === 'jacket' || k === 'coat' ? 0.15 : k === 'puffer' ? 0.17 : 0.11) : Math.max(0.15, 0.17 + loose * 0.5);

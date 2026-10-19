@@ -11,10 +11,11 @@ import {FABRIC, addPanel, addTube, makeCloth, mirrorPoly, segDist} from './patte
 import {QC, qcCloth} from './qc.js';
 import {runCloth} from './sim.js';
 import {itemCm} from './sizes.js';
-import {TOPK, bottomSpec, rowSpans, skirtProf, trueHem, topSpec} from './specs.js';
+import {isBlazer, TOPK, bottomSpec, rowSpans, skirtProf, trueHem, topSpec} from './specs.js';
 import {seamBend} from './worker.js';
 import {shoulderRound} from './shoulder-round.js';
 import {relaxStretch} from './relax.js';
+import {beltPrepare} from './belt3d.js';
 import {fit} from './state.js';
 // рисунок «пятнами» (тай-дай, распыление, градиент, камуфляж, фигуры): светотень с фото снимается мягко (прежним способом) —
 // точный способ принял бы плавные пятна рисунка за тени складок и стёр бы их
@@ -30,10 +31,12 @@ export function drapePrepare(item, d, under) {
   const st = item.state || '', open = st === 'open', tucked = st === 'tucked', hoodUp = st === 'hood', hooded = k === 'hoodie' || item.hood;
   // заправленный верх: ниже пояса брюк не отталкивается от них — край уходит внутрь, пояс брюк виден поверх
   if (tucked && under && fit.BOT_YW) { const lim = Math.round(fit.BOT_YW / d.H * 100) + 1; under = {a: under.a.map((v, i) => i <= lim ? 0 : v), b: under.b.map((v, i) => i <= lim ? 0 : v)}; }
-  const H = d.H, C = makeCloth(), fab = ((k === 'skirt' && item.pleats ? FABRIC.skirtP : k === 'vest' && item.puffer ? FABRIC.puffer : FABRIC[k]) || FABRIC.tee), push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
+  const H = d.H, C = makeCloth(), fab = ((k === 'skirt' && item.pleats ? FABRIC.skirtP : k === 'vest' && item.puffer ? FABRIC.puffer : isBlazer(item) && !(typeof window !== 'undefined' && window.__noBlazer) ? FABRIC.blazer : FABRIC[k]) || FABRIC.tee), push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
   // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
   C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front', fabric: item.color}, b));
+  // шнурок-завязка у талии (фабрика стёрла его с фото: a.cord) — бантом из шнура (decor.js)
+  if (aF.cord && !(typeof window !== 'undefined' && window.__noCord)) C.decor.push({role: 'front', type: 'bow', u: aF.cord.u, v: aF.cord.v, len: aF.cord.len, w: aF.cord.w, rgb: aF.cord.rgb, r: 0.01});
   // стёжка (пуховик, стёганые жилет/куртка/пальто): дутые секции между строчками — рельефом на показе (cloth-mesh.js quiltRelief).
   // Строчки — там же, где на фото (фабрика: a.quilt — доли высоты выреза), иначе шаг 10 см по выкройке
   { const qd = k === 'puffer' || item.puffer || (item.card && item.card.quilted);
@@ -81,7 +84,7 @@ export function drapePrepare(item, d, under) {
       // манекен по сетке: низ проймы не выше подмышки тела (иначе рука давит в шов снизу — растяжение под мышкой)
       if (d.mh) M.AD = Math.max(M.AD, yTop - d.mh.armpit + (M.noSleeve ? 0.045 : 0.015)); }   /* без рукавов пройма открыта ниже подмышки, как у сарафана */
     // что закрывает вещь на теле (для окраски тела под ней, см. paintBody): корпус от низа до шеи, рука — на длину рукава
-    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, neckOpen: M.ND > 0.085, arm: M.noSleeve ? 0 : Math.min(1.0, ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L)};   /* рукав кончается у запястья (дальше — кисть, её не красим: были тёмные «перчатки») */
+    cover = {y0: tucked ? yTuck + 0.03 : yTop - M.L + 0.06 + (fab.margin || 0) * 2, y1: yTop - M.ND - 0.012, nx: M.NW / 2 - 0.01, torso: !open, neckOpen: M.ND > 0.085, sx: M.noSleeve ? M.S / 2 : 0, arm: M.noSleeve ? 0 : Math.min(1.0, ((M.S / 2 - armX(d)) + M.SL) / armJ(d).L)};   /* рукав кончается у запястья (дальше — кисть, её не красим: были тёмные «перчатки») */
     // контур половины (x ≥ 0) и метки отрезков; зеркалим
     const arm = [], nA = 6; for (let i = 0; i <= nA; i++) { const t = i / nA, x = M.S / 2 + (M.W / 2 - M.S / 2) * Math.pow(t, M.noSleeve ? 4 : 2.2) - (M.noSleeve ? 0.03 : 0.012) * Math.sin(t * Math.PI),   /* без рукавов — пройма вырезана внутрь: иначе угол детали у подмышки висел на руке «рукавчиком» */ y = M.SD + (M.AD - M.SD) * t; arm.push([x, y]); }
     // бок от проймы до низа — по ширине вещи на фото (приталенная, прямая, расклешённая книзу — у платья, пальто),
@@ -373,6 +376,7 @@ export function drapePrepare(item, d, under) {
     C.sector = []; [1, -1].forEach(sg => { const sp_ = spansOf(polyOf(sg)); ['f', 'b'].forEach(k => parts[k + sg].pts.forEach(p => { if (p.y <= R + cell) return; const iv = sp_(p.y); if (!iv) return;
       const inn = sg > 0 ? iv[0] : iv[1], out = sg > 0 ? iv[1] : iv[0], t = (p.x - inn) / ((out - inn) || 1e-4); C.sector.push([p.g, k === 'f' ? 1 : -1, t < 0.3 ? -sg : t > 0.7 ? sg : 0, sg * (d.legX + 0.01)]); })); });
   }
+  beltPrepare(C, item, d, fab.margin);   // пояс с фото (фабрика стёрла его с ткани): стяжка в расчёте и лента на показе
   const finish = P => { if (typeof window !== 'undefined' && window.__dbgC) window.__dbgC.push({k, C, P, item, info, d});
   // окат рукава после расчёта кладём точно на край проймы (между сшитыми точками кольцо рукава иначе отходит — видна щель)
   const W_ = typeof window !== 'undefined' ? window : {};

@@ -7,6 +7,9 @@ import {itemCm, sizeOf} from './sizes.js';
 // длина вещи по спинке (м), если мерок нет: типичная для своего размера, чуть зависит от роста
 const LEN0 = {tee: 0.71, sweater: 0.68, hoodie: 0.68, jacket: 0.68, shirt: 0.76, coat: 1.0, puffer: 0.74, dress: 0.95, skirt: 0.62, vest: 0.62};
 // вещи «верха» в расчёте ткани (корпус + рукава): к ним относятся и пальто, пуховик, платье
+// пиджак (жакет, блейзер) сидит иначе, чем куртка: жёсткая ткань с прокладкой, плечо по плечу фигуры с подплечником,
+// приталенный — с вытачками по талии (пользователь: «посадка пиджака должна отличаться от посадки куртки»)
+export const isBlazer = item => item.kind === 'jacket' && /пиджак|жакет|блейзер|blazer/i.test(item.name || '');
 export const TOPK = new Set(['tee', 'sweater', 'hoodie', 'jacket', 'shirt', 'coat', 'puffer', 'dress', 'vest']);
 function cleanTail(arr) {
   const a = arr.slice(), med = a.slice(2, -3).sort((x, y) => x - y)[Math.floor((a.length - 5) / 2)] || a[0];
@@ -36,6 +39,13 @@ function photoProfile(item) {
   const out = []; for (let i = 0; i < 16; i++) { const r = Math.round(r0 + (bot - r0) * i / 15); const w3 = [run(r - 1), run(r), run(r + 1)].sort((x, y) => x - y)[1]; out.push(w3 * cw / L); }
   return out.some(v => !v) ? null : out;
 }
+// длина по точкам тела модели на фото (фабрика: shape.pose_len — 0 плечи, 1 бёдра, 2 колени, 3 щиколотки; model_photo.pose_len)
+// → высота на манекене по тем же точкам (доли роста: плечевой сустав 0.818, тазобедренный 0.53, колено 0.285, щиколотка 0.045).
+// Пользователь: «на фото платье ниже колена, на манекене выше». Нет позы — по названию: мини, до колена, миди, макси
+const LMK = [0.818, 0.53, 0.285, 0.045];
+export function poseY(s, H) { if (s <= 0) return (LMK[0] - s * (LMK[0] - LMK[1])) * H; if (s >= 3) return Math.max(0.01, (LMK[3] - (s - 3) * 0.04)) * H; const i = Math.floor(s), t = s - i; return (LMK[i] + (LMK[i + 1] - LMK[i]) * t) * H; }
+export function hemByName(item) { const n = (item.name || '').toLowerCase();
+  if (/макси|в пол\b|длинн(ое|ая) (платье|юбка)|maxi/.test(n)) return 2.95; if (/миди|midi/.test(n)) return 2.5; if (/до колен|knee/.test(n)) return 2.0; if (/мини\b|mini/.test(n)) return 1.45; return null; }
 export function topSpec(item, d) {
   const sh = item.shape || {}, cm = itemCm(item, d.b), k = item.kind, H = d.H;
   let L = cm.len ? cm.len / 100 : (LEN0[k] || 0.7) * (sh.crop ? 0.84 : 1) * Math.pow(H / 1.8, 0.6);
@@ -45,19 +55,27 @@ export function topSpec(item, d) {
   // длина в см по фото с моделью в полный рост (рост модели из карточки → см на пиксель; build.py) — после таблицы
   const lp = !cm.len && sh.len_photo ? sh.len_photo / 100 : 0, L0k = (LEN0[k] || 0.7) * Math.pow(H / 1.8, 0.6);
   if (lp && lp > L0k * 0.5 && lp < L0k * 2.2) L = lp;
-  const lenPhoto = !!(sh.worn && sh.hem_waist != null && !cm.len && !(lp && L === lp));
-  if (lenPhoto) {
+  let lenPose = false;
+  const lenPhoto0 = !!(sh.worn && sh.hem_waist != null && !cm.len && !(lp && L === lp));
+  if (lenPhoto0) {
     const yW = d.fW * H, yN = d.fN * H, yHemPhoto = yW - sh.hem_waist * (yN - yW) - 0.012 * H;
     L = d.fHPS * H - yHemPhoto;
     // низ «по фото» дальше разумного для вида (маска зацепила юбку или платье под вещью) — типовая длина вида
     const L0 = (LEN0[k] || 0.7) * Math.pow(H / 1.8, 0.6); const hi = k === 'coat' || k === 'puffer' || k === 'dress' ? 1.9 : 1.35; if (L > L0 * hi || L < L0 * 0.55) L = L0;
   }
+  // по позе модели — точнее «низа у пояса брюк» для длинных вещей (платье, пальто) и для любых, где низ ниже бёдер
+  const pl = sh.pose_len, sHem = pl && pl.hem != null ? pl.hem : (k === 'dress' && !cm.len && !lp ? hemByName(item) : null);
+  if (sHem != null && !cm.len && !lp && (sh.worn || !pl) && (k === 'dress' || k === 'coat' || k === 'puffer' || sHem > 1.15) && !(typeof window !== 'undefined' && window.__noPoseLen)) {
+    const Lp = d.fHPS * H - poseY(sHem, H); if (Lp > L0k * 0.5 && Lp < L0k * 2.4) { L = Lp; if (sh.worn) lenPose = true; } }
   // на вешалке вещь сужается (калибровка — футболка Zolla лёжа и на вешалке); у вязаных и плотных — меньше
   const hk = !sh.hang ? 1 : k === 'jacket' ? 0.86 : sh.merged ? 0.8 : 0.72;
   // рукава висят вдоль корпуса и закрывают боковые швы: корпус ≈ 85% общей ширины (у пиджака плечи жёсткие — 92%)
   // студийное фото лёжа (или на невидимом манекене) с рукавами вдоль корпуса: в «общую ширину» входят оба рукава целиком — корпус ≈ 0.68
   const flatM = sh.merged && !sh.hang && !sh.worn;
-  let Fs = sh.merged && sh.full ? new Array(16).fill(sh.full * (flatM ? 0.68 : k === 'jacket' ? 0.92 : 0.85) / hk * L) : cleanTail(sh.tw || [0.62]).map(v => v / hk * L);
+  // без рукавов (жилет, сарафан, комбинация) «слившихся рукавов» нет: общая ширина — это корпус. Раньше ×0.68 сужало корпус,
+  // и по пропорции фото жилет выходил длиннее (Tom Tailor: «на фото жилет, на манекене куртка, ещё и длиннее»), а комбинация — короче
+  const noSl = k === 'vest' || item.sleeveless || !!(item.card && item.card.straps);
+  let Fs = sh.merged && sh.full ? new Array(16).fill(sh.full * (noSl ? 1 : flatM ? 0.68 : k === 'jacket' ? 0.92 : 0.85) / hk * L) : cleanTail(sh.tw || [0.62]).map(v => v / hk * L);
   // платье/пальто на модели: руки вдоль корпуса — по ширине с рукавами силуэт прямой. Сам силуэт вещи (без рук) — в сетке фото:
   // ширина центральной полосы по строкам от подмышки до низа (приталенное, клёш)
   const gp = (k === 'dress' || k === 'coat') && sh.merged && !flatM ? photoProfile(item) : null;   // лёжа с рукавами вдоль — строка фото включает рукава: силуэт по ней ложно расширяется книзу
@@ -87,8 +105,11 @@ export function topSpec(item, d) {
     // лёжа с рукавами вдоль корпуса пропорция фото ненадёжна (ширина — уже рукавов, а не корпуса): длина не больше ×1.25 типовой
     // (×1.45 у «удлинённых»); иначе удлинённый бомбер Love Republic выходил пальто в пол
     const up = flatM ? (/удлин|макси|в пол|длинн/i.test(item.name || '') ? 1.45 : 1.25) : 1.9;
-    const L1 = clamp(L * f, L0k * 0.55, L0k * up), f1 = L1 / L; Fs = Fs.map(v => v * f1); L = L1;
+    // студийный снимок — вещь объёмом (невидимый манекен): спереди видно ~0.88 ширины лёжа, по ширине длина выходила длиннее
+    const L1 = clamp(L * f * (flatM && !noSl ? 0.88 : 1), L0k * 0.55, L0k * up), f1 = L1 / L; Fs = Fs.map(v => v * f1); L = L1;
   }
+  if (isBlazer(item) && /приталенн|slim|по фигуре/i.test(item.name || '') && !(typeof window !== 'undefined' && window.__noBlazer)) {
+    const n = Fs.length; Fs = Fs.map((v, i) => { const t = i / (n - 1), b = Math.exp(-((t - 0.42) ** 2) / 0.03); return v * (1 - 0.08 * b); }); }
   if (cm.chest) { const f = cm.chest / 100 / Fs[1]; Fs = Fs.map(v => v * f); if (!cm.len && !sh.worn && !sh.merged) L *= f; }
   const yHPS = d.fHPS * H, yHem = yHPS - L, yN = d.fN * H;
   const bc = bodyAB(d, 0.72), Fbody = ellP(bc.a, bc.b) / 2;
@@ -100,6 +121,7 @@ export function topSpec(item, d) {
   const Sx = Math.max(d.chest * d.shX * 0.98, armX(d) + 0.02), aFree = solve(x => ellP(x, x * 0.6), 0.01, 1.2, 2 * F(yArm - 0.03));
   const xS = Math.max(Sx * 0.92 + ease, aFree * 0.98, armX(d) - 0.005);   // плечо вещи накрывает плечевой сустав
   const ySh = d.mh ? shTopAt(d, xS) + ease : xS < Sx ? 0.8 * H + d.chest * 0.42 * Math.sqrt(1 - (xS / Sx) ** 2) + ease : 0.8 * H - (xS - Sx) * 1.1 + ease;   // манекен по сетке — верх плеча по точкам тела
+  const lenPhoto = lenPhoto0 || lenPose;
   return {L, Fs, F, yHPS, yHem, yN, yArm, loose, ease, xS, ySh: Math.max(ySh, yArm + 0.05), aFree, hk, lenPhoto};
 }
 export function bottomSpec(item, d) {
@@ -165,7 +187,8 @@ export function skirtProf(item, d) {
   let yW = Math.max(sp.yW, 0.585 * H); const bodyHalfAt = y => { const ab = bodyAB(d, y / H); return ellP(ab.a, ab.b) / 2; };
   if (cm.waist) while (yW < 0.625 * H && bodyHalfAt(yW) + 0.006 > cm.waist / 100) yW += 0.002 * H;
   const WW = Math.max(sp.ww, bodyHalfAt(yW) + 0.01);
-  const Lk = cm.len ? cm.len / 100 : sh.len_photo && sh.len_photo > 25 && sh.len_photo < 125 ? sh.len_photo / 100 : (LEN0.skirt) * Math.pow(H / 1.8, 0.6), HPb = ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03;
+  const sHemS = sh.pose_len && sh.pose_len.hem != null ? sh.pose_len.hem : hemByName(item), LpS = sHemS != null && !(typeof window !== 'undefined' && window.__noPoseLen) ? yW - poseY(sHemS, H) : 0;
+  const Lk = cm.len ? cm.len / 100 : sh.len_photo && sh.len_photo > 25 && sh.len_photo < 125 ? sh.len_photo / 100 : LpS > 0.25 && LpS < 1.2 ? LpS : (LEN0.skirt) * Math.pow(H / 1.8, 0.6), HPb = ellP(bodyAB(d, 0.53).a, bodyAB(d, 0.53).b) / 2 + 0.03;
   let prof = sh.hip && sh.hip.length ? sh.hip.slice() : [1, 1.15, 1.2]; for (let i = 1; i < prof.length; i++) prof[i] = Math.max(prof[i], prof[i - 1]);
   if (sh.worn) prof = prof.map((v, i) => v * (1 + 0.16 * i / Math.max(1, prof.length - 1)));
   const kk = WW / (prof[0] || 1);

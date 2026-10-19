@@ -98,15 +98,38 @@ function delight2(img) {
   rg.putImageData(RD, 0, 0);
   return {img: cv, relief: rc, res: W};
 }
+// мелкая фактура: высота — лог. яркость минус её размытие (~2 px при ≤ 768 px), наклоны на единицу координаты фото
+// хранятся как (наклон / разрешение) × 127.5 × 4 + 128; в шейдере ×(2 × amp) → наклон на единицу uv × amp / (2 × res) … т.е. amp ≈ доля рельефа
+export const PDET = {};
+function detailRelief(img) {
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height; if (!w0 || !h0) return null;
+  const sc = Math.min(1, 768 / Math.max(w0, h0)), w = Math.max(8, Math.round(w0 * sc)), h = Math.max(8, Math.round(h0 * sc));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+  let D; try { D = g.getImageData(0, 0, w, h); } catch (e) { return null; }
+  const a = D.data, n = w * h, L = new Float32Array(n), M = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { L[i] = Math.log((a[i * 4] + a[i * 4 + 1] + a[i * 4 + 2]) / 3 + 4); M[i] = a[i * 4 + 3] > 128 ? 1 : 0; }
+  const box = (src, r) => { const t = new Float32Array(n), o = new Float32Array(n);
+    for (let y = 0; y < h; y++) { let s = 0, c = 0; for (let x = -r; x < w; x++) { if (x + r < w) { s += src[y * w + x + r]; c++; } if (x - r - 1 >= 0) { s -= src[y * w + x - r - 1]; c--; } if (x >= 0) t[y * w + x] = s / c; } }
+    for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let y = -r; y < h; y++) { if (y + r < h) { s += t[(y + r) * w + x]; c++; } if (y - r - 1 >= 0) { s -= t[(y - r - 1) * w + x]; c--; } if (y >= 0) o[y * w + x] = s / c; } }
+    return o; };
+  const B = box(box(L, 2), 2), Hh = new Float32Array(n);
+  for (let i = 0; i < n; i++) Hh[i] = M[i] ? Math.max(-0.25, Math.min(0.25, L[i] - B[i])) : 0;
+  const out = g.createImageData(w, h), o = out.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x, q = i * 4;
+    const hx = (Hh[y * w + Math.min(w - 1, x + 1)] - Hh[y * w + Math.max(0, x - 1)]) / 2, hy = (Hh[Math.min(h - 1, y + 1) * w + x] - Hh[Math.max(0, y - 1) * w + x]) / 2;
+    o[q] = Math.max(0, Math.min(255, 128 + hx * 4 * 127.5)); o[q + 1] = Math.max(0, Math.min(255, 128 + hy * 4 * 127.5)); o[q + 2] = 128; o[q + 3] = 255; }
+  g.putImageData(out, 0, 0); return cv;
+}
 export function photoTex(url, flat) {
   if (!url) return null;
   const key = flat ? url + '|' + (flat === true ? 'flat' : flat) : url;   // flat: true — ровная ткань (плиссе), 'gentle' — рисунок пятнами (мягкое снятие света)
-  if (!PTEX[key]) { const t = new THREE.Texture(); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; PTEX[key] = t; const rt = new THREE.Texture(flatRelief()); rt.needsUpdate = true; PREL[key] = rt; t.relief = rt;   // у Texture в r128 нет userData
+  if (!PTEX[key]) { const t = new THREE.Texture(); t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; PTEX[key] = t; const rt = new THREE.Texture(flatRelief()); rt.needsUpdate = true; PREL[key] = rt; t.relief = rt; const dt = new THREE.Texture(flatRelief()); dt.needsUpdate = true; dt.anisotropy = 8; PDET[key] = dt; t.detail = dt;   // у Texture в r128 нет userData
     const im = new Image(); im.crossOrigin = 'anonymous';
     im.onload = () => { const W_ = typeof window !== 'undefined' ? window : {}; let r = im, rel = null;
       if (!W_.__noDelight) { const o = !W_.__delight1 && flat !== 'gentle' && delight2(im); if (o) { r = o.img; rel = o.relief; } else r = delight(im); }
       if (flat === true) { r = flatten(r); rel = null; }
-      t.image = r; t.needsUpdate = true; if (rel && !W_.__noRelief2) { rt.image = rel; rt.needsUpdate = true; } }; im.src = url; }
+      t.image = r; t.needsUpdate = true; if (rel && !W_.__noRelief2) { rt.image = rel; rt.needsUpdate = true; }
+      if (flat !== true && !W_.__noDetail) { const dr = detailRelief(im); if (dr) { dt.image = dr; dt.needsUpdate = true; } } }; im.src = url; }
   return PTEX[key];
 }
 // ровная ткань: основной цвет × чуть-чуть мелкой фактуры (отношение яркости к размытой в ~4 px), без светотени и линий сгибов

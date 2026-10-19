@@ -12,6 +12,8 @@ export function paintBody(g, covers, skin) {
     if (part === 'arm') { if (c.arm && t < c.arm - 0.04) return i; continue; }
     if (part === 'leg' && !c.legs) continue;
     if ((part === 'torso' || part === 'sh') && !c.torso && !(part === 'sh' && c.arm)) continue;
+    // без рукавов (жилет, сарафан): плечо манекена дальше плеча вещи — открыто (было тёмно-серое «плечико» ступеньками)
+    if (part === 'torso' && c.sx && ax > c.sx - 0.004) continue;
     // шея: нижние кольца расширения (к плечам) — под плечевым швом; спереди в вырезе горловины — кожа
     if (part === 'neck') { if (c.torso && !c.legs && t < -0.035 && ax > (c.nx || 0.07)) return i; continue; }
     // верх туловища под закрытой вещью — весь: кольца сетки редкие, белая вершина у шеи размазалась бы клином до плеча

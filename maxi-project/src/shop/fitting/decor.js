@@ -47,10 +47,25 @@ function place(mesh, d, P, N) {
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
 }
 // пришить декор к сетке ткани g (C.decor из выкройки, P — точки ткани, N — нормали)
+// бант из шнура: узел, две петли и два свисающих конца с наконечниками (ось z — по нормали ткани, y — вверх)
+function bowGroup(b, d, mat) {
+  const g = new THREE.Group(), r = 0.0022, Lc = Math.max(0.06, Math.min(0.2, b.len * d.k * 1.3)), Wl = Math.max(0.025, Math.min(0.05, b.w * d.k * 0.35));
+  const tube = pts => new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), 24, r, 6, false), mat);
+  [-1, 1].forEach(s => {
+    g.add(tube([[0, 0, 0.004], [s * Wl * 0.5, Wl * 0.35, 0.007], [s * Wl, 0.004, 0.006], [s * Wl * 0.55, -Wl * 0.3, 0.006], [0, 0, 0.004]]));   // петля
+    g.add(tube([[s * 0.002, 0, 0.004], [s * Wl * 0.25, -Lc * 0.35, 0.004], [s * Wl * 0.35, -Lc * 0.7, 0.003], [s * Wl * 0.3, -Lc, 0.003]]));   // конец
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.6, r * 1.6, 0.012, 8), mat); tip.position.set(s * Wl * 0.3, -Lc - 0.005, 0.003); g.add(tip); });
+  const knot = new THREE.Mesh(new THREE.SphereGeometry(r * 2.4, 10, 8), mat); knot.position.z = 0.004; g.add(knot);
+  return g;
+}
 export function buildDecor(g, C, P, N) {
   if (!C.decor || !C.decor.length) return;
   const list = [], found = [];
-  for (const b of C.decor) { const d = locate(C, b.role || 'front', b.u, b.v); if (d && d.k) found.push([b, d, b.r * d.k]); }
+  for (const b of C.decor) { const d = locate(C, b.role || 'front', b.u, b.v); if (!d || !d.k) continue;
+    if (b.type === 'bow') { d.r = 0; d.pearl = false; const m = bowGroup(b, d, new THREE.MeshPhysicalMaterial({color: LIN(b.rgb || '#ddd'), roughness: 0.75, sheen: new THREE.Color(0.2, 0.2, 0.2), envMapIntensity: 0.2}));
+      m.userData.decor = d; place(m, d, P, N); m.userData.final = {p: m.position.clone(), q: m.quaternion.clone()}; g.add(m); list.push(m); continue; }
+    found.push([b, d, b.r * d.k]); }
+  if (!found.length) { g.userData.decor = list; return; }
   if (!found.length) return;
   // у ряда пуговиц размер один: по медиане (масштаб выкройки у горловины и ниже немного разный)
   const rMed = Math.max(0.0035, Math.min(0.011, found.map(f => f[2]).sort((a, b) => a - b)[found.length >> 1]));

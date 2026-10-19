@@ -8,7 +8,7 @@ import * as THREE from 'three';
 // Ткань — пресеты по виду вещи (деним жёсткий, трикотаж мягкий).
 export const FABRIC = {
   tee: {bend: 0.3, comp: 0.05, stretch: 0.9}, sweater: {bend: 0.4, comp: 0.08, stretch: 0.85}, hoodie: {bend: 0.45, comp: 0.08, stretch: 0.85},
-  shirt: {bend: 0.45, comp: 0.06, stretch: 1}, jacket: {bend: 0.7, comp: 0.15, stretch: 1},
+  shirt: {bend: 0.45, comp: 0.06, stretch: 1}, jacket: {bend: 0.7, comp: 0.15, stretch: 1}, blazer: {bend: 0.92, comp: 0.1, stretch: 1},
   jeans: {bend: 0.7, comp: 0.18, stretch: 1}, pants: {bend: 0.45, comp: 0.08, stretch: 1}, shorts: {bend: 0.6, comp: 0.12, stretch: 1},
   // пальто — плотное; пуховик — толстый: стоит от тела на margin (объём утеплителя); платье и юбка — мягкие
   coat: {bend: 0.8, comp: 0.2, stretch: 1, compW: 0.6}, puffer: {bend: 0.9, comp: 0.35, stretch: 1, compW: 0.8, margin: 0.028}, vest: {bend: 0.7, comp: 0.15, stretch: 1}, dress: {bend: 0.18, comp: 0.05, stretch: 0.9, compW: 0.95}, skirt: {bend: 0.22, comp: 0.06, stretch: 0.95, compW: 0.95}, skirtP: {bend: 0.7, comp: 0.25, stretch: 1, compW: 0.95, mem: true},   // заутюженные складки: изгиб держит форму в обе стороны   // уток не сжимается: лишняя ширина клёша уходит в волны у подола
