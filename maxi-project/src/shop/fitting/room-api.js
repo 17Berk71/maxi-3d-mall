@@ -18,7 +18,7 @@ import {fit} from './state.js';
 export function init() {
 
   return {
-    setView: kind => { if (R) view(kind); }, _avatar: () => R && R.avatar, setAnim: on => { ANIM.on = !!on; }, replay: () => replay(), playing: () => !!(R && R.play), _frame: k => { if (R && R.play) R.play.fixedK = k; return R && R.play ? R.play.nf : 0; }, setRot: r => { if (R) { R.view.rot = r; R.avatar.rotation.y = r; } }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
+    setView: kind => { if (R) view(kind); }, _avatar: () => R && R.avatar, _R: () => R,   /* для лаборатории: снимок-маска вещи (tools/lab/batch.mjs) */ setAnim: on => { ANIM.on = !!on; }, replay: () => replay(), playing: () => !!(R && R.play), _frame: k => { if (R && R.play) R.play.fixedK = k; return R && R.play ? R.play.nf : 0; }, setRot: r => { if (R) { R.view.rot = r; R.avatar.rotation.y = r; } }, setZoom: (z, hh) => { if (R) { R.view.z = z; if (hh != null) R.view.h = hh; } },
     addPack, wear(ids, states, sizes) { W.worn = []; ids.forEach(id => putOn(id, true)); Object.entries(states || {}).forEach(([id, st]) => { const it = W.items.find(i => i.id === id); if (it) it.state = st; });
       W.items.forEach(it => { if (it.sizesT) it.size = (sizes && sizes[it.id]) || null; }); persist(); render(); },
     qc: id => QC[id] || null,

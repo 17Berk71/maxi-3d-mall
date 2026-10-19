@@ -14,6 +14,8 @@ for it in json.load(open(os.path.join(RAW, 'wb_items.json'))):
     for f in FLAGS:
         if it.get(f): m[f] = it[f]
     if it.get('states'): m['states'] = it['states']
+    card = {k[5:]: v for k, v in it.items() if k.startswith('card_')}
+    if card: m['card'] = card   # детали и ткань из характеристик карточки (wb_details.py)
     for k in ('crop', 'elastic'):
         if it.get(k): m['shape'][k] = it[k]
     if json.dumps(m, sort_keys=True) != old: json.dump(m, open(p, 'w'), ensure_ascii=False, indent=1); n += 1

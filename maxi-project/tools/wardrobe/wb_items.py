@@ -115,6 +115,11 @@ def main():
         store = g.get('store') or g.get('brand') or ''
         it = dict(id='wb-%d' % g['nm'], name='%s · %s' % (store, g['name']), kind=kind, worn=[], brand=store, url=g['url'], how=how, **ph)
         it.update(flags(kind, g['name']))
+        # характеристики карточки (воротник, капюшон, стёжка, застёжка, ткань) — надёжнее слов в названии, перекрывают их
+        cp = os.path.join(d, 'card.json')
+        if os.path.exists(cp):
+            import wb_details
+            it.update(wb_details.flags(wb_details.details(json.load(open(cp)), g['name']), kind))
         if g.get('body_for_check') == 'f': it['who'] = 'women'
         # рост модели на фото (для длины вещи по фото с человеком в полный рост); нет в карточке — типовой рост моделей
         mh = None; m_ = g.get('model')

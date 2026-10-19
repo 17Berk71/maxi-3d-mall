@@ -44,6 +44,12 @@ def main():
     for d in dirs:
         for line in open(os.path.join(d, 'qc.jsonl')):
             r = json.loads(line); r['dir'] = d; qc[r['id']] = r
+        lp = os.path.join(d, 'look.jsonl')   # проверка внешнего вида (appearance.py)
+        if os.path.exists(lp):
+            for line in open(lp):
+                if line.strip():
+                    lk = json.loads(line)
+                    if lk['id'] in qc: qc[lk['id']]['look'] = lk
     cards = []
     for iid, it in items.items():
         r = qc.get(iid); meta_p = os.path.join(OUT, iid, 'meta.json')
@@ -56,11 +62,13 @@ def main():
             front_model = os.path.join(os.path.dirname(src_photo), '%02d.webp' % g['photos']['front'][0])
         cards.append((iid, it, r, g, src_photo, front_model, os.path.exists(meta_p)))
     # порядок: сначала проблемные (низкий балл), без снимков — в конце
-    cards.sort(key=lambda c: (c[2] is None or 'error' in (c[2] or {}), (c[2] or {}).get('score', 999)))
+    fin = lambda r: (r or {}).get('look', {}).get('final', (r or {}).get('score'))
+    cards.sort(key=lambda c: (c[2] is None or 'error' in (c[2] or {}), fin(c[2]) if fin(c[2]) is not None else 999))
     rows = []
     stores = sorted({c[1].get('brand', '') for c in cards}); kinds = sorted({c[1]['kind'] for c in cards})
     for iid, it, r, g, src_photo, front_model, built in cards:
-        score = (r or {}).get('score'); err = (r or {}).get('error')
+        phys = (r or {}).get('score'); err = (r or {}).get('error'); lk = (r or {}).get('look') or {}
+        score = lk.get('final', phys)
         cls = 'bad' if score is not None and score < 65 else 'mid' if score is not None and score < 80 else 'good' if score is not None else 'none'
         imgs = []
         imgs.append(f'<figure><img loading=lazy src="{b64(src_photo, 260)}"><figcaption>{HOW.get(it.get("how"), "")}</figcaption></figure>')
@@ -75,6 +83,14 @@ def main():
             for c in r['checks']:
                 li.append(f'<li class="{"ok" if c["ok"] else "no"}"><b>{html.escape(c["name"])}</b>{" −" + str(c["pen"]) if c["pen"] else ""}: {html.escape(str(c["val"]))}</li>')
             checks = '<ul class=checks>' + ''.join(li) + '</ul>'
+        if lk:
+            fv = (lk.get('views') or {}).get('front', {})
+            names = {'цвет': f"разница {fv.get('dE', 0):.0f} (фото L{fv.get('col_p', ['?'])[0]} → манекен L{fv.get('col_r', ['?'])[0]})", 'фактура': f"мелкой фактуры на манекене ×{fv.get('detail', '?')} от фото",
+                     'рисунок': f"раскладка цвета расходится на {fv.get('layout', '?')} (по сетке 6×8)", 'силуэт': f"длина к ширине ×{fv.get('ratio', '?')} от фото",
+                     'исходник': f"вещь на фото закрыта на ~{round(100 * lk.get('occ', 0))}%", 'детали': 'нет: ' + ', '.join(lk.get('missing') or []) if lk.get('missing') else 'все детали из карточки есть'}
+            li = [f'<li class="{"no" if v >= 4 else "ok"}"><b>{html.escape(k)}</b>{" −" + str(v) if v else ""}: {html.escape(names.get(k, ""))}</li>' for k, v in (lk.get('pens') or {}).items()]
+            rv = ''.join(f'<li class=no><b>на проверку</b>: {html.escape(w)}</li>' for w in lk.get('review') or [])
+            checks = f'<p class=muted>Похожесть на фото: <b>{lk.get("look")}</b> · расчёт: <b>{phys}</b> · итог — меньшее</p><ul class=checks>{rv}{"".join(li)}</ul>' + checks.replace('<ul class=checks>', '<details><summary>Пункты расчёта</summary><ul class=checks>', 1).replace('</ul>', '</ul></details>', 1)
         sizes = ''
         if it.get('sizes'):
             keys = sorted({k for s in it['sizes'] for k in s['cm']})
@@ -88,15 +104,16 @@ def main():
         status = (f'<span class="score {cls}">{score}</span>{delta}' if score is not None else
                   f'<span class="score none">{"сбой" if err else "нет"}</span>')
         note = html.escape((r or {}).get('note') or '')
+        if lk.get('review'): cls += ' review'
         rows.append(f'''<article class="card {cls}" data-kind="{it['kind']}" data-store="{html.escape(it.get('brand', ''))}" data-score="{score if score is not None else -1}" data-body="{'f' if it.get('who') == 'women' else 'm'}">
 <header>{status}<div><h2>{html.escape(it['name'])}</h2>
 <p class=meta>{KIND.get(it['kind'], it['kind'])} · фигура {'женская 173/56' if it.get('who') == 'women' else 'мужская 186/83'} · {HOW.get(it.get('how'), '')} · <a href="{it['url']}" target=_blank>карточка ↗</a> · <code>{iid}</code></p>
 {f'<p class=fit>Посадка: {note}</p>' if note else ''}{f'<p class=err>Сбой: {html.escape(err)}</p>' if err else ''}{'' if built else '<p class=err>Фабрика не собрала вещь</p>'}</div></header>
 <div class=imgs>{''.join(imgs)}</div>
 {checks}{sizes}
-<div class=verdict><label><input type=radio name="v-{iid}" value=ok> похоже</label><label><input type=radio name="v-{iid}" value=meh> так себе</label><label><input type=radio name="v-{iid}" value=bad> плохо</label><input class=cmt placeholder="что не так (для меня)"></div>
+<div class=verdict><label><input type=radio name="v-{iid}" value=ok> совпадает</label><label><input type=radio name="v-{iid}" value=meh> почти</label><label><input type=radio name="v-{iid}" value=bad> переделать</label><input class=cmt placeholder="что не так (для меня)"></div>
 </article>''')
-    n = len(cards); ns = [c[2]['score'] for c in cards if c[2] and c[2].get('score') is not None]
+    n = len(cards); ns = [fin(c[2]) for c in cards if fin(c[2]) is not None]; nrev = sum(1 for c in cards if c[2] and (c[2].get('look') or {}).get('review'))
     bs = [before[c[0]]['score'] for c in cards if c[0] in before and before[c[0]].get('score') is not None]
     bsum = f' Прошлый прогон: средний балл {round(sum(bs) / len(bs))}, 80+: {sum(1 for x in bs if x >= 80)}, ниже 65: {sum(1 for x in bs if x < 65)}.' if bs else ''
     avg = round(sum(ns) / len(ns)) if ns else 0
@@ -125,10 +142,10 @@ details{{font-size:13px;margin:4px 0}}table{{border-collapse:collapse;margin-top
 @media (max-width:600px){{figure img{{height:220px}}.checks{{columns:1}}}}
 </style></head><body>
 <div class=top><h1>Проверка вещей Wildberries на манекене</h1>
-<p class=sum>Вещей: <b>{n}</b> · снято: <b>{len(ns)}</b> · балл 80+: <b>{good}</b> · 65–79: <b>{mid}</b> · ниже 65: <b>{bad}</b>. Средний балл: <b>{avg}</b>.{bsum} Сначала самые проблемные. Балл автопроверки — подсказка, решает глаз.</p>
+<p class=sum>Вещей: <b>{n}</b> · снято: <b>{len(ns)}</b> · балл 80+: <b>{good}</b> · 65–79: <b>{mid}</b> · ниже 65: <b>{bad}</b>. Средний балл: <b>{avg}</b>.{bsum} На ручную проверку: <b>{nrev}</b>. Балл — меньшее из «расчёт не сломался» и «похоже на фото». Сначала самые проблемные; решает глаз.</p>
 <div class=f><select id=fs><option value="">все магазины</option>{opts_store}</select><select id=fk><option value="">все виды</option>{opts_kind}</select>
 <select id=fb><option value="">обе фигуры</option><option value=m>мужская</option><option value=f>женская</option></select>
-<select id=fq><option value="">любой балл</option><option value=bad>ниже 65</option><option value=mid>65–79</option><option value=good>80+</option></select>
+<select id=fq><option value="">любой балл</option><option value=bad>ниже 65</option><option value=mid>65–79</option><option value=good>80+</option><option value=review>на ручную проверку</option></select>
 <button id=exp>Скачать мои отметки</button><span id=cnt class=muted></span></div></div>
 <main>{''.join(rows)}</main>
 <script>

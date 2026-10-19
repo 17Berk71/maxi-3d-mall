@@ -11,7 +11,7 @@ let idOf;
     const c = classify(p); if (!c) return null;
     return {id: idOf(p, s), name: p.name, shop: s ? s.name : '', shopCol: s ? s.colHex : '#888', price: p.price || 0, oldPrice: p.oldPrice || 0, url: p.url || (s && ctx.siteOf(s)) || '',
       color: p.color || '#888888', colorName: p.colorName || '', thumb: ctx.thumb(p), model: p.model, slot: c.slot, kind: c.kind, sizes: p.sizes || null, feed: !!p.feed, glb: p.glb || null,
-      tex: p.tex || null, pack: p.fitPack || null, drape: p.drape || null, fit: p.fit || null, shape: p.shape || null, sizesT: p.sizesT || null, size: null, brand: p.brand || '', note: p.note || '', states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, pleats: !!p.pleats, lining: p.lining || null, puff: !!p.puff, stand: !!p.stand, collar: !!p.collar, hood: !!p.hood, puffer: !!p.puffer, sleeveless: !!p.sleeveless, who: p.who || ''};   /* puffer, sleeveless терялись здесь: стёганые жилеты были без объёма, сарафаны — с рукавами */
+      tex: p.tex || null, pack: p.fitPack || null, drape: p.drape || null, fit: p.fit || null, shape: p.shape || null, sizesT: p.sizesT || null, size: null, brand: p.brand || '', note: p.note || '', states: p.states || null, state: p.states ? p.states[0][0] : '', zip: !!p.zip, pleats: !!p.pleats, lining: p.lining || null, puff: !!p.puff, stand: !!p.stand, collar: !!p.collar, hood: !!p.hood, puffer: !!p.puffer, sleeveless: !!p.sleeveless, card: p.card || null, who: p.who || ''};   /* puffer, sleeveless терялись здесь: стёганые жилеты были без объёма, сарафаны — с рукавами */
   }
   export function add(p, s, wear) {
     const it = toItem(p, s); if (!it) return false;
