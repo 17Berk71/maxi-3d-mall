@@ -4,6 +4,7 @@ tools/test/out/
 tools/pipeline/work/
 tools/wardrobe/raw/
 tools/wardrobe/out/
+tools/wardrobe/out_*/
 __pycache__/
 tools/wardrobe/models/
 tools/feeds/cache/

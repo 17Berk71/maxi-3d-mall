@@ -137,7 +137,7 @@ def source_quality(id_, item):
         r = json.load(open(pk[0])); fr = os.path.basename(r.get('front') or '')
         s = next((x for x in r.get('scores', []) if os.path.basename(x.get('path', '')) == fr), None)
         if s and r.get('src') == 'model':
-            q['skin'] = s.get('skin'); q['other'] = s.get('other'); q['cut'] = s.get('cut', '')
+            q['skin'] = s.get('skin'); q['other'] = s.get('other'); q['cut'] = s.get('cut', ''); q['cont'] = s.get('cont')   # чужое на корпусе (contam.py)
     mp = os.path.join(OUT, id_, 'meta.json')
     if os.path.exists(mp):
         mt = json.load(open(mp))
@@ -158,11 +158,11 @@ def score(f, src, q, det):
     tx = max(abs(np.log2(max(f.get('detail', 1), 0.05))), abs(np.log2(max(f.get('mid', 1), 0.05) / (1.6 if src in ('studio', 'photo') else 1.0))))
     pens['фактура'] = 20 * ramp(tx, 0.3, 1.3)
     if 'holes' in f: pens['дырки'] = 20 * ramp(f['holes'], 0.002, 0.02)
-    if 'layout' in f: pens['рисунок'] = 25 * ramp(f['layout'], 5, 16)
+    if 'layout' in f: pens['рисунок'] = 32 * ramp(f['layout'], 5, 16)   # по отметкам пользователя (круг 5) — самый различающий пункт
     if 'ratio' in f: pens['силуэт'] = 15 * ramp(abs(np.log(max(f['ratio'], 0.05))), 0.15, 0.5)
     occ = 0.0
     if src == 'model':
-        occ = max((q.get('skin') or 0) * 1.5, (q.get('skin_left') or 0) * 1.5, (q.get('arms') or 0) * 1.2) + min(1, q.get('other') or 0) * 0.3 + (0.1 if 'b' in (q.get('cut') or '') or 't' in (q.get('cut') or '') else 0)
+        occ = max((q.get('skin') or 0) * 1.5, (q.get('skin_left') or 0) * 1.5, (q.get('arms') or 0) * 1.2) + min(1, q.get('other') or 0) * 0.3 + (0.1 if 'b' in (q.get('cut') or '') or 't' in (q.get('cut') or '') else 0) + max(0, (q.get('cont') or 0) - 0.05) * 0.5   # кофта/топ под вещью: середина закрашена, не настоящая ткань
     else: occ = (q.get('skin_left') or 0) * 1.5
     pens['исходник'] = 20 * ramp(occ, 0.04, 0.25)
     if det is not None: pens['детали'] = min(40, sum(20 if x in ('стёжка', 'мех', 'капюшон', 'отложной воротник') else 10 for x in det))   # главные детали вида весят вдвое

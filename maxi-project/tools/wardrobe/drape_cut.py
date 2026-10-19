@@ -88,6 +88,15 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False, belt=Fa
     # выкройки, которые ложатся на край фото, видны светлые точки
     inv = (cv2.erode(mc.astype(np.uint8), np.ones((7, 7), np.uint8)) == 0).astype(np.uint8) * 255
     filled = cv2.inpaint(crop, inv, 5, cv2.INPAINT_TELEA)
+    # крупная залитая «дырка» у верха — это не ткань: топ под расстёгнутым пиджаком, кожа в вырезе (сеть их не считает вещью).
+    # Пиксели там чужие (пользователь: «топики и кожа впечатались в пиджак») — закрашиваем построчно тканью с краёв
+    if kind not in ('pants', 'jeans', 'shorts'):
+        big = np.zeros_like(holes)
+        for k in range(1, n_h):
+            if st_h[k, cv2.CC_STAT_AREA] > 0.004 * max(1, int((mc > 0).sum())): big[lb_h == k] = 1
+        if big.any():
+            from model_photo import fill_rows
+            filled = fill_rows(filled, cv2.dilate(big, np.ones((5, 5), np.uint8)))
     # пуговицы — отдельные объёмные детали в примерочной: на ткани их не рисуем (заливаем тканью вокруг),
     # а положение, размер и цвет пишем в выкройку (a.buttons)
     cxa = (info['cx'] - x0) / W
@@ -135,6 +144,9 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False, belt=Fa
         q = find_quilt(filled, mc, a['cx'])
         if q: a['quilt'] = q
     if col_: a['collar'] = dict(rgb=col_['rgb'])
+    if side == 'front' and kind in ('vest', 'shirt', 'jacket', 'tee', 'sweater', 'coat') and a.get('hw'):
+        hp = find_hem_prof(mc, a['cx'], a['hw'])
+        if hp: a['hemp'] = hp
     if cord: a['cord'] = cord
     if bl: a['belt'] = {k_: (float(v) if isinstance(v, (float, np.floating)) else ({kk: float(vv) for kk, vv in v.items()} if isinstance(v, dict) else v)) for k_, v in bl.items() if k_ != 'score'}
     return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, (list, dict)) else round(float(v), 4)) for k_, v in a.items()})
@@ -245,6 +257,28 @@ def find_cord(img, mc, cx):
     return info, cv2.dilate((m | halo).astype(np.uint8) * 255, np.ones((9, 9), np.uint8))
 
 
+def find_hem_prof(mc, cx, hw):
+    """Форма низа переда: насколько низ ниже, чем у бока, от середины (f=0) к боку (f=1), в долях высоты выреза.
+    Жилет с уголками посередине, рубашка с полукруглым низом. Пользователь: «нет скошенных углов снизу посередине»."""
+    H, W = mc.shape; c = cx * W; hwp = hw * W
+    if hwp < 15: return None
+    out = []
+    for f in np.linspace(0, 0.8, 9):
+        bs = []
+        for sg in (-1, 1):
+            x = int(round(c + sg * f * hwp))
+            if 0 <= x < W:
+                ys = np.where(mc[:, x] > 0)[0]
+                if len(ys): bs.append(ys[-1])
+        out.append(np.mean(bs) if bs else np.nan)
+    out = np.array(out, float)
+    if np.isnan(out).any(): return None
+    d = (out - np.median(out[5:])) / H   # от низа у бока (средняя полоса к боку; у самого бока бывает рукав или разрез)
+    d[5:] = np.clip(d[5:], -0.006, 0.006)   # у бока — ровно (там рукав, разрез, рука)
+    if np.abs(d[:5]).max() < 0.02 or np.abs(np.diff(d)).max() > 0.06: return None   # ровный низ или зубцы (рука, край кадра)
+    return [round(float(v), 4) for v in d]
+
+
 def erase_belt(img, mc, b):
     """стереть пояс с ткани: каждый столбец полосы — переход от цвета над поясом к цвету под ним (стёжка, складки
     по вертикали продолжаются)."""
@@ -301,7 +335,7 @@ def find_buttons(rgb, mc, cx, kind):
     k = max(5, int(W * 0.08) | 1)
     bg = cv2.medianBlur(np.clip(g, 0, 255).astype(np.uint8), k).astype(np.float32)
     inner = cv2.erode((mc > 0).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0   # не у края силуэта
-    placket = kind in ('dress', 'shirt', 'coat', 'jacket'); waist = kind in ('skirt', 'pants', 'jeans', 'shorts')
+    placket = kind in ('dress', 'shirt', 'coat', 'jacket', 'vest'); waist = kind in ('skirt', 'pants', 'jeans', 'shorts')
     if not placket and not waist: return None
     best = None
     for sgn in (1, -1):
