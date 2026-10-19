@@ -299,32 +299,86 @@ def pose_cleanup(im, m, kind):
     if om is not None and om.any() and kind != 'vest' and occ < 0.35:
         k = cv2.dilate(om.astype(np.uint8), np.ones((7, 7), np.uint8)) & m
         im = cv2.inpaint(im, k, 9, cv2.INPAINT_TELEA)
-    if kind in ('coat', 'jacket', 'puffer', 'vest', 'hoodie') or (kind == 'sweater'):
-        poly = pose.torso_poly(kp)
-        if poly is not None:
-            lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
-            x0, x1 = sorted([poly[0][0], poly[1][0]]); y0, y1 = int(min(poly[0][1], poly[1][1])), int(max(poly[2][1], poly[3][1]))
-            wd = x1 - x0; y0 = max(0, y0); y1 = min(im.shape[0], y1)
-            if wd > 20 and y1 > y0 + 20:
-                sides = np.zeros(m.shape, bool)
-                sides[y0:y1, int(x0):int(x0 + wd * 0.22)] = True; sides[y0:y1, int(x1 - wd * 0.22):int(x1)] = True; sides &= m > 0
-                if sides.sum() > 300:
-                    ref = np.median(lab[sides], 0); spread = np.percentile(np.linalg.norm(lab[sides] - ref, axis=1), 85)
-                    band = np.zeros(m.shape, bool); band[y0:y1, int(x0 + wd * 0.25):int(x1 - wd * 0.25)] = True
-                    far = (np.linalg.norm(lab - ref, axis=2) > max(22, spread * 1.6)) & band & (m > 0)
-                    far = cv2.morphologyEx(far.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-                    n, lb, st, _ = cv2.connectedComponentsWithStats(far); keep = np.zeros_like(far)
-                    for i in range(1, n):   # кофта под вещью — вытянутая сверху вниз полоса у середины
-                        x, y, w_, h_ = st[i, :4]
-                        if st[i, cv2.CC_STAT_AREA] > 0.01 * m.sum() and h_ > 1.5 * w_ and y < y0 + (y1 - y0) * 0.4: keep[lb == i] = 1
-                    if keep.any():
-                        LAST_OPEN = True
-                        keep = cv2.dilate(keep, np.ones((7, 7), np.uint8)) & (m > 0)
-                        col = cv2.cvtColor(np.uint8([[np.clip(ref, 0, 255)]]), cv2.COLOR_LAB2BGR)[0, 0]
-                        out = im.copy(); out[keep > 0] = col
-                        edge = (cv2.dilate(keep, np.ones((11, 11), np.uint8)) - cv2.erode(keep, np.ones((11, 11), np.uint8))) & (m > 0)
-                        im = cv2.inpaint(out, edge, 6, cv2.INPAINT_TELEA)
+    if kind in ('coat', 'jacket', 'puffer', 'vest', 'hoodie'):
+        # середина расстёгнутой вещи (кофта, топ, кожа, юбка под пиджаком — бывает несколько цветов сразу): промежуток между
+        # полочками по строкам (contam.inner_span), каждая строка заливается переходом от цвета левого края к правому —
+        # горизонтальная стёжка и светотень строки сохраняются, на манекене середина — ткань вещи
+        import contam
+        sp, col = contam.inner_span(im, m, kp)
+        if sp is not None:
+            LAST_OPEN = True
+            im = fill_rows(im, sp)
+            m = (m | sp).astype(np.uint8)
+    try:
+        import contam
+        tx = contam.text_mask(im, m)
+        if tx is not None: im = cv2.inpaint(im, tx, 7, cv2.INPAINT_TELEA)
+    except Exception: pass
     return im, m
+
+
+def fill_rows(im, sp, k=7):
+    """Закрасить маску sp построчно: переход от цвета слева от промежутка к цвету справа. Цвета краёв сглажены по высоте
+    (медиана по 7 строкам и плавно): иначе блик или шов на краю одной строки даёт горизонтальную полосу; горизонтальная
+    стёжка (шире нескольких строк) остаётся."""
+    from scipy.ndimage import median_filter, gaussian_filter1d
+    out = im.astype(np.float32).copy(); H, W = sp.shape
+    rows = np.where(sp.any(1))[0]
+    if not len(rows): return im
+    segs = {}
+    for y in rows:   # самый широкий промежуток строки
+        xs = np.where(sp[y])[0]; parts = np.split(xs, np.where(np.diff(xs) > 1)[0] + 1)
+        segs[y] = max(parts, key=len)
+    CL = np.zeros((H, 3), np.float32); CR = np.zeros((H, 3), np.float32); ok = np.zeros(H, bool)
+    for y, sg in segs.items():
+        a, b = sg[0], sg[-1]
+        L = im[y, max(0, a - 4 * k):max(0, a - k)]; R = im[y, min(W, b + 1 + k):min(W, b + 1 + 4 * k)]   # отступ от края: там планка, тень
+        if not len(L) and not len(R): continue
+        CL[y] = np.median(L if len(L) else R, 0); CR[y] = np.median(R if len(R) else L, 0); ok[y] = True
+    yy = np.where(ok)[0]
+    if not len(yy): return im
+    for C in (CL, CR):
+        for c in range(3):
+            v = np.interp(np.arange(H), yy, C[yy, c]); v = median_filter(v, 9); C[:, c] = gaussian_filter1d(v, 3)
+    for y, sg in segs.items():
+        a, b = sg[0], sg[-1]; t = np.linspace(0, 1, b - a + 1)[:, None]
+        out[y, a:b + 1] = CL[y] * (1 - t) + CR[y] * t
+    sm = cv2.GaussianBlur(out, (5, 5), 0)
+    out[sp > 0] = sm[sp > 0]
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def pose_len(im, m):
+    """Где верх и низ вещи на модели в долях тела по позе (MoveNet): 0 — плечи, 1 — бёдра (тазобедренный сустав), 2 — колени,
+    3 — щиколотки. Пользователь: «на фото платье ниже колена, на манекене выше» — длину переносим на манекен по тем же точкам тела,
+    без масштаба кадра (кадр часто обрезан, роста модели в кадре нет). → {'top','hem'} или None."""
+    try:
+        import pose
+        kp = pose.keypoints(im)
+    except Exception: kp = None
+    if not kp: return None
+    lv = []
+    for a, b in (('sh_l', 'sh_r'), ('hip_l', 'hip_r'), ('kn_l', 'kn_r'), ('an_l', 'an_r')):
+        c = [kp[x] for x in (a, b) if kp[x][2] >= 0.3]
+        lv.append(np.mean([p[1] for p in c]) if c else None)
+    if lv[0] is None or lv[1] is None or lv[1] <= lv[0]: return None
+    def s_of(y):
+        pts = [(i, v) for i, v in enumerate(lv) if v is not None]
+        for (i0, y0), (i1, y1) in zip(pts, pts[1:]):
+            if y1 <= y0: return None
+            if y <= y1 or (i1, y1) == pts[-1]:
+                t = (y - y0) / (y1 - y0)
+                if (i1, y1) == pts[-1] and t > 1.4: return None   # ниже последней видной точки далеко — не угадываем
+                return i0 + t * (i1 - i0)
+        return None
+    ys = np.where(m.any(1))[0]
+    if not len(ys): return None
+    # низ — нижняя строка, где вещь ещё шире трети своей медианной ширины (концы пояса, бахрома не в счёт)
+    wid = m.sum(1); med = np.median(wid[ys]); yy = ys[wid[ys] > med * 0.33]
+    if not len(yy) or yy[-1] >= m.shape[0] - 3: return None   # низ за краем кадра
+    top, hem = s_of(float(yy[0])), s_of(float(yy[-1]))
+    if hem is None: return None
+    return dict(top=None if top is None else round(float(top), 3), hem=round(float(hem), 3))
 
 
 def person_scale(im, model_h):

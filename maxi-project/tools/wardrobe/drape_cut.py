@@ -4,6 +4,7 @@ import numpy as np, cv2
 
 
 DRAPE_ROWS = 64
+_BDBG = None
 
 
 def find_neck(mc, cx, hw):
@@ -62,7 +63,7 @@ def find_quilt(img, mc, cx):
     return [round(y / H, 4) for y in mins]
 
 
-def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
+def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False, belt=False):
     """Для симуляции ткани: вырезанное фото (RGBA) по силуэту вещи и грубая сетка силуэта — это «выкройка» перед/спинки.
     Координаты якорей — в долях кадра выреза (0..1)."""
     top, bot = info['top'], info['bot']
@@ -100,6 +101,17 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     col_ = find_collar(filled, mc, cxa) if collar else None
     if col_:
         filled = cv2.inpaint(filled, col_['mask'], 9, cv2.INPAINT_TELEA)
+    # пояс/ремень (по карточке): в примерочной — отдельная объёмная деталь (belt3d.js), с ткани стираем
+    bl = None
+    if belt and kind not in ('tee', 'shirt', 'sweater', 'hoodie', 'vest'):
+        try: bl = find_belt(filled, mc, cxa, info['hw'] / W if 'hw' in info else 0.35, kind)
+        except Exception: bl = None
+        if bl: filled = erase_belt(filled, mc, bl)
+    cord = None
+    if side == 'front' and kind in ('dress', 'tee', 'shirt', 'sweater', 'hoodie') and not bl:
+        try: cord, cm_ = find_cord(filled, mc, cxa)
+        except Exception: cord = None
+        if cord: filled = cv2.inpaint(filled, cm_, 7, cv2.INPAINT_TELEA)
     rgba = np.dstack([filled, (cv2.GaussianBlur(mc.astype(np.float32), (3, 3), 0) * 255).clip(0, 255).astype(np.uint8)])
     k = 720 / H if H > 720 else 1
     if k < 1: rgba = cv2.resize(rgba, (int(W * k), int(H * k)), interpolation=cv2.INTER_AREA)
@@ -123,7 +135,132 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
         q = find_quilt(filled, mc, a['cx'])
         if q: a['quilt'] = q
     if col_: a['collar'] = dict(rgb=col_['rgb'])
+    if cord: a['cord'] = cord
+    if bl: a['belt'] = {k_: (float(v) if isinstance(v, (float, np.floating)) else ({kk: float(vv) for kk, vv in v.items()} if isinstance(v, dict) else v)) for k_, v in bl.items() if k_ != 'score'}
     return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, (list, dict)) else round(float(v), 4)) for k_, v in a.items()})
+
+
+def find_belt(img, mc, cx, hw, kind):
+    """Пояс/ремень на фото переда (по характеристикам карточки он есть): горизонтальная полоса поперёк вещи — два резких
+    горизонтальных края на расстоянии 2–9% высоты, внутри ровно; или полоса другого цвета (кожаный ремень на брюках).
+    → {'v0','v1' (доли высоты выреза), 'rgb', 'buckle': {'u','w'} | None} или None. Пользователь: «пояс влип в куртку»,
+    «ремень — не часть брюк»: в примерочной пояс — отдельная объёмная деталь, с ткани стираем."""
+    H, W = mc.shape
+    if H < 120: return None
+    lab = cv2.cvtColor(cv2.GaussianBlur(img, (3, 3), 0), cv2.COLOR_BGR2LAB).astype(np.float32)
+    c = int(cx * W); hwp = max(10, int((hw or 0.3) * W))
+    xa, xb = max(0, c - int(0.75 * hwp)), min(W, c + int(0.75 * hwp))
+    gy = np.abs(cv2.Sobel(lab[..., 0], cv2.CV_32F, 0, 1, ksize=3))
+    bottoms = kind in ('pants', 'jeans', 'shorts', 'skirt')
+    ya, yb = (0, int(0.16 * H)) if bottoms else (int(0.28 * H), int(0.78 * H))
+    rows = np.arange(H); E = np.zeros(H, np.float32); Cm = np.zeros((H, 3), np.float32); ok = np.zeros(H, bool)
+    for y in range(H):
+        r = mc[y, xa:xb] > 0
+        if r.mean() < 0.7: continue
+        E[y] = np.median(gy[y, xa:xb][r]); Cm[y] = np.median(lab[y, xa:xb][r], 0); ok[y] = True
+    body = ok.copy(); body[:int(0.1 * H)] = False
+    if body.sum() < 0.3 * H: return None
+    ref = np.median(Cm[body], 0); D = np.linalg.norm((Cm - ref) * [0.5, 1, 1], axis=1)
+    Emed = np.median(E[ok]) + 0.5; Dsp = np.percentile(D[body], 70) + 2
+    best = None
+    if bottoms:   # ремень на брюках — сверху, другого цвета: от верха вещи вниз, пока цвет строки далёк от ткани
+        ys = np.where(ok)[0]
+        if len(ys):
+            y0 = int(ys[0]); y1 = y0
+            while y1 < int(0.14 * H) and ok[y1] and D[y1] > max(12, 2 * Dsp): y1 += 1
+            if y1 - y0 >= max(4, int(0.015 * H)):
+                best = (9.0, y0, y1, 9.0, 0.0, float(D[y0:y1].mean() / Dsp))
+    for y0 in ([] if best else range(max(ya, 1), yb)):
+        if not ok[y0]: continue
+        for g in range(max(4, int(0.02 * H)), int(0.11 * H)):
+            y1 = y0 + g
+            if y1 >= H - 1 or not ok[y1] or not ok[y0:y1].all(): continue
+            e = min(E[y0 - 1:y0 + 2].max(), E[y1 - 1:y1 + 2].max()) / Emed
+            inner = E[y0 + 2:y1 - 1].mean() / Emed if g > 4 else 1
+            col = D[y0 + 1:y1].mean() / Dsp
+            o = max(3, int(0.03 * H)); outer = (E[max(0, y0 - o):max(1, y0 - 2)].mean() + E[y1 + 2:min(H, y1 + o)].mean()) / 2 / Emed if y1 + 3 < H else 9
+            # за краями пояса — ровная ткань вещи (на поясе бывают свои строчки: стёганый пояс)
+            sc = e - 0.15 * inner - 0.5 * outer + (1.5 * col if col > 1.5 else 0) + 0.4 * g / (0.05 * H)
+            if _BDBG is not None: _BDBG.append((round(float(sc),2), round(y0/H,3), round(y1/H,3), round(float(e),2), round(float(inner),2), round(float(outer),2)))
+            if best is None or sc > best[0]: best = (sc, y0, y1, e, inner, col)
+    if best is None: return None
+    sc, y0, y1, e, inner, col = best
+    if not ((e > 2.2 and inner < 0.9 * e) or col > 2.5): return None
+    # пояс со своими строчками (стёганый): лучшей парой бывает строчка и нижний край — расширяем до края, за которым ткань ровнее
+    if not bottoms:
+        o = max(3, int(0.03 * H)); rough = lambda a_, b_: E[max(0, a_):max(a_ + 1, b_)].mean() / Emed
+        for _ in range(2):
+            cand = [y for y in range(max(1, y0 - int(0.06 * H)), y0 - int(0.012 * H)) if ok[y] and E[y - 1:y + 2].max() >= 0.6 * E[y0 - 1:y0 + 2].max()
+                    and rough(y - o, y - 2) < 0.7 * rough(y0 - o, y0 - 2) and y1 - y < 0.12 * H]
+            if cand: y0 = min(cand, key=lambda y: rough(y - o, y - 2))
+            cand = [y for y in range(y1 + int(0.012 * H), min(H - 2, y1 + int(0.06 * H))) if ok[y] and E[y - 1:y + 2].max() >= 0.6 * E[y1 - 1:y1 + 2].max()
+                    and rough(y + 2, y + o) < 0.7 * rough(y1 + 2, y1 + o) and y - y0 < 0.12 * H]
+            if cand: y1 = min(cand, key=lambda y: rough(y + 2, y + o))
+    band = (mc[y0 + 1:y1] > 0)
+    rgb = np.median(img[y0 + 1:y1][band].reshape(-1, 3), 0)
+    # пряжка: у середины пояса — вертикальные края рамки (резкий перепад по x) или пятно другого цвета
+    gx = np.abs(cv2.Sobel(lab[..., 0], cv2.CV_32F, 1, 0, ksize=3))[y0 + 1:y1].mean(0)
+    seg = gx[max(0, c - hwp // 2):min(W, c + hwp // 2)]; buckle = None
+    if len(seg) > 10:
+        thr = np.median(gx[xa:xb]) * 3 + 2; peaks = np.where(seg > thr)[0]
+        if len(peaks) >= 2:   # группы пиков (рамка пряжки — 2–4 края рядом); берём группу ближе к середине
+            grp = np.split(peaks, np.where(np.diff(peaks) > 0.12 * hwp)[0] + 1); cc = c - max(0, c - hwp // 2)
+            grp = [g_ for g_ in grp if len(g_) >= 2 and 0.6 * (y1 - y0) < g_[-1] - g_[0] < 3 * (y1 - y0)]
+            if grp:
+                g_ = min(grp, key=lambda g_: abs((g_[0] + g_[-1]) / 2 - cc))
+                x0 = max(0, c - hwp // 2) + g_[0]; x1 = max(0, c - hwp // 2) + g_[-1]
+                buckle = dict(u=round((x0 + x1) / 2 / W, 4), w=round((x1 - x0 + 4) / W, 4))
+    if bottoms and y0 < 0.05 * H: y0 = 0   # ремень по верху брюк: от самого края
+    return dict(v0=round(y0 / H, 4), v1=round(y1 / H, 4), rgb='#%02x%02x%02x' % tuple(int(v) for v in rgb[::-1]), buckle=buckle,
+                score=round(float(sc), 2))
+
+
+def find_cord(img, mc, cx):
+    """Шнурок-завязка или бант у талии (платье Colin's: белые шнурки на кулиске) — на однотонной ткани тонкие линии другого цвета
+    в одном месте у середины. → ({'u','v','len','rgb'}, маска) или (None, None). Пользователь: «бантик на талии влип в платье»."""
+    H, W = mc.shape
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32); inside = mc > 0
+    if inside.sum() < 2000: return None, None
+    ref = np.median(lab[inside], 0); dist = np.linalg.norm((lab - ref) * [0.6, 1, 1], axis=2)
+    if np.percentile(dist[inside], 80) > 16: return None, None     # пёстрая ткань — шнурок от рисунка не отличить
+    far = (dist > 38) & inside
+    reg = np.zeros_like(far); reg[int(0.25 * H):int(0.75 * H), max(0, int((cx - 0.22) * W)):int((cx + 0.22) * W)] = True   # выше — вырез горловины
+    far = (far & reg).astype(np.uint8)
+    n, lb, st, cen = cv2.connectedComponentsWithStats(far)
+    keep = [i for i in range(1, n) if st[i, 4] > 15 and st[i, 4] < 0.45 * st[i, 2] * st[i, 3] + 40]   # тонкое, не сплошное пятно (не пуговица)
+    if not keep: return None, None
+    mid = [i for i in keep if abs(cen[i][0] / W - cx) < 0.1]   # завязка — у середины, в одном месте: компоненты рядом с самой большой из средних
+    if not mid: return None, None
+    big = max(mid, key=lambda i: st[i, 4])
+    keep = [i for i in keep if abs(cen[i][1] - cen[big][1]) < 0.15 * H and abs(cen[i][0] - cen[big][0]) < 0.15 * W]
+    m = np.isin(lb, keep); ys, xs = np.where(m)
+    area = m.sum() / inside.sum()
+    if not (0.0008 < area < 0.03) or ys.max() - ys.min() > 0.3 * H or xs.max() - xs.min() > 0.3 * W: return None, None
+    rgb = np.median(img[m], 0)
+    info = dict(u=round(float(np.median(xs) / W), 4), v=round(float(ys.min() / H), 4), len=round(float((ys.max() - ys.min()) / H), 4),
+                w=round(float((xs.max() - xs.min()) / W), 4), rgb='#%02x%02x%02x' % tuple(int(v) for v in rgb[::-1]))
+    # ореол шнурка (светлая кайма, тень под ним) — тоже стираем: в рамке шнурка всё, что заметно отличается от ткани
+    y0_, y1_, x0_, x1_ = max(0, ys.min() - 8), min(H, ys.max() + 9), max(0, xs.min() - 8), min(W, xs.max() + 9)
+    halo = np.zeros_like(m); halo[y0_:y1_, x0_:x1_] = (dist[y0_:y1_, x0_:x1_] > 18) & inside[y0_:y1_, x0_:x1_]
+    return info, cv2.dilate((m | halo).astype(np.uint8) * 255, np.ones((9, 9), np.uint8))
+
+
+def erase_belt(img, mc, b):
+    """стереть пояс с ткани: каждый столбец полосы — переход от цвета над поясом к цвету под ним (стёжка, складки
+    по вертикали продолжаются)."""
+    H, W = mc.shape; y0 = max(1, int(b['v0'] * H) - 2); y1 = min(H - 2, int(b['v1'] * H) + 2)
+    out = img.astype(np.float32).copy()
+    if b['v0'] <= 0.001: y0 = 0
+    bot = np.median(img[y1 + 1:y1 + 7].astype(np.float32), 0); top = np.median(img[max(0, y0 - 6):y0].astype(np.float32), 0) if y0 >= 3 else bot
+    t = np.linspace(0, 1, y1 - y0 + 1)[:, None, None]
+    out[y0:y1 + 1] = top[None] * (1 - t) + bot[None] * t
+    out[y0:y1 + 1] = cv2.GaussianBlur(out[y0:y1 + 1], (9, 1), 0)
+    bk = b.get('buckle')
+    if bk:   # пряжка выше и ниже пояса — стираем коробку пошире
+        g = y1 - y0; ya, yb = max(0, y0 - int(0.35 * g)), min(H - 2, y1 + int(0.35 * g)); xa, xb = max(0, int((bk['u'] - bk['w'] * 0.85) * W)), min(W, int((bk['u'] + bk['w'] * 0.85) * W))
+        top = out[max(0, ya - 5):ya, xa:xb].mean(0) if ya >= 5 else out[yb + 1:yb + 6, xa:xb].mean(0); bot = out[yb + 1:yb + 6, xa:xb].mean(0)
+        t = np.linspace(0, 1, yb - ya + 1)[:, None, None]; out[ya:yb + 1, xa:xb] = top[None] * (1 - t) + bot[None] * t
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def find_zip(rgb, mc, cx, arm):

@@ -103,7 +103,8 @@ def missing(det, item, meta=None):
     # пока не умеем совсем — честно считаем отсутствующими
     # стёжку примерочная рисует рельефом у всех стёганых (cloth-mesh.js quiltRelief), мех — валиком по краю капюшона
     if det.get('fur') and not item.get('hood'): out.append('мех')
-    if det.get('belt') and k not in ('pants', 'jeans', 'shorts', 'skirt') and not item.get('belt3d'): out.append('пояс')
+    fa = (((meta or {}).get('drape') or {}).get('front') or {}).get('a') or {}
+    if det.get('belt') and k not in ('pants', 'jeans', 'shorts', 'skirt') and not fa.get('belt'): out.append('пояс')   # пояс — объёмной деталью (belt3d.js), если фабрика нашла его на фото
     if det.get('chain') and not item.get('chain3d'): out.append('цепочка')
     return out
 

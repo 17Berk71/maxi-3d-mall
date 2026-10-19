@@ -63,7 +63,7 @@ def score_model(im, kind):
     s = area * 100 * (0.25 if cut_top else 1) * (0.35 if cut_bot and kind not in BOTTOMS | {'coat', 'dress'} else 0.7 if cut_bot else 1) * (0.5 if cut_side else 1)
     s *= (0.4 + 0.6 * sym) * max(0.2, 1 - 2.5 * skin_k) * max(0.3, 1 - 0.8 * min(1, other_k))
     # руки поверх вещи (скрещены, обнимает себя, в карманах) — сеть позы MoveNet: такой снимок — плохой исходник
-    occ = None; facep = None
+    occ = None; facep = None; cont = None
     try:
         import pose
         kp = pose.keypoints(im)
@@ -78,13 +78,24 @@ def score_model(im, kind):
             if min(kp['sh_l'][2], kp['sh_r'][2]) > 0.4 and min(kp['hip_l'][2], kp['hip_r'][2]) > 0.3:
                 shw = abs(kp['sh_l'][0] - kp['sh_r'][0]); tl = abs((kp['hip_l'][1] + kp['hip_r'][1]) / 2 - (kp['sh_l'][1] + kp['sh_r'][1]) / 2)
                 if tl > 10: frontal = shw / tl; s *= max(0.35, min(1.1, frontal / 0.72))
-    except Exception: pass
+            # чужое на корпусе: кофта в расстёгнутой вещи, сумка, топ под пиджаком (contam.py) — застёгнутый снимок без сумки лучше
+            # (пользователь: «свитер впечатался в пуховик», «впечаталась сумка», «топики и кожа впечатались в пиджак»)
+            if kind in TOPS:
+                import contam
+                full_m = np.zeros((h, w), np.uint8); full_m[lab == k] = 1
+                cont = contam.contamination(im, full_m, kp)
+                if cont is not None: s *= max(0.3, 1 - 2.5 * max(0.0, cont - 0.03))
+                tx = contam.text_mask(im, full_m)
+                if tx is not None and tx.sum() > 0.002 * full_m.sum(): s *= 0.85   # надпись поверх вещи — закрасим, но лучше без неё
+            # длинная вещь (пальто, платье): колени в кадре — видно, где низ; крупный план лица с воротником — плохой исходник
+            if kind in ('coat', 'dress') and max(kp['kn_l'][2], kp['kn_r'][2]) < 0.3: s *= 0.6
+    except Exception: cont = None
     if occ is not None: s *= max(0.12, 1 - 3.5 * occ)
     # человек в полный рост на ровном фоне — по нему фабрика меряет длину вещи в см (рост модели из карточки)
     from model_photo import person_scale
     full_fig = person_scale(im, 175) is not None
     if full_fig: s *= 1.2
-    return dict(ok=not cut_top and not cut_side, score=round(s, 2), face=round(face, 3), occ=None if occ is None else round(occ, 3), facep=facep, area=round(area, 3), sym=round(sym, 3), skin=round(skin_k, 3), other=round(other_k, 2),
+    return dict(ok=not cut_top and not cut_side, score=round(s, 2), cont=None if cont is None else round(cont, 3), face=round(face, 3), occ=None if occ is None else round(occ, 3), facep=facep, area=round(area, 3), sym=round(sym, 3), skin=round(skin_k, 3), other=round(other_k, 2),
                 full=full_fig, cut=''.join(c for c, f in (('t', cut_top), ('b', cut_bot), ('s', cut_side)) if f))
 
 
@@ -118,6 +129,46 @@ def promo_card(im):
     return (a > 0.003).sum() >= 3 or a.max() < 0.08
 
 
+def flat_object(im, kind, out_path=None):
+    """Вещь лёжа/на манекене-невидимке внутри рекламной картинки (пиджак RIMILLI на розовом фоне с эмодзи и надписями):
+    сама картинка не студийная, но вещь на ней — отдельный предмет на ровном фоне, лучший исходник, чем фото на модели
+    (там под пиджаком топ и юбка). Берём самый большой предмет по ISNet, если он крупный, не касается края кадра,
+    без кожи и сеть одежды видит в нём вещь. Сохраняем вырез PNG с прозрачностью → путь (studio_load понимает прозрачность)."""
+    from cutout import isnet_mask
+    m = isnet_mask(im)
+    if m is None: return None
+    h, w = im.shape[:2]
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(m)
+    if n < 2: return None
+    k = 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA])); x, y, bw, bh, a = st[k]
+    if a < 0.06 * h * w or x <= 3 or y <= 3 or x + bw >= w - 3 or y + bh >= h - 3: return None
+    comp = (lab == k).astype(np.uint8)
+    ff = comp.copy(); cv2.floodFill(ff, None, (0, 0), 1); comp = comp | (1 - ff)
+    _, skin = basic(im[y:y + bh, x:x + bw])
+    if skin.mean() > 0.04: return None
+    if a < 0.45 * bw * bh: return None     # рыхлое — не одна вещь
+    # картинка-таблица: поверх вещи стрелки мерок — тонкие прямые линии по горизонтали/вертикали (у ромбов-аргайла — диагонали)
+    sub = im[y:y + bh, x:x + bw]; gs = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
+    for thr in ((gs > 225), (gs < 30)):
+        ln = cv2.HoughLinesP(cv2.Canny(thr.astype(np.uint8) * 255, 50, 150), 1, np.pi / 180, 60, minLineLength=int(0.3 * min(bw, bh)), maxLineGap=6)
+        if ln is not None:
+            hv = [l for l in ln.reshape(-1, 4).astype(int) if min(abs(l[2] - l[0]), abs(l[3] - l[1])) < 0.06 * max(abs(l[2] - l[0]), abs(l[3] - l[1]))]
+            if len(hv) >= 4: return None
+    pad = int(0.08 * max(bw, bh)); y0, y1, x0, x1 = max(0, y - pad), min(h, y + bh + pad), max(0, x - pad), min(w, x + bw + pad)
+    crop = im[y0:y1, x0:x1].copy(); cm = comp[y0:y1, x0:x1]
+    bg = np.median(im[np.r_[0:6, h - 6:h]].reshape(-1, 3), 0).astype(np.uint8)
+    crop[cm == 0] = bg   # чистый фон вокруг: сеть одежды не отвлекается на надписи
+    from seg_person import cloth_masks
+    ms = cloth_masks(crop)
+    gm = (ms['upper'] | ms['full'] | ms['lower']) if kind not in BOTTOMS else (ms['lower'] | ms['full'])
+    if (gm & (cm > 0)).sum() < 0.3 * cm.sum(): return None
+    if out_path:
+        rgba = cv2.cvtColor(im[y0:y1, x0:x1], cv2.COLOR_BGR2BGRA); rgba[..., 3] = cm * 255
+        cv2.imwrite(out_path, rgba)
+    return out_path or True
+
+
 def pick(photos, kind, hints=None, table=()):
     """photos — список путей; hints — {'studio': [...], 'back': [...]} номера из ручной разметки (если есть)."""
     hints = hints or {}; res = []
@@ -131,8 +182,14 @@ def pick(photos, kind, hints=None, table=()):
         if r['studio'] and not r['texty'] and not person_free(im, kind): r['studio'] = False; r['person'] = True   # модель на белом фоне
         if r['studio'] and not r['texty'] and promo_card(im): r['studio'] = False; r['texty'] = True   # картинка-реклама: вещь + надписи и значки
         if not r['studio'] and not r['texty']: r.update(score_model(im, kind))
+        if not r['studio'] and (r['texty'] or r.get('score', 0) < 0) and nr not in table:
+            fp = os.path.join(os.path.dirname(p), 'flat_%02d.png' % nr)
+            try: ok = flat_object(im, kind, fp)
+            except Exception: ok = None
+            if ok: r.update(studio=True, texty=False, flat=True, path=fp)
         res.append(r)
     st = [r for r in res if r['studio'] and not r['texty']]
+    st.sort(key=lambda r: bool(r.get('flat')))   # настоящий студийный снимок — раньше вещи, вырезанной из рекламной картинки
     if st:
         back = st[1] if len(st) > 1 else st[0]
         return dict(src='studio', front=st[0]['path'], back=back['path'], scores=res)

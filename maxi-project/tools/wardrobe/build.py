@@ -16,7 +16,7 @@
 Модули фабрики: wardrobe_paths (пути), photo_io (чтение фото), cutout (вырезание), parts_top / parts_bottom (части и мерки),
 drape_cut (выкройка для расчёта ткани), color_balance, model_photo (фото на человеке), debug_view.
 """
-import json, os, sys, glob
+import re, json, os, sys, glob
 import numpy as np, cv2
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from items import ITEMS  # noqa: E402
@@ -68,15 +68,22 @@ def build(it, out=None, debug=True):
             if model_photo.LAST_OCC is not None: meta['occ'] = round(model_photo.LAST_OCC, 3)   # доля вещи, закрытая руками (проверка внешнего вида)
             if model_photo.LAST_OPEN and meta.get('states') and any(s_[0] == 'open' for s_ in meta['states']):
                 meta['open_photo'] = True; meta['states'] = sorted(meta['states'], key=lambda s_: s_[0] != 'open')   # на фото нараспашку — так и показываем
+        if it.get('src') == 'model' and side == 'front':   # низ и верх вещи по точкам тела модели (плечи, бёдра, колени, щиколотки)
+            pl_ = model_photo.pose_len(im, m)
+            if pl_: meta['pose_len'] = pl_
         if it.get('src') == 'model' and side == 'front' and it.get('model_h'):   # длина вещи в см по росту модели (человек в полный рост)
             sc = model_photo.person_scale(im, it['model_h']); L_cm = model_photo.garment_len_cm(m, sc)
             if L_cm: meta['len_photo'] = L_cm; meta['len_photo_est'] = bool(it.get('model_h_est'))
-        if not flat and it.get('src') != 'model':
+        # выравнивание по стене — только для фото пользователя на его стене (эталон WALL_REF); у снимков магазина (белый фон,
+        # кирпич, улица) «стена» другая: белый фон делал вещь серой и тусклой (бежевый плащ Colin's выходил серым)
+        own = not flat and it.get('src') not in ('model', 'studio') and not str(it.get('id', '')).startswith('wb-')
+        if own:
             g = wall_gain(im); tex = apply_gain(tex, g)
             if sleeve is not None: sleeve = apply_gain(sleeve, g)
             mm['color'] = tuple(int(c) for c in np.clip(np.array(mm['color']) * g, 0, 255))
         cv2.imwrite(os.path.join(od, side + '.webp'), tex, [cv2.IMWRITE_WEBP_QUALITY, 88])
-        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if (not flat and it.get('src') != 'model') else im, m, info, it['kind'], od, side, bool(it.get('zip')), bool(it.get('collar')) and not it.get('stand'))
+        belt = bool(it.get('card_belt')) or bool(re.search(r'с поясом|с ремн|пояс в комплект', (it.get('name') or '').lower()))
+        meta.setdefault('drape', {})[side] = cut_for_drape(apply_gain(im, wall_gain(im)) if own else im, m, info, it['kind'], od, side, bool(it.get('zip')), bool(it.get('collar')) and not it.get('stand'), belt)
         if sleeve is not None and side == 'front': cv2.imwrite(os.path.join(od, 'sleeve.webp'), sleeve, [cv2.IMWRITE_WEBP_QUALITY, 85])
         meta[side] = dict((k, (round(v, 3) if isinstance(v, float) else v)) for k, v in mm.items())
         meta[side]['flat'] = bool(flat)
@@ -95,6 +102,7 @@ def build(it, out=None, debug=True):
     if it.get('src') == 'model': meta['shape']['hang'] = False; meta['shape']['worn'] = True   # ширины сняты с вещи на человеке
     if meta.get('hem_waist') is not None: meta['shape']['hem_waist'] = meta.pop('hem_waist')
     if (meta.pop('pose', None) or {}).get('sleeve'): meta['shape']['sleeve_pose'] = True   # sleeve.webp — полоса вдоль руки (model_photo.sleeve_strip)
+    if meta.get('pose_len'): meta['shape']['pose_len'] = meta.pop('pose_len')
     if meta.get('len_photo'): meta['shape']['len_photo'] = meta.pop('len_photo'); meta['shape']['len_photo_est'] = meta.pop('len_photo_est', False)
     if it.get('ref_len'): meta['shape']['ref_len'] = it['ref_len']
     if it.get('sizes'): meta['sizes'] = it['sizes']
