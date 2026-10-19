@@ -16,7 +16,7 @@ export function paintBody(g, covers, skin) {
     if (part === 'neck') { if (c.torso && !c.legs && t < -0.035 && ax > (c.nx || 0.07)) return i; continue; }
     // верх туловища под закрытой вещью — весь: кольца сетки редкие, белая вершина у шеи размазалась бы клином до плеча
     // (из выреза видна только узкая полоса — как тень внутри воротника)
-    if (y > c.y0 + 0.015 && (y < c.y1 - 0.004 || (c.torso && !c.legs))) return i; } return -1; };
+    if (y > c.y0 + 0.015 && (y < c.y1 - 0.004 || (c.torso && !c.legs && !c.neckOpen))) return i; } return -1; };   /* глубокий вырез (декольте, бретели): выше выреза тело не красим */
   g.traverse(m => { const part = m.userData.part; if (!part || !m.isMesh) return;
     // манекен по сетке: часть тела — у каждой точки (0 туловище, 1 голова, 2 рука, 3 нога), доля длины руки — от плечевого сустава
     if (part === 'mh') { const P = m.geometry.attributes.position, pa = m.geometry.attributes.mhpart.array, U = m.userData.mh, col = new Float32Array(P.count * 3); let any = false;
