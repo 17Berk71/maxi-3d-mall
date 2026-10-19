@@ -62,11 +62,24 @@ def score_model(im, kind):
             face = float(((yc[..., 0] > 115) & (yc[..., 1] > 135) & (yc[..., 1] < 173) & (yc[..., 2] > 77) & (yc[..., 2] < 127)).mean())
     s = area * 100 * (0.25 if cut_top else 1) * (0.35 if cut_bot and kind not in BOTTOMS | {'coat', 'dress'} else 0.7 if cut_bot else 1) * (0.5 if cut_side else 1)
     s *= (0.4 + 0.6 * sym) * max(0.2, 1 - 2.5 * skin_k) * max(0.3, 1 - 0.8 * min(1, other_k))
+    # руки поверх вещи (скрещены, обнимает себя, в карманах) — сеть позы MoveNet: такой снимок — плохой исходник
+    occ = None; facep = None
+    try:
+        import pose
+        kp = pose.keypoints(im)
+        if kp:
+            full_m = np.zeros((h, w), np.uint8); full_m[lab == k] = 1
+            occ, _ = pose.occlusion(full_m, kp, im.shape)
+            facep = round(min(kp['nose'][2], max(kp['eye_l'][2], kp['eye_r'][2])), 2)   # лицо видно — снимок спереди
+            # к нам лицом левое плечо человека — справа на кадре; наоборот — снимок со спины (сеть уверенно «видит» нос и на затылке)
+            if min(kp['sh_l'][2], kp['sh_r'][2]) > 0.4 and kp['sh_l'][0] < kp['sh_r'][0]: facep = 0.0
+    except Exception: pass
+    if occ is not None: s *= max(0.12, 1 - 3.5 * occ)
     # человек в полный рост на ровном фоне — по нему фабрика меряет длину вещи в см (рост модели из карточки)
     from model_photo import person_scale
     full_fig = person_scale(im, 175) is not None
     if full_fig: s *= 1.2
-    return dict(ok=not cut_top and not cut_side, score=round(s, 2), face=round(face, 3), area=round(area, 3), sym=round(sym, 3), skin=round(skin_k, 3), other=round(other_k, 2),
+    return dict(ok=not cut_top and not cut_side, score=round(s, 2), face=round(face, 3), occ=None if occ is None else round(occ, 3), facep=facep, area=round(area, 3), sym=round(sym, 3), skin=round(skin_k, 3), other=round(other_k, 2),
                 full=full_fig, cut=''.join(c for c, f in (('t', cut_top), ('b', cut_bot), ('s', cut_side)) if f))
 
 
@@ -121,9 +134,12 @@ def pick(photos, kind, hints=None, table=()):
     mod = sorted([r for r in res if r.get('score', -1) > 0], key=lambda r: -r['score'])
     if not mod: return dict(src=None, scores=res)
     # спереди — с лицом (у низа лица часто не видно — тогда как есть), спинка — без лица
-    fr = [r for r in mod if r['ok'] and (r.get('face', 0) > 0.12 or kind in BOTTOMS)]
+    # спереди — с лицом: по сети позы (нос и глаза видны), без неё — по коже над вещью
+    isfront = lambda r: (r['facep'] > 0.45) if r.get('facep') is not None else r.get('face', 0) > 0.12
+    isback = lambda r: (r['facep'] < 0.35) if r.get('facep') is not None else r.get('face', 1) < 0.06
+    fr = [r for r in mod if r['ok'] and (isfront(r) or kind in BOTTOMS)]
     front = fr[0] if fr else next((r for r in mod if r['ok'] and r['n'] not in hints.get('back', [])), mod[0])
-    hb = [r for r in mod if r['ok'] and r is not front and r['score'] > 0.3 * front['score'] and (r['n'] in hints.get('back', []) or (r.get('face', 1) < 0.06 and kind not in BOTTOMS))]
+    hb = [r for r in mod if r['ok'] and r is not front and r['score'] > 0.3 * front['score'] and (r['n'] in hints.get('back', []) or (isback(r) and kind not in BOTTOMS))]
     back = hb[0] if hb else front
     return dict(src='model', front=front['path'], back=back['path'], scores=res)
 

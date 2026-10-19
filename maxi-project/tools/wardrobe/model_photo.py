@@ -159,6 +159,7 @@ def load_model_photo(key, kind):
             yw = max(seg, key=lambda y: wid[y - dd] - wid[y + dd])
             if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
         if kind != 'skirt': m = drop_leg_gap(im, m)
+    im, m = pose_cleanup(im, m, kind)
     im = paint_over_skin(im, m)
     im = paint_over_hair(im, m)
     # paint_over_inner (середина расстёгнутой вещи) — проба не удалась: у жилета на модели маска «верх» захватывает и кофту под ним,
@@ -214,6 +215,61 @@ def paint_over_inner(im, m):
     out[keep > 0] = col
     edge = cv2.dilate(keep, np.ones((15, 15), np.uint8)) - cv2.erode(keep, np.ones((15, 15), np.uint8))
     return cv2.inpaint(out, edge, 7, cv2.INPAINT_TELEA)
+
+
+LAST_OCC = None   # доля корпуса вещи, закрытая руками на последнем фото (для meta и проверки внешнего вида)
+LAST_OPEN = False  # на фото вещь расстёгнута (посередине видна кофта под ней) — в примерочной сначала «нараспашку»
+
+
+def pose_cleanup(im, m, kind):
+    """По позе человека (pose.py, MoveNet): 1) у жилета руки — это рукава кофты под ним: из маски долой;
+    2) руки поверх корпуса (скрещены, в карманах, держат полу) — закрасить тканью вокруг;
+    3) у расстёгнутой верхней одежды посередине видна кофта под ней — закрасить цветом вещи с боков корпуса
+    (на манекене вещь застёгнута)."""
+    global LAST_OCC, LAST_OPEN
+    LAST_OCC = None; LAST_OPEN = False
+    if kind not in TOPS: return im, m
+    try:
+        import pose
+        kp = pose.keypoints(im)
+    except Exception: kp = None
+    if not kp: return im, m
+    am = pose.arm_mask(im.shape, kp)
+    if kind == 'vest' and am.any():
+        m2 = m.copy(); m2[cv2.dilate(am, np.ones((9, 9), np.uint8)) > 0] = 0
+        n, lb, st, _ = cv2.connectedComponentsWithStats(m2)
+        if n > 1 and st[1:, cv2.CC_STAT_AREA].max() > 0.4 * m.sum(): m = (lb == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
+    occ, om = pose.occlusion(m, kp, im.shape)
+    LAST_OCC = occ
+    if om is not None and om.any() and kind != 'vest' and occ < 0.35:
+        k = cv2.dilate(om.astype(np.uint8), np.ones((7, 7), np.uint8)) & m
+        im = cv2.inpaint(im, k, 9, cv2.INPAINT_TELEA)
+    if kind in ('coat', 'jacket', 'puffer', 'vest', 'hoodie') or (kind == 'sweater'):
+        poly = pose.torso_poly(kp)
+        if poly is not None:
+            lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
+            x0, x1 = sorted([poly[0][0], poly[1][0]]); y0, y1 = int(min(poly[0][1], poly[1][1])), int(max(poly[2][1], poly[3][1]))
+            wd = x1 - x0; y0 = max(0, y0); y1 = min(im.shape[0], y1)
+            if wd > 20 and y1 > y0 + 20:
+                sides = np.zeros(m.shape, bool)
+                sides[y0:y1, int(x0):int(x0 + wd * 0.22)] = True; sides[y0:y1, int(x1 - wd * 0.22):int(x1)] = True; sides &= m > 0
+                if sides.sum() > 300:
+                    ref = np.median(lab[sides], 0); spread = np.percentile(np.linalg.norm(lab[sides] - ref, axis=1), 85)
+                    band = np.zeros(m.shape, bool); band[y0:y1, int(x0 + wd * 0.25):int(x1 - wd * 0.25)] = True
+                    far = (np.linalg.norm(lab - ref, axis=2) > max(22, spread * 1.6)) & band & (m > 0)
+                    far = cv2.morphologyEx(far.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+                    n, lb, st, _ = cv2.connectedComponentsWithStats(far); keep = np.zeros_like(far)
+                    for i in range(1, n):   # кофта под вещью — вытянутая сверху вниз полоса у середины
+                        x, y, w_, h_ = st[i, :4]
+                        if st[i, cv2.CC_STAT_AREA] > 0.01 * m.sum() and h_ > 1.5 * w_ and y < y0 + (y1 - y0) * 0.4: keep[lb == i] = 1
+                    if keep.any():
+                        LAST_OPEN = True
+                        keep = cv2.dilate(keep, np.ones((7, 7), np.uint8)) & (m > 0)
+                        col = cv2.cvtColor(np.uint8([[np.clip(ref, 0, 255)]]), cv2.COLOR_LAB2BGR)[0, 0]
+                        out = im.copy(); out[keep > 0] = col
+                        edge = (cv2.dilate(keep, np.ones((11, 11), np.uint8)) - cv2.erode(keep, np.ones((11, 11), np.uint8))) & (m > 0)
+                        im = cv2.inpaint(out, edge, 6, cv2.INPAINT_TELEA)
+    return im, m
 
 
 def person_scale(im, model_h):

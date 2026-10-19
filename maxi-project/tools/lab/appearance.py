@@ -136,6 +136,10 @@ def source_quality(id_, item):
         s = next((x for x in r.get('scores', []) if os.path.basename(x.get('path', '')) == fr), None)
         if s and r.get('src') == 'model':
             q['skin'] = s.get('skin'); q['other'] = s.get('other'); q['cut'] = s.get('cut', '')
+    mp = os.path.join(OUT, id_, 'meta.json')
+    if os.path.exists(mp):
+        mt = json.load(open(mp))
+        if mt.get('occ') is not None: q['arms'] = mt['occ']   # руки поверх вещи по позе (pose.py) на выбранном фото
     # кожа, оставшаяся в вырезе после закраски (кисти, пальцы поверх ткани)
     p = os.path.join(OUT, id_, 'front_cut.webp'); im = cv2.imread(p, cv2.IMREAD_UNCHANGED) if os.path.exists(p) else None
     if im is not None and im.shape[2] == 4:
@@ -155,7 +159,7 @@ def score(f, src, q, det):
     if 'ratio' in f: pens['силуэт'] = 15 * ramp(abs(np.log(max(f['ratio'], 0.05))), 0.15, 0.5)
     occ = 0.0
     if src == 'model':
-        occ = max(q.get('skin') or 0, q.get('skin_left') or 0) * 1.5 + min(1, q.get('other') or 0) * 0.3 + (0.1 if 'b' in (q.get('cut') or '') or 't' in (q.get('cut') or '') else 0)
+        occ = max((q.get('skin') or 0) * 1.5, (q.get('skin_left') or 0) * 1.5, (q.get('arms') or 0) * 1.2) + min(1, q.get('other') or 0) * 0.3 + (0.1 if 'b' in (q.get('cut') or '') or 't' in (q.get('cut') or '') else 0)
     else: occ = (q.get('skin_left') or 0) * 1.5
     pens['исходник'] = 20 * ramp(occ, 0.04, 0.25)
     if det is not None: pens['детали'] = min(40, sum(20 if x in ('стёжка', 'мех', 'капюшон', 'отложной воротник') else 10 for x in det))   # главные детали вида весят вдвое

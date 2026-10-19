@@ -40,6 +40,12 @@ def load_any(key, maxh=1400, with_alpha=False):
 def studio_load(key):
     """Студийное фото и маска вещи: из прозрачности PNG, если она есть, иначе — вырезанием фона."""
     im, am = load_any(key, with_alpha=True)
+    # прозрачность у снимков Wildberries бывает «рамкой» (прозрачны только поля кадра, фон вокруг вещи — нет: у джинсов
+    # маской выходило 75% кадра, ткань на манекене — белая). Если есть сеть ISNet и маски сильно расходятся — сеть
+    if am is not None and 0.05 < am.mean() < 0.95:
+        from cutout import isnet_mask
+        mi = isnet_mask(im)
+        if mi is not None and 0.02 < mi.mean() < 0.9 and (mi & am).sum() / max(1, (mi | am).sum()) < 0.8: am = None
     if am is not None and 0.05 < am.mean() < 0.95:
         n, lab_, st, _ = cv2.connectedComponentsWithStats(am)
         if n > 1: am = (lab_ == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)

@@ -6,6 +6,29 @@ import numpy as np, cv2
 DRAPE_ROWS = 64
 
 
+def find_quilt(img, mc, cx):
+    """Строчки стёжки на фото (пуховик, стёганая куртка): по строкам — медиана яркости в средней полосе вещи, тонкие тёмные
+    провалы с почти ровным шагом. → доли высоты выреза (0..1) или None."""
+    H, W = mc.shape
+    if H < 80: return None
+    L = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)[..., 0].astype(np.float32)
+    x0, x1 = int(max(0, (cx - 0.28) * W)), int(min(W, (cx + 0.28) * W)); prof = np.full(H, np.nan, np.float32)
+    for y in range(H):
+        row = mc[y, x0:x1] > 0
+        if row.mean() > 0.6: prof[y] = np.median(L[y, x0:x1][row])
+    ok = ~np.isnan(prof)
+    if ok.sum() < H * 0.5: return None
+    ys = np.arange(H); prof = np.interp(ys, ys[ok], prof[ok])
+    hp = cv2.GaussianBlur(prof.reshape(-1, 1), (1, 0), sigmaX=1, sigmaY=H / 120).ravel() - cv2.GaussianBlur(prof.reshape(-1, 1), (1, 0), sigmaX=1, sigmaY=H / 25).ravel()
+    sd = hp[ok].std()
+    if sd < 0.8: return None
+    mins = [y for y in range(2, H - 2) if ok[y] and hp[y] < -0.8 * sd and hp[y] == hp[max(0, y - H // 30):y + H // 30].min()]
+    if len(mins) < 3: return None
+    d = np.diff(mins)
+    if d.mean() < H * 0.04 or d.std() / d.mean() > 0.45: return None
+    return [round(y / H, 4) for y in mins]
+
+
 def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     """Для симуляции ткани: вырезанное фото (RGBA) по силуэту вещи и грубая сетка силуэта — это «выкройка» перед/спинки.
     Координаты якорей — в долях кадра выреза (0..1)."""
@@ -60,6 +83,9 @@ def cut_for_drape(im, m, info, kind, od, side, zip_=False, collar=False):
     if not zc and btn and btn['line']: zc = btn['line']
     if zc: a['zipc'] = zc
     if btn and btn['buttons']: a['buttons'] = btn['buttons']
+    if kind in ('puffer', 'vest', 'jacket', 'coat'):
+        q = find_quilt(filled, mc, a['cx'])
+        if q: a['quilt'] = q
     if col_: a['collar'] = dict(rgb=col_['rgb'])
     return dict(img=side + '_cut.webp', W=W, H=H, gw=gw, gh=gh, grid=grid, a={k_: (v if isinstance(v, (list, dict)) else round(float(v), 4)) for k_, v in a.items()})
 

@@ -13,7 +13,7 @@ for it in json.load(open(os.path.join(RAW, 'wb_items.json'))):
     if it.get('sizes'): m['sizes'] = it['sizes']
     for f in FLAGS:
         if it.get(f): m[f] = it[f]
-    if it.get('states'): m['states'] = it['states']
+    if it.get('states'): m['states'] = sorted(it['states'], key=lambda s_: s_[0] != 'open') if m.get('open_photo') else it['states']
     card = {k[5:]: v for k, v in it.items() if k.startswith('card_')}
     if card: m['card'] = card   # детали и ткань из характеристик карточки (wb_details.py)
     for k in ('crop', 'elastic'):

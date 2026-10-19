@@ -62,6 +62,10 @@ def build(it, out=None, debug=True):
             if c0.get('outseam') and c0.get('inseam'): cf = (c0['outseam'] - c0['inseam']) / c0['outseam']
         tex, sleeve, mm, info = part(im, m, it['kind'], flat, cf, flat and it.get('src') != 'studio') if part is bottom_parts else part(im, m, it['kind'])
         if it.get('src') == 'model' and side == 'front' and model_photo.LAST_HEM is not None: meta['hem_waist'] = model_photo.LAST_HEM
+        if it.get('src') == 'model' and side == 'front':
+            if model_photo.LAST_OCC is not None: meta['occ'] = round(model_photo.LAST_OCC, 3)   # доля вещи, закрытая руками (проверка внешнего вида)
+            if model_photo.LAST_OPEN and meta.get('states') and any(s_[0] == 'open' for s_ in meta['states']):
+                meta['open_photo'] = True; meta['states'] = sorted(meta['states'], key=lambda s_: s_[0] != 'open')   # на фото нараспашку — так и показываем
         if it.get('src') == 'model' and side == 'front' and it.get('model_h'):   # длина вещи в см по росту модели (человек в полный рост)
             sc = model_photo.person_scale(im, it['model_h']); L_cm = model_photo.garment_len_cm(m, sc)
             if L_cm: meta['len_photo'] = L_cm; meta['len_photo_est'] = bool(it.get('model_h_est'))
