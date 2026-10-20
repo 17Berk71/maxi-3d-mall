@@ -154,7 +154,11 @@ export function bottomSpec(item, d) {
   // низ на фото шумный (обувь, тень): опора — медиана нижней трети без двух последних точек; последние две = мерка низа
   // масштаб штанины: от бедра (полуобхват бёдер × 0.55 ≈ ширина штанины у шага лёжа), форма книзу — по фото;
   // «низ» из таблицы — только если нет бёдер (его часто меряют по-разному: по кругу или лёжа)
-  if (cm.hip) { const f = cm.hip / 100 * 0.55 / lw[0]; lw = lw.map(v => v * f); const n = lw.length; lw[n - 1] = Math.max(lw[n - 1], lw[n - 3] * 0.9); lw[n - 2] = Math.max(lw[n - 2], lw[n - 3] * 0.95); }
+  if (cm.hip) { const f = cm.hip / 100 * 0.55 / lw[0]; lw = lw.map(v => v * f); const n = lw.length; lw[n - 1] = Math.max(lw[n - 1], lw[n - 3] * 0.9); lw[n - 2] = Math.max(lw[n - 2], lw[n - 3] * 0.95);
+    // низ по таблице заметно уже штанины (багги, джоггеры, брюки на манжете): к низу сужаем по таблице на последней четверти —
+    // иначе широкая штанина висела прямой трубой до пола, как классические брюки (пользователь: «не передан оверсайз силуэт»)
+    const hm = cm.hem / 100; if (hm && hm < lw[n - 4] * 0.85 && !(typeof window !== 'undefined' && window.__noHemTaper)) { const k0 = Math.floor(n * 0.72);
+      for (let i = k0; i < n; i++) { const t = (i - k0) / Math.max(1, n - 1 - k0), w = t * t * (3 - 2 * t); lw[i] = lw[i] * (1 - w) + hm * w; } } }
   else if (cm.hem) { const n = lw.length, ref = lw.slice(Math.max(0, n - 6), n - 2).sort((a, b) => a - b)[1] || lw[n - 1], f = cm.hem / 100 / ref;
     lw = lw.map(v => v * f); lw[n - 1] = lw[n - 2] = cm.hem / 100; }
   // штанина книзу не шире 1.6 ширины у шага (выбросы фото); бочки и клёш расширяются до ~1.4–1.5 — их не срезать
@@ -198,7 +202,13 @@ export function skirtProf(item, d) {
   const robust = sh.worn || Math.max(...prof) > 2.1 || cm.hip || cm.hem;
   const tH = Math.min(0.85, 0.1 * H / Lk), hipW = Math.max(HPb, cm.hip ? cm.hip / 100 : 0), pH = interp(prof, tH) || 1;
   const hemW = cm.hem ? Math.max(hipW, cm.hem / 100) : 0;
+  const rawP0 = sh.hip && sh.hip.length >= 6 && !(typeof window !== 'undefined' && window.__noMermaid) ? sh.hip : null, pHr = rawP0 ? interp(rawP0, tH) : 0, pEr = rawP0 ? Math.max(...rawP0.slice(-3)) : 0;
+  const rawP = rawP0 && hemW && pEr > pHr * 1.15 ? rawP0 : null;
   const flare = t => { const f = clamp(interp(prof, t) / pH, 1, 1.9); if (!hemW) return hipW * f;
+    // форма — с фото (юбка-русалка: у колена уже бёдер, книзу клёш), размеры — по таблице (бёдра и низ). Раньше между бёдрами
+    // и низом по таблице шла прямая — русалка выходила трапецией
+    if (rawP) { const ur = tt => (interp(rawP, tt) - pHr) / (pEr - pHr); let u = ur(t); if (t > 0.8) u = Math.max(u, ur(0.8)); if (t > 0.92) u = Math.max(u, 1 - (1 - u) * (1 - (t - 0.92) / 0.08));
+      return hipW + (hemW - hipW) * clamp(u, -0.25, 1); }
     const u = (t - tH) / Math.max(0.05, 1 - tH); return hipW + (hemW - hipW) * clamp(u, 0, 1); };
   const wvis = y => { const t = y / Lk, yw = (yW - y) / H, ab = bodyAB(d, Math.max(0.5, yw)); const body = yw > 0.47 ? ellP(ab.a, ab.b) / 2 + 0.012 : HPb;
     if (robust) return Math.max(t < tH ? WW + (hipW - WW) * smooth(t / tH) : flare(t), body);
