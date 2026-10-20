@@ -31,7 +31,7 @@ export function drapePrepare(item, d, under) {
   const st = item.state || '', open = st === 'open', tucked = st === 'tucked', hoodUp = st === 'hood', hooded = k === 'hoodie' || item.hood;
   // заправленный верх: ниже пояса брюк не отталкивается от них — край уходит внутрь, пояс брюк виден поверх
   if (tucked && under && fit.BOT_YW) { const lim = Math.round(fit.BOT_YW / d.H * 100) + 1; under = {a: under.a.map((v, i) => i <= lim ? 0 : v), b: under.b.map((v, i) => i <= lim ? 0 : v)}; }
-  const H = d.H, C = makeCloth(), fab = ((k === 'skirt' && item.pleats ? FABRIC.skirtP : k === 'vest' && item.puffer ? FABRIC.puffer : isBlazer(item) && !(typeof window !== 'undefined' && window.__noBlazer) ? FABRIC.blazer : FABRIC[k]) || FABRIC.tee), push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
+  const H = d.H, C = makeCloth(), fab = ((k === 'skirt' && item.pleats ? FABRIC.skirtP : k === 'vest' && item.puffer ? (typeof window !== 'undefined' && window.__vestFab ? FABRIC.puffer : FABRIC.pufferVest) : isBlazer(item) && !(typeof window !== 'undefined' && window.__noBlazer) ? FABRIC.blazer : FABRIC[k]) || FABRIC.tee), push = makeCollider(d, under, fab.margin), base = item.color || '#888', chains = [];
   const dr = item.drape || {}, aF = (dr.front && dr.front.a) || {cx: 0.5}, aB = (dr.back && dr.back.a) || aF;
   // декор с фото переда (пуговицы) — объёмными деталями на детали «перед» (decor.js)
   C.decor = (aF.buttons || []).map(b => Object.assign({role: 'front', fabric: item.color}, b));
