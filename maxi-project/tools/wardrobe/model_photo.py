@@ -159,6 +159,7 @@ def load_model_photo(key, kind):
             yw = max(seg, key=lambda y: wid[y - dd] - wid[y + dd])
             if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
         if kind != 'skirt': m = drop_leg_gap(im, m)
+    if kind not in TOPS: m = cut_above_waist(im, m)
     im, m = pose_cleanup(im, m, kind)
     im = paint_over_skin(im, m)
     im = paint_over_hair(im, m)
@@ -348,6 +349,25 @@ def fill_rows(im, sp, k=7):
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
+def cut_above_waist(im, m):
+    """Низ (юбка, брюки) под кофтой того же цвета: сеть отдаёт их одной маской (чёрная рубашка над чёрной юбкой, Zolla 175432470).
+    Выше середины пути от плеч к бёдрам по позе низа быть не может — там отрезаем."""
+    try:
+        import pose
+        kp = pose.keypoints(im)
+    except Exception: kp = None
+    if not kp: return m
+    sh = [kp[x][1] for x in ('sh_l', 'sh_r') if kp[x][2] >= 0.3]; hp = [kp[x][1] for x in ('hip_l', 'hip_r') if kp[x][2] >= 0.3]
+    if not sh or not hp: return m
+    ys, yh = float(np.mean(sh)), float(np.mean(hp))
+    if yh <= ys + 10: return m
+    yc = int(ys + 0.45 * (yh - ys))
+    if m[:yc].sum() < 0.03 * max(1, m.sum()): return m
+    m = m.copy(); m[:max(0, yc)] = 0
+    n, lb, st, _ = cv2.connectedComponentsWithStats(m)
+    return (lb == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8) if n > 1 else m
+
+
 def pose_len(im, m):
     """Где верх и низ вещи на модели в долях тела по позе (MoveNet): 0 — плечи, 1 — бёдра (тазобедренный сустав), 2 — колени,
     3 — щиколотки. Пользователь: «на фото платье ниже колена, на манекене выше» — длину переносим на манекен по тем же точкам тела,
@@ -361,7 +381,11 @@ def pose_len(im, m):
     for a, b in (('sh_l', 'sh_r'), ('hip_l', 'hip_r'), ('kn_l', 'kn_r'), ('an_l', 'an_r')):
         c = [kp[x] for x in (a, b) if kp[x][2] >= 0.3]
         lv.append(np.mean([p[1] for p in c]) if c else None)
+    # бёдра под длинной курткой сеть видит неуверенно: по плечам и коленям (тазобедренный сустав ≈ 0.52 пути от плеч к коленям)
+    if lv[1] is None and lv[0] is not None and lv[2] is not None and lv[2] > lv[0]: lv[1] = lv[0] + 0.52 * (lv[2] - lv[0])
     if lv[0] is None or lv[1] is None or lv[1] <= lv[0]: return None
+    # колени за краем кадра или не видны: по пропорции (от бёдер до колен ≈ 0.85 пути от плеч до бёдер) — для низа куртки до середины бедра
+    if lv[2] is None: lv[2] = lv[1] + 0.85 * (lv[1] - lv[0])
     def s_of(y):
         pts = [(i, v) for i, v in enumerate(lv) if v is not None]
         for (i0, y0), (i1, y1) in zip(pts, pts[1:]):

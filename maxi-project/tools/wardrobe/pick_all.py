@@ -4,7 +4,7 @@ import glob, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from photo_pick import pick
 from wardrobe_paths import RAW
-MAXN = int(os.environ.get('MAXN', 10))
+MAXN = int(os.environ.get('MAXN', 16))   # застёгнутый/анфас снимок часто в конце карточки (жилет Телодвижения: 13–14 из 15)
 for gp in sorted(glob.glob(os.path.join(RAW, 'wb_*', 'wb_*', 'garment.json'))):
     d = os.path.dirname(gp); out = os.path.join(d, 'pick.json')
     if os.path.exists(out): continue
