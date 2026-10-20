@@ -150,8 +150,11 @@ export function clothMeshes(C, P, H) {
     // толщина на открытых краях (низ, манжеты, горловина): пришитые края — нет
     const nv = m.verts.length, ce = mesh.userData.cm.edges, sw = k => k < nv ? sewnG.has(m.verts[k]) : sewnG.has(m.verts[ce[k - nv][0]]) && sewnG.has(m.verts[ce[k - nv][1]]);
     // мех опушки (характеристики карточки): по открытому краю капюшона — пышный валик ~3 см, ворс по тому же фото
-    if (C.fur && m.role === 'hood') { const ed = buildEdge(mesh, sw, C.fur.t, FUR_ROWS); if (ed) { const fm = m.mat.clone(); fm.roughness = 1; fm.sheen = new THREE.Color(0.5, 0.48, 0.45); fm.envMapIntensity = 0.15; clothify(fm, FT.suede); fm.userData.fur = true; ed.material = fm; ed.userData.fur = true; g.add(ed); } }
+    const furEdge = (pred, t) => { const ed = buildEdge(mesh, pred, t, FUR_ROWS); if (ed) { const fm = m.mat.clone(); fm.roughness = 1; fm.sheen = new THREE.Color(0.5, 0.48, 0.45); fm.envMapIntensity = 0.15; clothify(fm, FT.suede); fm.userData.fur = true; ed.material = fm; ed.userData.fur = true; g.add(ed); } };
+    if (C.fur && m.role === 'hood') furEdge(sw, C.fur.t);
     else if (!(typeof window !== 'undefined' && window.__noEdge)) { const ed = buildEdge(mesh, sw, edgeThickness(FT, m.mat.userData.ft)); if (ed) g.add(ed); }
+    // мех и по бортам расстёгнутой вещи (пуховик с меховой опушкой: на фото мех идёт от капюшона вниз по полочкам)
+    if (C.fur && m.role === 'front' && geo.attributes.uvm) { const um = geo.attributes.uvm.array; furEdge(k => sw(k) || Math.abs(um[k * 2]) > 0.035, C.fur.t * 0.8); }
   });
   { const pgs = g.children.filter(o => o.userData.pg).map(o => o.userData.pg); if (pgs.length) { pleatSmooth(pgs, P); pgs.forEach(pg => pleatUpdate(pg, P, N, AO)); } }
   // слой для следующих вещей — только корпус (перед, спинка); рукава и капюшон не расширяют «туловище» верхней вещи
