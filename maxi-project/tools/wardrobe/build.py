@@ -67,7 +67,7 @@ def build(it, out=None, debug=True):
         if it.get('src') == 'model' and side == 'front':
             if model_photo.LAST_OCC is not None: meta['occ'] = round(model_photo.LAST_OCC, 3)   # доля вещи, закрытая руками (проверка внешнего вида)
             if model_photo.LAST_OPEN and meta.get('states') and any(s_[0] == 'open' for s_ in meta['states']):
-                meta['open_photo'] = True; meta['states'] = sorted(meta['states'], key=lambda s_: s_[0] != 'open')   # на фото нараспашку — так и показываем
+                meta['open_photo'] = True   # на фото нараспашку; середину фабрика закрасила тканью, поэтому первым — «застёгнут»: нараспашку полочки с фото на модели часто разлетались (пальто 732690823)
         if it.get('src') == 'model' and side == 'front':   # низ и верх вещи по точкам тела модели (плечи, бёдра, колени, щиколотки)
             pl_ = model_photo.pose_len(im, m)
             if pl_: meta['pose_len'] = pl_
