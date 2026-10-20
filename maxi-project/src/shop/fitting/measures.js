@@ -15,7 +15,7 @@ export function topMeasures(item, d) {
   // вещь меньше тела не наденется: не уже груди + 1.5 см (трикотаж тянется и садится по фигуре — +0.8 см; «мало» честно пишет подсказка размера).
   // Калибровка: футболка Zolla L лёжа 54 см (рулетка) при груди 110 — на фигуре в обтяжку, а не свободная
   // утеплитель (пуховик) съедает ширину: толщина m по кругу — это π·m от ширины лёжа; это не «оверсайз», плечо не спускаем
-  const fk = k === 'vest' && item.puffer ? 'puffer' : k, ins = Math.PI * ((FABRIC[fk] && FABRIC[fk].margin) || 0);
+  const fk = k === 'vest' && item.puffer ? 'pufferVest' : k, ins = Math.PI * ((FABRIC[fk] && FABRIC[fk].margin) || 0);
   const knit = k === 'tee' || k === 'sweater' || k === 'hoodie', bodyHalf = d.b.chest / 200, W = Math.max(sp.Fs[1], bodyHalf + (knit ? 0.008 : 0.015) + ins), L = sp.L, loose = Math.max(0, W - bodyHalf - 0.03 - ins);
   // спущенное плечо — не дальше 9 см за плечо фигуры: у фото на модели со слившимися рукавами ширина «с руками», и плечо уезжало
   // к локтю, а рукав по остатку длины кончался у локтя (пуховик Zarina)

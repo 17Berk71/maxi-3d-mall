@@ -99,8 +99,8 @@ export function topSpec(item, d) {
   // студийное фото или вешалка без таблицы у длинных вещей (пальто, пуховик, платье, куртка): длина вида бывает любой (короткое
   // пальто и пальто в пол), а ширина у вещи «своего» размера — фигура плюс обычный припуск вида. Поэтому масштаб — по ширине,
   // длина — по пропорции фото. Раньше длинное пальто и парка выходили короткими, длинный пуховик — широким «пончо»
-  if (!cm.chest && !cm.len && !sh.worn && (!sh.merged || flatM) && !lp && ['coat', 'puffer', 'dress', 'jacket'].includes(k) && !(typeof window !== 'undefined' && window.__noWAnchor)) {
-    const EASEC = {coat: 0.22, puffer: 0.30, dress: 0.08, jacket: 0.16}, over = /оверсайз|oversize|свободн/i.test(item.name || '') ? 0.12 : 0;
+  if (!cm.chest && !cm.len && !sh.worn && (!sh.merged || flatM) && !lp && ['coat', 'puffer', 'dress', 'jacket', 'vest'].includes(k) && !(typeof window !== 'undefined' && window.__noWAnchor)) {
+    const EASEC = {coat: 0.22, puffer: 0.30, dress: 0.08, jacket: 0.16, vest: item.puffer ? 0.16 : 0.08}, over = /оверсайз|oversize|свободн/i.test(item.name || '') ? 0.12 : 0;
     const ab = bodyAB(d, 0.72), half = ellP(ab.a, ab.b) / 2 + (EASEC[k] + over) / 2, f = half / Fs[1];
     // лёжа с рукавами вдоль корпуса пропорция фото ненадёжна (ширина — уже рукавов, а не корпуса): длина не больше ×1.25 типовой
     // (×1.45 у «удлинённых»); иначе удлинённый бомбер Love Republic выходил пальто в пол
@@ -230,7 +230,7 @@ export function armSpread(items, d) {
         if (it.kind === 'skirt') { const sk = skirtProf(it, d), yy = sk.yW - y; if (yy > 0 && yy <= sk.Lk) a = Math.max(a, sk.wvis(yy) / Math.PI * 1.12 + 0.01); } }
       // утеплитель (FABRIC.puffer.margin 2.8 см) утолщает в расчёте и бок, и руку: руки отводим на обе толщины, иначе рукав
       // зажат между боком и рукой и уезжает вверх к локтю
-      const mg = it.kind === 'puffer' || (it.kind === 'vest' && it.puffer) ? 0.028 : 0;
+      const mg = it.kind === 'puffer' ? 0.028 : it.kind === 'vest' && it.puffer ? 0.012 : 0;
       const dy = j.y - y, need = a + armRad(d, dy / j.L) * 1.0 + 0.004 + (it.kind === 'puffer' ? 2 * mg : mg);
       th = Math.max(th, Math.atan((need - j.x) / dy));
     });
