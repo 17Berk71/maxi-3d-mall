@@ -93,7 +93,7 @@ export function drapePrepare(item, d, under) {
     // длинная вещь ниже шага (платье, пальто): невидимый «подъюбник» по ширине вещи, как у юбки — иначе подол проваливался
     // между ног и спереди висел «хвостом» (вязаное поло, комбинация, платье O'STIN). Коллайдер: эллипс чуть меньше вещи
     { const yC = d.mh ? d.mh.crotch : 0.47 * H, yHem = yTop - M.L;
-      if (yHem < yC - 0.05 && M.sp && M.sp.F && !(typeof window !== 'undefined' && window.__noUnderDress)) {
+      if (yHem < yC + 0.03 && M.sp && M.sp.F && !(typeof window !== 'undefined' && window.__noUnderDress)) {   /* и у короткого пальто с низом у шага: иначе низ проваливался между ног «трусами» */
         const ua = under ? Array.from(under.a) : new Array(101).fill(0), ub = under ? Array.from(under.b) : new Array(101).fill(0);
         for (let i = 0; i <= 100; i++) { const y = i / 100 * H; if (y < yHem + 0.02 || y > yC + 0.02) continue;
           const r = M.sp.F(y) / Math.PI * 0.86 * Math.min(1, (yC + 0.02 - y) / 0.08); if (r <= 0) continue; ua[i] = Math.max(ua[i] || 0, r * 1.1); ub[i] = Math.max(ub[i] || 0, r * 0.82); }
@@ -404,6 +404,11 @@ export function drapePrepare(item, d, under) {
   // растянутая ткань после расчёта (трение) и доводки — расслабить без трения: очаги на плече и под мышкой (relax.js)
   if (!W_.__noRelax) relaxStretch(C, P, push, W_.__relaxLim || 1.06);
   const g = clothMeshes(C, P, H);
+  // тело красим только там, где ткань действительно легла: если низ после расчёта выше задуманного (подтянуло, косо),
+  // окрашенный манекен ниже края выглядел частью вещи («красные трусы» у короткого пальто)
+  if (cover && top && !(typeof window !== 'undefined' && window.__noCoverFit)) { const B = new Array(24).fill(9);
+    C.meshes.forEach(m => { if (m.role !== 'front' && m.role !== 'back') return; m.verts.forEach(v => { const x = P[v * 3], z = P[v * 3 + 2], y = P[v * 3 + 1], k = Math.max(0, Math.min(23, Math.floor((Math.atan2(x, z) + Math.PI) / (2 * Math.PI) * 24))); if (y < B[k]) B[k] = y; }); });
+    const lows = B.filter(v => v < 9); if (lows.length > 12) cover.y0 = Math.max(cover.y0, Math.max(...lows) + 0.015); }
   g.userData.measures = info; if (cover) g.userData.cover = Object.assign(cover, {color: base});
   if (typeof window !== 'undefined' && window.__keep) window.__last = {C, P};
   try { QC[item.id] = qcCloth(C, P, d, item, dr, info, top, aF, aB); g.userData.qc = QC[item.id]; } catch (e) { QC[item.id] = null; }
