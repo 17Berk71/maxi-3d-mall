@@ -299,7 +299,7 @@ def pose_cleanup(im, m, kind):
     if om is not None and om.any() and kind != 'vest' and occ < 0.35:
         k = cv2.dilate(om.astype(np.uint8), np.ones((7, 7), np.uint8)) & m
         im = cv2.inpaint(im, k, 9, cv2.INPAINT_TELEA)
-    if kind in ('coat', 'jacket', 'puffer', 'vest', 'hoodie'):
+    if kind in ('coat', 'jacket', 'puffer', 'vest', 'hoodie', 'shirt', 'sweater'):
         # середина расстёгнутой вещи (кофта, топ, кожа, юбка под пиджаком — бывает несколько цветов сразу): промежуток между
         # полочками по строкам (contam.inner_span), каждая строка заливается переходом от цвета левого края к правому —
         # горизонтальная стёжка и светотень строки сохраняются, на манекене середина — ткань вещи

@@ -43,6 +43,13 @@ def _dist(lab, ref):
 def _thr(spread): return max(16, min(36, spread * 1.6))
 
 
+def _far(lab, ref, spread):
+    """чужое: оттенок далеко или яркость сильно другая (чёрная водолазка под серым пиджаком, белая рубашка под чёрным):
+    блики плащёвки светлее на 20–40 — их не считаем"""
+    dl = lab[..., 0] - ref[0]
+    return (_dist(lab, ref) > _thr(spread)) | (dl < -38) | (dl > 60)
+
+
 def contamination(im, m, kp):
     if kp is None: return None
     tm, poly = _torso(kp, im.shape)
@@ -51,7 +58,7 @@ def contamination(im, m, kp):
     r = side_ref(lab, m, poly)
     if r is None: return None
     ref, spread, _ = r
-    far = _dist(lab, ref) > _thr(spread)
+    far = _far(lab, ref, spread)
     bad = (far & (m > 0)) | (m == 0)
     bad = cv2.morphologyEx((bad & tm).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)) > 0   # мелкий принт, пуговицы — не в счёт
     return float(bad.sum() / tm.sum())
@@ -68,8 +75,10 @@ def inner_span(im, m, kp, ref=None):
     r = side_ref(lab, m, poly)
     if r is None: return None, None
     rf, spread, (x0, x1, y0, y1) = r
+    if _DBG: print('spread', round(spread, 1))
+    if spread > 32: return None, None   # пёстрая ткань (аргайл, клетка, принт): «чужое» от рисунка не отличить — не трогаем
     wd = x1 - x0; cx = (x0 + x1) / 2
-    far = ((_dist(lab, rf) > _thr(spread)) & (m > 0)) | (m == 0)
+    far = (_far(lab, rf, spread) & (m > 0)) | (m == 0)
     far = cv2.morphologyEx(far.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)) > 0
     # низ: вещь может быть длиннее бёдер (пальто) — идём до низа маски
     ys = np.where(m.any(1))[0]; yb = int(ys[-1]) if len(ys) else y1
