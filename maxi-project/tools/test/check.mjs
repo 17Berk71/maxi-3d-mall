@@ -1,5 +1,5 @@
 // Проверка в настоящем браузере: запусти `npm run dev` в одном терминале, затем `npm run check`.
-// Проходит основные сценарии (оба этажа, вид сверху, лифт, магазины, товар, корзина и заказ,
+// Проходит основные сценарии (оба этажа, вид сверху, лифт, магазины, карточка вещи без корзины и манекена,
 // телефон вертикально и горизонтально, режим без анимации), сохраняет скриншоты в tools/test/out/
 // и падает, если на странице были ошибки или сценарий не сработал.
 // Если Playwright не находит свой браузер, укажи путь: CHROME_PATH=/путь/к/chrome npm run check
@@ -93,30 +93,20 @@ const audit = await page.evaluate(() => window.__maxi.auditMap());
 check(audit[1].unreachableDoors.length === 0 && audit[2].unreachableDoors.length === 0, 'до всех дверей можно дойти (1 этаж: ' + audit[1].doors + ', 2 этаж: ' + audit[2].doors + ')');
 console.log('  узкие места: 1 этаж — ' + audit[1].narrow + ', 2 этаж — ' + audit[2].narrow + '; колонн оставлено ' + audit.columns.kept);
 
-// Спортмастер: товар, манекен, корзина
+// Спортмастер: карточка вещи без покупки и манекена (PRD C9), кабина без манекена
 await enter(page, 'Спортмастер Pro');
 await shot(page, '09-shop-sportmaster');
-// вещь без фото (у вещей с фото вместо 3D — фото, вкладки «На манекене» нет)
+check(await page.isHidden('#bCart'), 'кнопки корзины нет');
 await page.evaluate(() => { const W = ['jacket', 'pants', 'tshirt', 'longsleeve', 'dress', 'shoe'], p = window.__maxi.SHOP.cat.flatMap(d => d.items).find(p => !p.photo && W.includes(p.model)); window.__maxi.openProduct(p); });
 await page.waitForTimeout(1200);
-await page.click('#shop .sh-seg .sh-tab:nth-child(2)'); await page.waitForTimeout(800);
-await page.click('#shop .sh-buy .btn.pri');
-check(await page.evaluate(() => document.querySelector('#shop .sh-lab').textContent === 'Выбери размер'), 'без размера в корзину не кладётся');
-await page.click('#shop .sh-size:nth-child(3)');
-await page.click('#shop .sh-buy .btn.pri');
-check(await page.evaluate(() => window.__maxi.cart.count() === 1), 'товар в корзине');
-await shot(page, '10-product-mannequin');
-// примерочная: вещь в примерочную, кабина в зале, окно с фигурой
-await page.click('#shop .sh-fit .btn'); await page.waitForTimeout(300);
-check(await page.evaluate(() => window.__maxi.FIT.count() >= 1 && window.__maxi.FIT.worn.length >= 1), 'вещь взята в примерочную и надета');
-check(await page.evaluate(() => !!(window.__maxi.SHOP.fit)), 'в зале магазина одежды есть кабина примерочной');
-await page.evaluate(() => window.__maxi.openFitting()); await page.waitForTimeout(2500);
-check(await page.isVisible('#fitting'), 'окно примерочной открылось');
-await page.screenshot({path: OUT + '10b-fitting.png'});
-await page.click('#fitTabs [data-t="body"]'); await page.waitForTimeout(600);
-check(await page.evaluate(() => document.querySelectorAll('#fitBody input[type=range]').length >= 5), 'ползунки фигуры');
-await page.click('#fitX'); await page.waitForTimeout(500);
-check(await page.isHidden('#fitting'), 'примерочная закрылась');
+await shot(page, '10-product');
+check(await page.evaluate(() => !document.querySelector('#shop .sh-seg') && !document.querySelector('#shop .sh-buy') && !document.querySelector('#shop .sh-fit')), 'в карточке нет «На манекене», «В корзину», «Купить», «В примерочную»');
+check(await page.evaluate(() => !/Купить сейчас|В корзину|На манекене/.test(document.getElementById('shop').textContent)), 'в тексте карточки нет слов про корзину и манекен');
+check(await page.evaluate(() => !!(window.__maxi.SHOP.fit)), 'в зале магазина одежды есть кабина');
+// шагнуть в кабину: примерочная с манекеном не открывается, показывается подсказка
+await page.evaluate(() => { const T = window.__maxi, f = T.SHOP.fit; T.player.x = (f.x0 + f.x1) / 2; T.player.z = (f.z0 + f.z1) / 2; });
+await page.waitForTimeout(1500);
+check(await page.isHidden('#fitting'), 'кабина не открывает манекен');
 await page.evaluate(() => window.__maxi.exitShop());
 await page.waitForFunction(() => window.__maxi.mode === 'walk', null, {timeout: 90000});
 await shot(page, '11-back-to-gallery');
@@ -139,18 +129,10 @@ await enter(page, 'Бургер Кинг');
 await shot(page, '13-foodcourt-cafe');
 await page.evaluate(() => window.__maxi.exitShop());
 
-// корзина и заказ
-await page.click('#bCart'); await page.waitForTimeout(400);
-await shot(page, '14-cart');
-await page.click('#cartGo');
-await page.click('#orderForm button[type=submit]');
-check(await page.evaluate(() => document.getElementById('oErr').textContent.length > 0), 'пустая форма заказа не отправляется');
-await page.fill('#oName', 'Анна'); await page.fill('#oPhone', '+7 900 123-45-67');
-await page.click('#orderForm button[type=submit]');
-check(await page.isVisible('#orderDone'), 'заказ оформлен');
-check(await page.evaluate(() => window.__maxi.cart.count() === 0), 'корзина очистилась после заказа');
-await shot(page, '15-order-done');
-await page.click('#orderOk');
+// корзины и заказа нет; со старым режимом (?legacy) они на месте
+const old = await open({width: 1280, height: 760}, {}, '&legacy');
+check(await old.isVisible('#bCart'), 'старый режим (?legacy): кнопка корзины есть');
+await old.close();
 await page.close();
 
 console.log('Без анимации');

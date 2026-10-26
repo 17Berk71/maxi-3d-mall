@@ -12,6 +12,8 @@ import {closeShopPanel, requestLockIfNeeded} from './panel.js';
 import {thumbURL} from './product.js';
 import {closeCard} from '../ui/card.js';
 import {app} from '../core/state.js';
+import {LEGACY} from '../core/legacy.js';
+import {showHint} from '../ui/hint.js';
 export let FIT;
 let fitArmed;
 
@@ -54,7 +56,7 @@ export function buildFittingBooth(sc,s,W,D,brand,brandHex,colliders,pick){
  colliders.push([cx-hw-0.1,cx+hw+0.05,cz+hd-0.06,cz+hd+0.06],[cx-hw-0.1,cx+hw+0.05,cz-hd-0.06,cz-hd+0.06],[cx-hw-0.1,cx-hw+0.06,cz-hd,cz+hd]);
  return{cx,cz,x0:cx-hw+0.15,x1:cx+hw-0.25,z0:cz-hd+0.15,z1:cz+hd-0.15,out:{x:cx+hw+1.6,z:cz}};}
 export function updateFittingBooth(){if(app.mode!=='store'||!app.SHOP||!app.SHOP.fit||fitOpen()||app.anim)return;const f=app.SHOP.fit,inside=player.x>f.x0&&player.x<f.x1&&player.z>f.z0&&player.z<f.z1;
- if(!inside){fitArmed=true;return;}if(fitArmed){fitArmed=false;openFitting();}}
+ if(!inside){fitArmed=true;return;}if(fitArmed){fitArmed=false;if(LEGACY)openFitting();else showHint('Примерочная скоро: здесь можно будет собрать образ из вещей магазинов');}}
 export function fitOpen(){return FIT.isOpen;}
 export function openFitting(){if(fitOpen())return;if(!$('shop').hidden)closeShopPanel(false);closeCard();releaseLock();FIT.open(app.mode==='store'&&app.SHOP?app.SHOP.s:(app.PS&&app.PS.s)||null);}
 

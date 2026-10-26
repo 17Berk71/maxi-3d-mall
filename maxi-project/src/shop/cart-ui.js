@@ -7,6 +7,7 @@ import {$} from '../core/helpers.js';
 import {requestLockIfNeeded} from './panel.js';
 import {el_, thumbURL} from './product.js';
 import {floorName} from '../ui/pick.js';
+import {LEGACY} from '../core/legacy.js';
 
 /* ---------- Корзина и заказ ---------- */
 function updateCartBadge(){const n=cart.count();$('cartN').textContent=n>99?'99+':String(n);$('cartN').hidden=!n;}
@@ -27,6 +28,7 @@ export function init() {
 
 cart.on(()=>{updateCartBadge();if(!$('cartBox').hidden&&$('orderForm').hidden&&$('orderDone').hidden)renderCart();});
 $('bCart').onclick=()=>openCart(false);
+if(!LEGACY)$('bCart').hidden=true;
 $('cartX').onclick=closeCart;$('cartBox').addEventListener('pointerdown',e=>{if(e.target.id==='cartBox')closeCart();});
 $('cartGo').onclick=showOrderForm;$('cartClear').onclick=()=>cart.clear();
 $('oBack').onclick=()=>{$('orderForm').hidden=true;$('cartMain').hidden=false;renderCart();};

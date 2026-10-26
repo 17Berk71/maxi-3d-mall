@@ -17,6 +17,7 @@ import {closeShopPanel, demoLine, openShopPanel} from './panel.js';
 import {showHint} from '../ui/hint.js';
 import {floorName} from '../ui/pick.js';
 import {app} from '../core/state.js';
+import {LEGACY} from '../core/legacy.js';
 export let el_, fmtDate;
 let SIZES, WEARABLE, PV, TH, thumbCache;
 
@@ -63,7 +64,7 @@ export function renderProduct(p,onMan,size){const s=app.PS.s,el=$('shop'),fi=p.f
  const m=productModel(p);const photo=p.photo&&PHOTOS[p.photo]?PHOTOS[p.photo].url:p.pic;
  if(photo){stopViewer();const im=el_('img','pv pv-photo');im.src=photo;im.alt=p.name;w.appendChild(im);w.appendChild(el_('p','sh-note',p.feed?'Фото из выгрузки магазина.':'Фото вещи. Пока пример — позже у каждого магазина будут свои фото.'));}
  else{const cv=viewerShow(p,onMan);w.appendChild(cv);w.appendChild(el_('p','sh-note',p.feed?'Фото в выгрузке нет — показана похожая модель. Потяни, чтобы повернуть.':'Потяни картинку, чтобы повернуть товар.'));}
- if(WEARABLE[m]&&!photo){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
+ if(LEGACY&&WEARABLE[m]&&!photo){const tg=el_('div','sh-seg');['Товар','На манекене'].forEach((t,i)=>{const b=el_('button','sh-tab'+((!!onMan)===(i===1)?' on':''),t);b.onclick=()=>renderProduct(p,i===1,chosen);tg.appendChild(b);});w.appendChild(tg);}
  const info=describe(p,m);
  const pr=el_('div','sh-pricebox');pr.append(el_('span','sh-price',fmtPrice(p.price)));if(p.oldPrice&&p.oldPrice>p.price){const o=el_('s','sh-old',fmtPrice(p.oldPrice));pr.appendChild(o);}
  pr.appendChild(el_('span','sh-rate',fi?(fi.demo?'цена из тестовой выгрузки':'цена на '+fmtDate(fi.updated)):'цена условная'));w.appendChild(pr);
@@ -75,13 +76,13 @@ export function renderProduct(p,onMan,size){const s=app.PS.s,el=$('shop'),fi=p.f
  if(p.feed){
   // покупка и бронь — на сайте магазина: туда ведёт ссылка на товар из выгрузки
   const a=el_('a','btn pri','Купить на сайте магазина ↗');a.href=p.url||siteOf(s)||mapsOf(s);a.target='_blank';a.rel='noopener';buy.appendChild(a);
-  if(p.pickup){const b=el_('a','btn','Забрать в «Макси» ↗');b.href=p.url||siteOf(s)||mapsOf(s);b.target='_blank';b.rel='noopener';buy.appendChild(b);}
-  w.appendChild(buy);
-  if(p.pickup)w.appendChild(el_('p','sh-note','«Забрать в «Макси»» — на сайте магазина выбери самовывоз из ТРЦ «Макси», Тула. Бронь и оплату ведёт сам магазин.'));}
+  if(LEGACY&&p.pickup){const b=el_('a','btn','Забрать в «Макси» ↗');b.href=p.url||siteOf(s)||mapsOf(s);b.target='_blank';b.rel='noopener';buy.appendChild(b);}
+  if(LEGACY)w.appendChild(buy);
+  if(LEGACY&&p.pickup)w.appendChild(el_('p','sh-note','«Забрать в «Макси»» — на сайте магазина выбери самовывоз из ТРЦ «Макси», Тула. Бронь и оплату ведёт сам магазин.'));}
  else if(kind==='act'){const a0=onlineActions(s)[0],a=el_('a','btn pri',ACTIONS[a0].btn);a.href=siteOf(s)||mapsOf(s);a.target='_blank';a.rel='noopener';buy.appendChild(a);w.appendChild(buy);
   w.appendChild(el_('p','sh-note',onlineText(s)+(siteOf(s)?' Оформление — на сайте «'+s.name+'».':' Сайта пока нет в нашем списке — ссылка ведёт на контакты на Яндекс Картах.')));}
  else if(kind!=='shop'){w.appendChild(el_('p','sh-stock',onlineText(s)));}
- else{
+ else if(LEGACY){
   const add=el_('button','btn pri','В корзину');const now=el_('button','btn','Купить сейчас');
   const put=()=>{if(sz&&!chosen){lab.textContent='Выбери размер';lab.classList.add('err');return false;}
    cart.add({key:s.id+'|'+p.id+'|'+(chosen||''),name:p.name,price:p.price,size:chosen,shop:s.name,shopId:s.id,floor:s.floor,icon:p.icon,color:p.color,model:productModel(p),pid:p.id,photo:p.photo});return true;};
@@ -89,7 +90,7 @@ export function renderProduct(p,onMan,size){const s=app.PS.s,el=$('shop'),fi=p.f
   now.onclick=()=>{if(!put())return;closeShopPanel(false);openCart(true);};
   buy.append(add,now);w.appendChild(buy);}
  // примерочная: вещь можно взять и примерить вместе с вещами из других магазинов
- if(FIT.isWearable(p)){const fr=el_('div','sh-row sh-fit');const fb=el_('button','btn');const sync=()=>{const on=FIT.has(p,s);fb.textContent=on?'В примерочной ✓ · открыть':'В примерочную';fb.classList.toggle('ok',on);};sync();
+ if(LEGACY&&FIT.isWearable(p)){const fr=el_('div','sh-row sh-fit');const fb=el_('button','btn');const sync=()=>{const on=FIT.has(p,s);fb.textContent=on?'В примерочной ✓ · открыть':'В примерочную';fb.classList.toggle('ok',on);};sync();
   fb.onclick=()=>{if(!FIT.has(p,s)){FIT.add(p,s,true);sync();showHint('«'+p.name+'» — в примерочной ('+FIT.count()+' вещ.). '+(app.mode==='store'&&app.SHOP&&app.SHOP.fit?'Кабина — в левом углу у входа':'Примерить можно в любом магазине одежды'));}else openFitting();};
   fr.appendChild(fb);w.appendChild(fr);}
  // плашка с описанием, как в интернет-магазине
@@ -101,7 +102,7 @@ export function renderProduct(p,onMan,size){const s=app.PS.s,el=$('shop'),fi=p.f
  w.appendChild(plate);
  w.appendChild(el_('p','sh-note',fi?(fi.demo?'Тестовая выгрузка: товары, цены и ссылки ненастоящие. Так будет выглядеть магазин, подключённый через выгрузку.':'Товары и цены — из выгрузки магазина, обновляются раз в сутки. Точные — на его сайте.'):kind!=='shop'?'Позиции — пример для концепта.':'Товар, цена и размеры — пример для концепта. Настоящие наличие и цены — на сайте магазина.'));
  const row=el_('div','sh-row');
- const site=siteOf(s);if(!p.feed){const a=el_('a','btn');a.target='_blank';a.rel='noopener';a.href=site||mapsOf(s);a.textContent=site?'Смотреть на сайте ↗':'Магазин на картах ↗';row.appendChild(a);}
+ const site=siteOf(s);if(!p.feed&&(LEGACY||kind!=='shop')){const a=el_('a','btn');a.target='_blank';a.rel='noopener';a.href=site||mapsOf(s);a.textContent=site?'Смотреть на сайте ↗':'Магазин на картах ↗';row.appendChild(a);}
  const back=el_('button','btn','Продолжить прогулку');back.onclick=()=>closeShopPanel(true);row.appendChild(back);
  w.appendChild(row);body.appendChild(w);
  const f=el.querySelector('.sh-site');f.href=site||mapsOf(s);f.textContent=site?'Сайт магазина ↗':'Магазин на Яндекс Картах ↗';demoLine(s);}
