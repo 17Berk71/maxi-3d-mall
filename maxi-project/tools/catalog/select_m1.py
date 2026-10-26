@@ -19,6 +19,8 @@ BRANDS = {'befree': 'befree', 'zarina': 'Zarina', "colin's": "Colin's", 'tom tai
           'love republic': 'Love Republic', 'gloria jeans': 'Gloria Jeans', "o'stin": 'Ostin'}
 SKIP_SUBJ = re.compile(r'бель|трус|бюстгальт|носк|колгот|купальн|пижам|халат|ночн|колье|серьг|браслет|кольц|брош|чехл|заколк|резинк|маск', re.I)
 SUMMER = re.compile(r'лет|пляж', re.I)
+SUMMER_NAME = re.compile(r'летн|льнян|сарафан|выпускн|коротк\w* рукав|пляж', re.I)
+SKIP_NAME = re.compile(r'больш\w* размер|детск|школьн|talking tom', re.I)
 SUMMER_KINDS = {'shorts', 'sandals', 'tank'}
 # сколько брать в группе: (женские, мужские)
 PLAN = {'outer': (2, 1), 'top': (2, 1), 'bottom': (2, 1), 'full': (1, 0), 'shoes': (1, 0), 'bag': (1, 0)}
@@ -50,6 +52,7 @@ def candidates(briefs):
         if not k: continue
         if k in SUMMER_KINDS or SUMMER.search(b.get('season') or '') and 'демисез' not in (b.get('season') or '').lower(): continue
         if not b.get('desc') or (b.get('pics') or 0) < 4: continue
+        if SUMMER_NAME.search(b.get('name') or '') or SKIP_NAME.search(b.get('name') or ''): continue
         col = color_of(b.get('color') or '')
         out.append(dict(nm=b['nm'], brand=br, name=b.get('name'), subj=b.get('subj'), kind=k, group=group_of(k), sex=sex, color=col,
                         color_name=b.get('color'), season=b.get('season'), pics=b.get('pics'), table=b.get('table'), base=b.get('base'),
@@ -62,6 +65,12 @@ def select(cands):
     for c in cands: by[c['brand']].append(c)
     res = {}
     for br, cs in by.items():
+        seen, uniq = set(), []
+        for c in sorted(cs, key=lambda c: (not c['known'], not c['table'], -(c['pics'] or 0))):
+            key = (c['name'] or '').lower().strip()
+            if key in seen: continue
+            seen.add(key); uniq.append(c)
+        cs = uniq
         has_m = sum(1 for c in cs if c['sex'] == 'm') >= 3
         # приоритет: уже собранные, есть таблица размеров, больше фото
         cs.sort(key=lambda c: (not c['known'], not c['table'], -(c['pics'] or 0)))
@@ -74,11 +83,15 @@ def select(cands):
                 for c in pool[:n]:
                     pick.append(c); used_kinds.add(c['kind'])
         # добрать до 12 тем, чего меньше всего, без повторов вида
-        rest = [c for c in cs if c not in pick]
-        rest.sort(key=lambda c: (c['kind'] in used_kinds, not c['known'], not c['table']))
-        for c in rest:
-            if len(pick) >= 12: break
-            pick.append(c); used_kinds.add(c['kind'])
+        # добираем по одной: из группы, которой в списке меньше всего, вид — новый для бренда
+        while len(pick) < 12:
+            # обувь, сумки и аксессуары добором не берём: их хватает по плану, иначе у бренда три сумки
+            rest = [c for c in cs if c not in pick and c['group'] not in ('bag', 'shoes', 'acc')]
+            if not rest: break
+            gc = defaultdict(int)
+            for c in pick: gc[c['group']] += 1
+            rest.sort(key=lambda c: (gc[c['group']] >= 3, c['kind'] in used_kinds, gc[c['group']], not c['known'], not c['table']))
+            pick.append(rest[0]); used_kinds.add(rest[0]['kind'])
         res[br] = pick[:MAX_PER_BRAND]
     return res
 

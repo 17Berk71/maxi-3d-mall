@@ -104,6 +104,16 @@ def _norm(s):
     return (s or '').lower().replace('ё', 'е').strip()
 
 
+def _word(w):
+    """Шаблон синонима: с начала слова; короткие, до 4 букв (поло, топ, худи) — ещё и целым словом, иначе «поло» находится в «полоску»."""
+    n = _norm(w)
+    if len(n) <= 4:
+        return r'(^|[\s(«"-])' + re.escape(n) + r'(?![а-яa-z])'
+    # длинные — по основе: последняя гласная отбрасывается («майка» находит «майки», «кофта» — «кофты»)
+    if ' ' not in n and n[-1] in 'аяыиоеуь': n = n[:-1]
+    return r'(^|[\s(«"-])' + re.escape(n)
+
+
 def color_of(wb_name):
     """Название цвета Wildberries → ключ основного цвета или None (тогда цвет определяется по вырезке)."""
     s = _norm(wb_name)
@@ -132,11 +142,11 @@ def kind_of(subject='', name=''):
             for k2, (_r2, g2, syn2, _w2) in KINDS.items():
                 if k2 == key:
                     break
-                if g2 == g and any(re.search(r'(^|\s)' + re.escape(_norm(w)), nm) for w in syn2):
+                if g2 == g and any(re.search(_word(w), nm) for w in syn2):
                     return k2
             return key
     for key, (_ru, _g, syn, _wb) in KINDS.items():
-        if any(re.search(r'(^|\s)' + re.escape(_norm(w)), nm) for w in syn):
+        if any(re.search(_word(w), nm) for w in syn):
             return key
     return None
 
