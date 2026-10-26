@@ -17,3 +17,4 @@ tools/lab/out/
 tools/lab/server.log
 tools/test/node_modules
 tools/lab/*.log
+tools/catalog/work/

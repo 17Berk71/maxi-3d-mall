@@ -64,7 +64,7 @@ def drop_leg_gap(im, m):
     return (lb == 1 + np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8) if n > 1 else out
 
 
-def load_model_photo(key, kind):
+def load_model_photo(key, kind, paint=True):
     """Фото из карточки магазина (вещь на человеке): обрезать интерфейс скриншота, маска вещи — нейросетью (seg_person.py)."""
     from seg_person import crop_rows, cloth_masks
     im0 = cv2.imread(find(key))
@@ -160,6 +160,8 @@ def load_model_photo(key, kind):
             if wid[yw - dd] - wid[yw + dd] > 0.15 * wid[yw + dd]: m[:yw + dd // 2] = 0
         if kind != 'skirt': m = drop_leg_gap(im, m)
     if kind not in TOPS: m = cut_above_waist(im, m)
+    # paint=False — для коллажа (tools/catalog/collage_cut.py): ничего не дорисовываем, маска как есть, чистит сам вызывающий
+    if not paint: return im, m
     im, m = pose_cleanup(im, m, kind)
     im = paint_over_skin(im, m)
     im = paint_over_hair(im, m)
@@ -171,21 +173,27 @@ def load_model_photo(key, kind):
 def paint_over_skin(im, m):
     """Кожа внутри силуэта вещи (кисти поверх ткани, грудь в вырезе, пальцы на поясе) — закрасить тканью вокруг,
     силуэт не трогаем. Вещь телесного цвета (бежевая, пудровая) — не трогаем совсем: кожу от ткани не отличить."""
+    keep = skin_mask(im, m)
+    if keep is None: return im
+    return cv2.inpaint(im, keep, 9, cv2.INPAINT_TELEA)
+
+
+def skin_mask(im, m):
+    """Куски кожи внутри силуэта (≥60 px, расширены на 3 px) или None: нет кожи или вещь телесного цвета."""
     ycc = cv2.cvtColor(im, cv2.COLOR_BGR2YCrCb)
     cr, cb = ycc[..., 1].astype(np.int16), ycc[..., 2].astype(np.int16)
     skin = (cr > 137) & (cr < 173) & (cb > 77) & (cb < 127) & (ycc[..., 0] > 60)
     inside = m > 0
-    if inside.sum() < 1000: return im
-    if skin[inside].mean() > 0.35: return im
+    if inside.sum() < 1000: return None
+    if skin[inside].mean() > 0.35: return None
     sk = (skin & inside).astype(np.uint8)
     sk = cv2.morphologyEx(sk, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, st, _ = cv2.connectedComponentsWithStats(sk)
     keep = np.zeros_like(sk)
     for k in range(1, n):
         if st[k, cv2.CC_STAT_AREA] >= 60: keep[lab == k] = 1      # мелкие точки цвета кожи на принте — не трогаем
-    if not keep.any(): return im
-    keep = cv2.dilate(keep, np.ones((7, 7), np.uint8))
-    return cv2.inpaint(im, keep, 9, cv2.INPAINT_TELEA)
+    if not keep.any(): return None
+    return cv2.dilate(keep, np.ones((7, 7), np.uint8))
 
 
 def paint_over_inner(im, m):
@@ -435,14 +443,21 @@ def garment_len_cm(m, scale):
 def paint_over_hair(im, m):
     """Волосы модели на плечах и груди поверх однотонной вещи: тёмные куски у верхнего края вещи, далёкие по цвету
     от ткани, — закрасить тканью вокруг. Только у однотонных вещей (у принта тёмные места — рисунок) и только в верхней трети."""
+    keep = hair_mask(im, m)
+    if keep is None: return im
+    return cv2.inpaint(im, keep, 9, cv2.INPAINT_TELEA)
+
+
+def hair_mask(im, m):
+    """Куски волос у верхнего края однотонной вещи (расширены на 3 px) или None."""
     ys = np.where(m.any(1))[0]
-    if len(ys) < 50: return im
+    if len(ys) < 50: return None
     y0, y1 = ys[0], ys[-1]; top = y0 + (y1 - y0) // 3
     lab = cv2.cvtColor(im, cv2.COLOR_BGR2LAB).astype(np.float32)
     inside = m > 0; core = lab[top:y1][inside[top:y1]]
-    if len(core) < 500: return im
+    if len(core) < 500: return None
     med = np.median(core, 0); spread = np.percentile(np.linalg.norm(core - med, axis=1), 80)
-    if spread > 36: return im                                                   # пёстрая ткань — не трогаем
+    if spread > 36: return None                                                   # пёстрая ткань — не трогаем
     d = np.linalg.norm(lab - med, axis=2)
     cand = inside & (d > max(30, spread * 1.4)) & (lab[..., 0] < med[0] - 20)   # заметно темнее и другого цвета
     cand[top:] = False
@@ -452,5 +467,5 @@ def paint_over_hair(im, m):
     for k in range(1, n):
         x, y, w_, h_, a = st[k]
         if a >= 80 and y <= y0 + (top - y0) * 0.6: keep[lb == k] = 1           # кусок начинается у верха вещи (волосы падают сверху)
-    if not keep.any(): return im
-    return cv2.inpaint(im, cv2.dilate(keep, np.ones((7, 7), np.uint8)), 9, cv2.INPAINT_TELEA)
+    if not keep.any(): return None
+    return cv2.dilate(keep, np.ones((7, 7), np.uint8))
